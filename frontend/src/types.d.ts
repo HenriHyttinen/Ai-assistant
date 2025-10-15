@@ -1,0 +1,11 @@
+declare module '@chakra-ui/react';
+declare module '@chakra-ui/icons';
+declare module 'react-router-dom';
+declare module 'react-icons/fa';
+declare module 'react-icons/fi';
+declare module 'recharts';
+declare module 'formik';
+declare module 'yup';
+declare module 'axios';
+declare module 'jwt-decode';
+declare module 'date-fns'; 

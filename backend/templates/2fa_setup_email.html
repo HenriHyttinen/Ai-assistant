@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Set Up Two-Factor Authentication</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .qr-code {
+            text-align: center;
+            margin: 20px 0;
+        }
+        .qr-code img {
+            max-width: 200px;
+            height: auto;
+        }
+        .steps {
+            background-color: #f5f5f5;
+            padding: 20px;
+            border-radius: 4px;
+            margin: 20px 0;
+        }
+        .footer {
+            margin-top: 30px;
+            font-size: 12px;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <h2>Set Up Two-Factor Authentication</h2>
+    <p>You've requested to set up two-factor authentication for your {{ app_name }} account. Follow these steps to complete the setup:</p>
+    
+    <div class="steps">
+        <ol>
+            <li>Install an authenticator app like Google Authenticator or Authy on your phone</li>
+            <li>Scan the QR code below with your authenticator app</li>
+            <li>Enter the 6-digit code from your authenticator app when prompted</li>
+        </ol>
+    </div>
+    
+    <div class="qr-code">
+        <img src="{{ qr_code }}" alt="2FA QR Code">
+    </div>
+    
+    <p><strong>Important:</strong> Keep your authenticator app secure. If you lose access to it, you may need to contact support to regain access to your account.</p>
+    
+    <div class="footer">
+        <p>If you didn't request to set up two-factor authentication, please contact support immediately.</p>
+    </div>
+</body>
+</html> 

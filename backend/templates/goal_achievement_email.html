@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Goal Achieved! 🎉</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .celebration {
+            text-align: center;
+            font-size: 48px;
+            margin: 20px 0;
+        }
+        .goal-card {
+            background-color: #f5f5f5;
+            padding: 20px;
+            border-radius: 4px;
+            margin: 20px 0;
+        }
+        .stats {
+            display: flex;
+            justify-content: space-around;
+            margin: 20px 0;
+        }
+        .stat {
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #4CAF50;
+        }
+        .next-goal {
+            background-color: #e8f5e9;
+            padding: 20px;
+            border-radius: 4px;
+            margin: 20px 0;
+        }
+        .footer {
+            margin-top: 30px;
+            font-size: 12px;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="celebration">🎉</div>
+    
+    <h2>Congratulations!</h2>
+    <p>You've achieved your goal: <strong>{{ goal.name }}</strong></p>
+    
+    <div class="goal-card">
+        <h3>Goal Details</h3>
+        <p>{{ goal.description }}</p>
+        
+        <div class="stats">
+            <div class="stat">
+                <div class="stat-value">{{ goal.target_value }}</div>
+                <div>Target</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value">{{ goal.achieved_value }}</div>
+                <div>Achieved</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value">{{ goal.duration }}</div>
+                <div>Duration</div>
+            </div>
+        </div>
+    </div>
+    
+    {% if goal.next_goal %}
+    <div class="next-goal">
+        <h3>Next Goal</h3>
+        <p>{{ goal.next_goal.name }}</p>
+        <p>{{ goal.next_goal.description }}</p>
+    </div>
+    {% endif %}
+    
+    <p>Keep up the great work! Your dedication to your health and wellness is inspiring.</p>
+    
+    <div class="footer">
+        <p>This achievement was recorded on {{ goal.achieved_at }}. View your complete progress in your {{ app_name }} account.</p>
+    </div>
+</body>
+</html> 

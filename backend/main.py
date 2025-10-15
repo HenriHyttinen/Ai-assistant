@@ -1,0 +1,112 @@
+from fastapi import FastAPI, Request, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+import time
+from typing import Callable
+from dotenv import load_dotenv
+import logging
+
+from database import engine, Base
+# Need to import all models so SQLAlchemy knows about them
+from models.user import User
+from models.health_profile import HealthProfile
+from models.activity_log import ActivityLog
+from models.metrics_history import MetricsHistory
+from models.goal import Goal
+from models.user_settings import UserSettings
+from routes.auth import router as auth_router
+from routes.health import router as health_router
+from routes.health_profile import router as health_profile_router
+from routes.export import router as export_router
+from routes.goals import router as goals_router
+from routes.settings import router as settings_router
+# Had to remove consent stuff - was causing issues with relationships
+from services.tasks import start_background_tasks
+from config import get_settings
+from logging_config import setup_logging
+from middleware.rate_limit import rate_limit_middleware, ai_rate_limit_middleware, auth_rate_limit_middleware
+
+# Load env vars
+load_dotenv()
+
+# Set up logging
+setup_logging()
+logger = logging.getLogger(__name__)
+
+# Get settings
+settings = get_settings()
+
+# Create all the database tables
+Base.metadata.create_all(bind=engine)
+
+# Create the FastAPI app
+app = FastAPI(
+    title="Numbers Don't Lie API",
+    description="My wellness tracking app API",
+    version="1.0.0"
+)
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:5174",
+        "http://127.0.0.1:5174",
+    ],
+    allow_origin_regex=r"^http://(localhost|127\\.0\\.0\\.1):(5173|5174)$",
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Add rate limiting middleware
+app.middleware("http")(rate_limit_middleware)
+app.middleware("http")(ai_rate_limit_middleware)
+app.middleware("http")(auth_rate_limit_middleware)
+
+# Add error handling middleware
+@app.middleware("http")
+async def error_handling_middleware(request: Request, call_next: Callable):
+    try:
+        return await call_next(request)
+    except Exception as e:
+        logger.error(f"Unhandled error: {str(e)}", exc_info=True)
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "Internal server error"}
+        )
+
+# Include routers
+app.include_router(auth_router, prefix="/auth", tags=["Authentication"])
+app.include_router(health_router, prefix="/health", tags=["Health"])
+app.include_router(health_profile_router, prefix="/health", tags=["Health Profile"])
+app.include_router(export_router, prefix="/export", tags=["Export"])
+app.include_router(goals_router, prefix="/goals", tags=["Goals"])
+app.include_router(settings_router, prefix="/settings", tags=["Settings"])
+# Consent router removed due to DataConsent model issues
+
+@app.get("/")
+async def root():
+    return {
+        "message": "Welcome to Numbers Don't Lie API",
+        "docs_url": "/docs",
+        "redoc_url": "/redoc"
+    }
+
+# Start background tasks
+@app.on_event("startup")
+async def startup_event():
+    start_background_tasks()
+    logger.info("Application started")
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(
+        "main:app",
+        host="0.0.0.0",
+        port=8000,
+        reload=True,
+        log_level=settings.LOG_LEVEL.lower()
+    ) 

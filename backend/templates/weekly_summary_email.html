@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Your Weekly Health Summary</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .section {
+            background-color: #f5f5f5;
+            padding: 20px;
+            border-radius: 4px;
+            margin: 20px 0;
+        }
+        .metric {
+            display: flex;
+            justify-content: space-between;
+            margin: 10px 0;
+            padding: 10px;
+            background-color: white;
+            border-radius: 4px;
+        }
+        .progress-bar {
+            height: 20px;
+            background-color: #e0e0e0;
+            border-radius: 10px;
+            margin: 10px 0;
+            overflow: hidden;
+        }
+        .progress-fill {
+            height: 100%;
+            background-color: #4CAF50;
+            border-radius: 10px;
+            transition: width 0.3s ease;
+        }
+        .activity-list {
+            list-style: none;
+            padding: 0;
+        }
+        .activity-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px;
+            background-color: white;
+            border-radius: 4px;
+            margin: 5px 0;
+        }
+        .highlight {
+            color: #4CAF50;
+            font-weight: bold;
+        }
+        .footer {
+            margin-top: 30px;
+            font-size: 12px;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h2>Your Weekly Health Summary</h2>
+        <p>Week of {{ summary.week_start }} to {{ summary.week_end }}</p>
+    </div>
+    
+    <div class="section">
+        <h3>Weekly Overview</h3>
+        <div class="metric">
+            <span>Total Activities</span>
+            <span class="highlight">{{ summary.total_activities }}</span>
+        </div>
+        <div class="metric">
+            <span>Total Duration</span>
+            <span class="highlight">{{ summary.total_duration }} minutes</span>
+        </div>
+        <div class="metric">
+            <span>Calories Burned</span>
+            <span class="highlight">{{ summary.calories_burned }} kcal</span>
+        </div>
+    </div>
+    
+    <div class="section">
+        <h3>Goal Progress</h3>
+        {% for goal in summary.goals %}
+        <div class="metric">
+            <span>{{ goal.name }}</span>
+            <span>{{ goal.progress }}%</span>
+        </div>
+        <div class="progress-bar">
+            <div class="progress-fill" style="width: {{ goal.progress }}%"></div>
+        </div>
+        {% endfor %}
+    </div>
+    
+    <div class="section">
+        <h3>Activity Breakdown</h3>
+        <ul class="activity-list">
+            {% for activity in summary.activities %}
+            <li class="activity-item">
+                <span>{{ activity.name }}</span>
+                <span>{{ activity.duration }} minutes</span>
+            </li>
+            {% endfor %}
+        </ul>
+    </div>
+    
+    <div class="section">
+        <h3>Weekly Highlights</h3>
+        <ul>
+            {% for highlight in summary.highlights %}
+            <li>{{ highlight }}</li>
+            {% endfor %}
+        </ul>
+    </div>
+    
+    <div class="section">
+        <h3>Recommendations</h3>
+        <ul>
+            {% for rec in summary.recommendations %}
+            <li>{{ rec }}</li>
+            {% endfor %}
+        </ul>
+    </div>
+    
+    <div class="footer">
+        <p>This summary was generated on {{ summary.generated_at }}. For more detailed information, please log in to your {{ app_name }} account.</p>
+    </div>
+</body>
+</html> 
