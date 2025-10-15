@@ -104,8 +104,8 @@ SECRET_KEY=your-super-secret-jwt-key
 
 ### Core Features
 - **User Authentication**: Email/password, Google OAuth, GitHub OAuth
-- **Email Verification**: Account verification via email
-- **Password Reset**: Secure password reset with email tokens
+- **Email Verification**: Account verification via email (with fallback to console output)
+- **Password Reset**: Secure password reset with email tokens (with fallback to console output)
 - **2FA Support**: Two-factor authentication with TOTP
 - **Health Profile**: Complete health data collection and management
 - **AI Insights**: Personalized health recommendations (requires OpenAI API key)
@@ -167,6 +167,7 @@ SECRET_KEY=your-super-secret-jwt-key
 - Check your email configuration in `.env`
 - For Gmail, use an App Password instead of your regular password
 - Email features are optional - the app works without email configuration
+- If email fails, verification/reset links are shown in the console for development
 
 **AI insights not working:**
 - Add your OpenAI API key to `.env`
@@ -218,13 +219,35 @@ For production deployment:
 5. **Frontend**: Build with `npm run build`
 6. **Backend**: Use production WSGI server (Gunicorn)
 
+## What's Actually Implemented
+
+### Email System
+- **Full email infrastructure**: SMTP configuration, HTML templates, FastMail integration
+- **Email verification**: Complete flow with HTML email templates
+- **Password reset**: Complete flow with secure tokens and HTML templates
+- **Development fallback**: If email fails, links are printed to console
+- **Templates included**: verification_email.html, password_reset_email.html, 2fa_setup_email.html
+
+### OAuth Authentication
+- **Google OAuth**: Complete implementation with AuthLib integration
+- **GitHub OAuth**: Complete implementation with AuthLib integration
+- **OAuth callbacks**: Proper redirect handling and user creation
+- **Environment variables**: GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET
+
+### 2FA System
+- **TOTP implementation**: Complete two-factor authentication
+- **QR code generation**: For authenticator app setup
+- **Backup codes**: Recovery mechanism
+- **Email notifications**: 2FA setup instructions via email
+
 ## Development Notes
 
 - The project uses SQLite for development (easy setup)
 - All data is stored locally in the database
-- Email features require SMTP configuration
-- AI insights require OpenAI API key
+- Email features work with SMTP configuration, but have fallbacks for development
+- AI insights require OpenAI API key (mock insights provided without key)
 - OAuth features require Google/GitHub app configuration
+- Email verification and password reset links are shown in console if email fails
 
 ## Contributing
 
@@ -234,10 +257,3 @@ For production deployment:
 4. Test thoroughly
 5. Submit a pull request
 
-## License
-
-This project is for educational purposes. Feel free to use and modify as needed.
-
----
-
-Happy coding!
