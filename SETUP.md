@@ -1,15 +1,15 @@
-# 🚀 Numbers Don't Lie - Setup Guide
+# Numbers Don't Lie - Setup Guide
 
 This is a wellness platform built with FastAPI (backend) and React (frontend) that helps users track their health metrics, set goals, and get AI-powered insights.
 
-## 📋 Prerequisites
+## Prerequisites
 
 - Python 3.8+ 
 - Node.js 16+
 - npm or yarn
 - Git
 
-## 🛠️ Quick Setup
+## Quick Setup
 
 ### 1. Clone the Repository
 ```bash
@@ -64,11 +64,11 @@ npm run dev
 
 ### 4. Access the Application
 
-- **Frontend**: http://localhost:5173
-- **Backend API**: http://localhost:8000
-- **API Documentation**: http://localhost:8000/docs
+- Frontend: http://localhost:5173
+- Backend API: http://localhost:8000
+- API Documentation: http://localhost:8000/docs
 
-## 🔧 Environment Variables
+## Environment Variables
 
 Create a `.env` file in the `backend` directory with the following variables:
 
@@ -100,9 +100,9 @@ OPENAI_API_KEY=your-openai-api-key
 SECRET_KEY=your-super-secret-jwt-key
 ```
 
-## 🎯 Features
+## Features
 
-### ✅ Core Features
+### Core Features
 - **User Authentication**: Email/password, Google OAuth, GitHub OAuth
 - **Email Verification**: Account verification via email
 - **Password Reset**: Secure password reset with email tokens
@@ -114,18 +114,18 @@ SECRET_KEY=your-super-secret-jwt-key
 - **Settings**: Language preferences, measurement system (metric/imperial)
 - **Data Export**: GDPR-compliant data export
 
-### 🌍 Internationalization
-- **4 Languages**: English, Spanish, French, German
-- **Measurement Systems**: Metric (kg/cm) and Imperial (lbs/inches)
-- **Real-time Translation**: All UI elements translated dynamically
+### Internationalization
+- 4 Languages: English, Spanish, French, German
+- Measurement Systems: Metric (kg/cm) and Imperial (lbs/inches)
+- Real-time Translation: All UI elements translated dynamically
 
-### 🔒 Security Features
-- **Rate Limiting**: API abuse prevention
-- **Input Validation**: Comprehensive data validation
-- **Error Handling**: Graceful error handling with user-friendly messages
-- **CORS Configuration**: Proper cross-origin resource sharing
+### Security Features
+- Rate Limiting: API abuse prevention
+- Input Validation: Comprehensive data validation
+- Error Handling: Graceful error handling with user-friendly messages
+- CORS Configuration: Proper cross-origin resource sharing
 
-## 🧪 Testing the Application
+## Testing the Application
 
 ### 1. Create a Test Account
 1. Go to http://localhost:5173
@@ -140,12 +140,12 @@ SECRET_KEY=your-super-secret-jwt-key
 3. Save your profile
 
 ### 3. Explore Features
-- **Dashboard**: View your wellness score and AI insights
-- **Analytics**: See your progress charts
-- **Goals**: Set and track health goals
-- **Settings**: Change language and measurement system
+- Dashboard: View your wellness score and AI insights
+- Analytics: See your progress charts
+- Goals: Set and track health goals
+- Settings: Change language and measurement system
 
-## 🐛 Troubleshooting
+## Troubleshooting
 
 ### Common Issues
 
@@ -172,7 +172,7 @@ SECRET_KEY=your-super-secret-jwt-key
 - Add your OpenAI API key to `.env`
 - Without the API key, the app will show mock insights
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 numbers-dont-lie/
@@ -207,7 +207,7 @@ numbers-dont-lie/
 └── SETUP.md                # This file
 ```
 
-## 🚀 Production Deployment
+## Production Deployment
 
 For production deployment:
 
@@ -218,7 +218,7 @@ For production deployment:
 5. **Frontend**: Build with `npm run build`
 6. **Backend**: Use production WSGI server (Gunicorn)
 
-## 📝 Development Notes
+## Development Notes
 
 - The project uses SQLite for development (easy setup)
 - All data is stored locally in the database
@@ -226,7 +226,7 @@ For production deployment:
 - AI insights require OpenAI API key
 - OAuth features require Google/GitHub app configuration
 
-## 🤝 Contributing
+## Contributing
 
 1. Fork the repository
 2. Create a feature branch
@@ -234,10 +234,10 @@ For production deployment:
 4. Test thoroughly
 5. Submit a pull request
 
-## 📄 License
+## License
 
 This project is for educational purposes. Feel free to use and modify as needed.
 
 ---
 
-**Happy coding! 🎉**
+Happy coding!
