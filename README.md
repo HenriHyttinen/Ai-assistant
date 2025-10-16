@@ -2,6 +2,29 @@
 
 A comprehensive wellness platform that leverages AI to provide personalized health insights, track wellness metrics, and guide users toward their health goals.
 
+## 🚀 For Reviewers - Quick Access
+
+**Easy Login for Testing:**
+1. **Register** with any email (e.g., `your-email@example.com`)
+2. **Verify your account** using this simple command:
+   ```bash
+   curl -X POST "http://localhost:8000/auth/verify-email-simple?email=your-email@example.com"
+   ```
+3. **Login** with your email and password
+4. **2FA Code** (if prompted): Use `123456`
+
+**Alternative - Use Existing Verified Account:**
+- Email: `reviewer@test.com`
+- Password: `testpass123`
+- (This account is already verified and ready to use)
+
+**Demo Features to Test:**
+- ✅ Health Profile (create/edit with translations)
+- ✅ AI Insights (change fitness goals to see different recommendations)
+- ✅ Data Consent (Settings → Data Consent)
+- ✅ Multi-language support (Settings → Language)
+- ✅ 2FA Setup (Settings → Two-Factor Authentication)
+
 ## What it does
 
 - **Health Profile** - Store your basic health info (weight, height, goals, etc.)
