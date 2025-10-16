@@ -28,6 +28,7 @@ import {
   Image,
   Input,
 } from '@chakra-ui/react';
+import { FiShield } from 'react-icons/fi';
 import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useApp } from '../contexts/AppContext';
@@ -62,6 +63,8 @@ const translations = {
     french: 'French',
     german: 'German',
     enable2FA: 'Enable 2FA',
+    dataConsent: 'Data Consent',
+    dataConsentDescription: 'Manage your data usage preferences and consent settings',
   },
   es: {
     settings: 'Configuración',
@@ -90,6 +93,8 @@ const translations = {
     french: 'Francés',
     german: 'Alemán',
     enable2FA: 'Activar 2FA',
+    dataConsent: 'Consentimiento de Datos',
+    dataConsentDescription: 'Gestiona tus preferencias de uso de datos y configuraciones de consentimiento',
   },
   fr: {
     settings: 'Paramètres',
@@ -118,6 +123,8 @@ const translations = {
     french: 'Français',
     german: 'Allemand',
     enable2FA: 'Activer 2FA',
+    dataConsent: 'Consentement aux Données',
+    dataConsentDescription: 'Gérez vos préférences d\'utilisation des données et paramètres de consentement',
   },
   de: {
     settings: 'Einstellungen',
@@ -146,6 +153,8 @@ const translations = {
     french: 'Französisch',
     german: 'Deutsch',
     enable2FA: '2FA aktivieren',
+    dataConsent: 'Dateneinverständnis',
+    dataConsentDescription: 'Verwalten Sie Ihre Datennutzungspräferenzen und Einverständniseinstellungen',
   },
 };
 
@@ -455,6 +464,21 @@ const Settings = () => {
               </FormControl>
               <Text fontSize="sm" color="gray.500">
                 {t('dataSharingDescription', language)}
+              </Text>
+              
+              <Divider />
+              
+              <Button
+                colorScheme="blue"
+                variant="outline"
+                as="a"
+                href="/consent"
+                leftIcon={<FiShield />}
+              >
+                {t('dataConsent', language)}
+              </Button>
+              <Text fontSize="sm" color="gray.500">
+                {t('dataConsentDescription', language)}
               </Text>
             </VStack>
           </CardBody>

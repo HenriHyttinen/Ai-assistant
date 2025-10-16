@@ -286,6 +286,32 @@ const Dashboard = () => {
     fetchData();
   }, [measurementSystem, language]);
 
+  // Add a function to refresh insights when profile changes
+  const refreshInsights = async () => {
+    try {
+      const insightsResponse = await healthProfile.getInsights();
+      if (insightsResponse.data?.insights) {
+        setAiInsights(insightsResponse.data.insights);
+      }
+    } catch (insightsError) {
+      console.log('Failed to refresh insights:', insightsError);
+    }
+  };
+
+  // Listen for profile updates from other pages
+  useEffect(() => {
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'profile_updated') {
+        refreshInsights();
+        // Remove the flag
+        localStorage.removeItem('profile_updated');
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, []);
+
   // Prepare chart data from weight trend
   const prepareChartData = () => {
     if (!analyticsData?.weight_trend) return [];

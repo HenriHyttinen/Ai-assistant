@@ -13,6 +13,7 @@ import Analytics from './pages/Analytics';
 import Goals from './pages/Goals';
 import Settings from './pages/Settings';
 import DataExport from './pages/DataExport';
+import DataConsent from './pages/DataConsent';
 import Verify2FA from './pages/Verify2FA';
 import VerifyEmail from './pages/VerifyEmail';
 import OAuthCallback from './pages/OAuthCallback';
@@ -49,6 +50,7 @@ const App = () => {
               <Route path="goals" element={<Goals />} />
               <Route path="settings" element={<Settings />} />
               <Route path="export" element={<DataExport />} />
+              <Route path="consent" element={<DataConsent />} />
             </Route>
             </Routes>
         </AuthProvider>

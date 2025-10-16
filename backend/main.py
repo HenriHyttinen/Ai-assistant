@@ -14,13 +14,14 @@ from models.activity_log import ActivityLog
 from models.metrics_history import MetricsHistory
 from models.goal import Goal
 from models.user_settings import UserSettings
+from models.consent import DataConsent
 from routes.auth import router as auth_router
 from routes.health import router as health_router
 from routes.health_profile import router as health_profile_router
 from routes.export import router as export_router
 from routes.goals import router as goals_router
 from routes.settings import router as settings_router
-# Had to remove consent stuff - was causing issues with relationships
+from routes.consent import router as consent_router
 from services.tasks import start_background_tasks
 from config import get_settings
 from logging_config import setup_logging
@@ -85,7 +86,7 @@ app.include_router(health_profile_router, prefix="/health", tags=["Health Profil
 app.include_router(export_router, prefix="/export", tags=["Export"])
 app.include_router(goals_router, prefix="/goals", tags=["Goals"])
 app.include_router(settings_router, prefix="/settings", tags=["Settings"])
-# Consent router removed due to DataConsent model issues
+app.include_router(consent_router, tags=["Data Consent"])
 
 @app.get("/")
 async def root():

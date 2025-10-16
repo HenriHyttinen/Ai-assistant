@@ -15,23 +15,57 @@ else:
 
 print("AI imports are working!")
 
-def generate_mock_insights(language: str = 'en') -> Dict[str, Any]:
+def generate_mock_insights(language: str = 'en', fitness_goal: str = 'general_fitness') -> Dict[str, Any]:
     """Generate mock insights when OpenAI API is not available."""
+    
+    # Goal-specific recommendations
+    goal_recommendations = {
+        'weight_loss': [
+            "Focus on creating a calorie deficit through diet and exercise",
+            "Increase cardio activities like walking, running, or cycling",
+            "Track your daily calorie intake to ensure you're in a deficit"
+        ],
+        'muscle_gain': [
+            "Prioritize strength training 3-4 times per week",
+            "Increase protein intake to support muscle growth",
+            "Focus on progressive overload in your workouts"
+        ],
+        'endurance': [
+            "Gradually increase cardio duration and intensity",
+            "Include interval training in your routine",
+            "Focus on consistent aerobic exercise"
+        ],
+        'strength': [
+            "Focus on compound movements like squats and deadlifts",
+            "Increase weight gradually while maintaining good form",
+            "Allow adequate rest between strength training sessions"
+        ],
+        'general_fitness': [
+            "Maintain a balanced mix of cardio and strength training",
+            "Focus on overall health and wellness",
+            "Keep your routine varied and enjoyable"
+        ]
+    }
+    
+    goal_analysis = {
+        'weight_loss': "Your goal is weight loss. Focus on creating sustainable habits that will help you achieve a healthy calorie deficit.",
+        'muscle_gain': "Your goal is muscle gain. Prioritize strength training and proper nutrition to support muscle growth.",
+        'endurance': "Your goal is improving endurance. Focus on cardiovascular fitness and stamina building.",
+        'strength': "Your goal is building strength. Concentrate on progressive resistance training and proper form.",
+        'general_fitness': "Your goal is general fitness. Maintain a balanced approach to health and wellness."
+    }
+    
     mock_insights = {
         'en': {
-            "status_analysis": "Based on your health profile, you're on a good path to wellness. Your current activity level and fitness goals show positive momentum.",
-            "recommendations": [
-                "Increase your daily water intake to 8-10 glasses",
-                "Add 15 minutes of stretching to your morning routine",
-                "Try incorporating more whole foods into your diet"
-            ],
+            "status_analysis": goal_analysis.get(fitness_goal, goal_analysis['general_fitness']),
+            "recommendations": goal_recommendations.get(fitness_goal, goal_recommendations['general_fitness']),
             "strengths": [
                 "Consistent exercise routine",
                 "Good understanding of your fitness goals"
             ],
             "improvements": [
                 "Focus on sleep quality and duration",
-                "Consider adding strength training to your routine"
+                "Consider adding more variety to your routine"
             ]
         },
         'es': {
@@ -183,6 +217,7 @@ def generate_health_insights(health_data: Dict[str, Any], user_settings: Dict[st
     - Height: {current_state.get('height', 'N/A')} cm
     - Weight: {current_state.get('weight', 'N/A')} kg
     - Activity Level: {current_state.get('activity_level', 'N/A')}
+    - Fitness Goal: {current_state.get('fitness_goal', 'N/A')}
     
     Target State:
     - Target Weight: {target_state.get('weight', 'N/A')} kg
@@ -206,7 +241,8 @@ def generate_health_insights(health_data: Dict[str, Any], user_settings: Dict[st
     Keep in mind:
     - Don't suggest anything that goes against their dietary restrictions
     - Make sure recommendations match their fitness level
-    - Focus on their specific goals
+    - Focus on their specific fitness goal: {current_state.get('fitness_goal', 'N/A')}
+    - Tailor all advice to help them achieve their primary fitness goal
     - Keep it practical and doable
     - All measurements are normalized (kg, cm) for consistent analysis
     
@@ -220,7 +256,8 @@ def generate_health_insights(health_data: Dict[str, Any], user_settings: Dict[st
     # Check if OpenAI client is available
     if not client:
         print("OpenAI API key not available, using mock insights")
-        return generate_mock_insights(language)
+        fitness_goal = current_state.get('fitness_goal', 'general_fitness')
+        return generate_mock_insights(language, fitness_goal)
     
     try:
         response = client.chat.completions.create(

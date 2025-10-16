@@ -84,6 +84,10 @@ def normalize_health_data_for_ai(health_data: Dict[str, Any], user_settings: Opt
     if 'activity_level' in health_data:
         normalized_data["user_metrics"]["current_state"]["activity_level"] = health_data['activity_level']
     
+    # Add fitness goal to current state
+    if 'fitness_goal' in health_data:
+        normalized_data["user_metrics"]["current_state"]["fitness_goal"] = health_data['fitness_goal']
+    
     # Normalize target state metrics
     if 'target_weight' in health_data and health_data['target_weight']:
         normalized_data["user_metrics"]["target_state"]["weight"] = normalize_weight(

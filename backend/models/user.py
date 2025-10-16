@@ -26,4 +26,5 @@ class User(Base, TimestampMixin):
     health_profile = relationship("HealthProfile", back_populates="user", uselist=False)
     activity_logs = relationship("ActivityLog", back_populates="user")
     goals = relationship("Goal", back_populates="user")
-    settings = relationship("UserSettings", back_populates="user", uselist=False) 
+    settings = relationship("UserSettings", back_populates="user", uselist=False)
+    consent = relationship("DataConsent", back_populates="user", uselist=False) 
