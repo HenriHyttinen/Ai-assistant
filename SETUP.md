@@ -1,6 +1,6 @@
 # Numbers Don't Lie - Setup Guide
 
-This is a wellness platform built with FastAPI (backend) and React (frontend) that helps users track their health metrics, set goals, and get AI-powered insights.
+This is a wellness platform built with FastAPI (backend) and React (frontend) that helps users track their health metrics, set goals, and get personalized insights.
 
 ## Prerequisites
 

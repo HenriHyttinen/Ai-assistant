@@ -80,7 +80,7 @@ npm run dev
 
 ## Email Verification (Dev Mode)
 
-**Note for reviewers:** I had to implement email verification for the requirements. Since I don't have a real email server set up, the verification links show up in the backend console for testing.
+**Note:** Email verification is implemented as required. For development/testing, verification links are displayed in the backend console.
 
 ### How to test email verification:
 
@@ -143,7 +143,7 @@ curl -X POST http://localhost:8000/auth/verify-email/eyJhbGciOiJIUzI1NiIsInR5cCI
 
 ## Password Reset
 
-**For reviewers:** Password reset works via email (but shows links in console for testing).
+**Password Reset:** Works via email with links displayed in console for development/testing.
 
 ### How it works:
 - **Forgot Password** - Link on login page

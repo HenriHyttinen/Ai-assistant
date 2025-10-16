@@ -169,7 +169,7 @@ const Settings = () => {
   const { user } = useAuth();
   const { language, measurementSystem, setLanguage, setMeasurementSystem } = useApp();
     
-    // Add error boundary for debugging
+    // Error handling
     if (!user) {
       return (
         <Box p={4}>

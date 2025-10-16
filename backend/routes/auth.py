@@ -62,7 +62,7 @@ async def register_user(
     except Exception as e:
         # Log error but don't fail registration
         print(f"Failed to send verification email: {str(e)}")
-        print("Note: Email verification is required for this task. Please set up email credentials.")
+        print("Email verification is required. Please set up email credentials.")
         
         # For development: show manual verification link
         print(f"\n{'='*60}")
