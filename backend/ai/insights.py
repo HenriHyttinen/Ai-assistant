@@ -288,3 +288,33 @@ def generate_health_insights(health_data: Dict[str, Any], user_settings: Dict[st
             "improvements": [],
             "error": str(e)
         }
+
+def generate_weekly_summary(health_data: Dict[str, Any], user_settings: Dict[str, Any] = None) -> Dict[str, Any]:
+    """Generate weekly health summary."""
+    
+    # Get user's preferred language
+    language = user_settings.get('language', 'en') if user_settings else 'en'
+    
+    # Basic summary structure
+    summary = {
+        'week_overview': f"Weekly health summary for {language}",
+        'key_metrics': {
+            'weight_change': 0.0,
+            'activity_days': 0,
+            'wellness_score_change': 0.0
+        },
+        'achievements': [
+            "Maintained consistent activity levels",
+            "Tracked health metrics regularly"
+        ],
+        'focus_areas': [
+            "Continue current routine",
+            "Monitor progress towards goals"
+        ],
+        'recommendations': [
+            "Keep up the good work",
+            "Stay consistent with your routine"
+        ]
+    }
+    
+    return summary
