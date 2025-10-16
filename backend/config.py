@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     GITHUB_CLIENT_ID: Optional[str] = None
     GITHUB_CLIENT_SECRET: Optional[str] = None
     
+    # AI settings
+    OPENAI_API_KEY: Optional[str] = None
+    
     # Security settings
     PASSWORD_MIN_LENGTH: int = 8
     PASSWORD_MAX_LENGTH: int = 100

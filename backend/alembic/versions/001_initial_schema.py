@@ -24,7 +24,7 @@ def upgrade() -> None:
         sa.Column('hashed_password', sa.String(), nullable=True),
         sa.Column('is_active', sa.Boolean(), nullable=True),
         sa.Column('is_verified', sa.Boolean(), nullable=True),
-        sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
+        sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('CURRENT_TIMESTAMP'), nullable=True),
         sa.Column('updated_at', sa.DateTime(timezone=True), nullable=True),
         sa.Column('two_factor_enabled', sa.Boolean(), nullable=True),
         sa.Column('two_factor_secret', sa.String(), nullable=True),
@@ -58,7 +58,7 @@ def upgrade() -> None:
         sa.Column('fitness_level', sa.String(), nullable=True),
         sa.Column('endurance_level', sa.Integer(), nullable=True),
         sa.Column('strength_indicators', sa.String(), nullable=True),
-        sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
+        sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('CURRENT_TIMESTAMP'), nullable=True),
         sa.Column('updated_at', sa.DateTime(timezone=True), nullable=True),
         sa.ForeignKeyConstraint(['user_id'], ['users.id'], ),
         sa.PrimaryKeyConstraint('id')
@@ -74,7 +74,7 @@ def upgrade() -> None:
         sa.Column('duration', sa.Integer(), nullable=True),
         sa.Column('intensity', sa.String(), nullable=True),
         sa.Column('notes', sa.String(), nullable=True),
-        sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
+        sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('CURRENT_TIMESTAMP'), nullable=True),
         sa.ForeignKeyConstraint(['user_id'], ['users.id'], ),
         sa.PrimaryKeyConstraint('id')
     )
@@ -88,7 +88,7 @@ def upgrade() -> None:
         sa.Column('weight', sa.Float(), nullable=True),
         sa.Column('bmi', sa.Float(), nullable=True),
         sa.Column('wellness_score', sa.Float(), nullable=True),
-        sa.Column('recorded_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
+        sa.Column('recorded_at', sa.DateTime(timezone=True), server_default=sa.text('CURRENT_TIMESTAMP'), nullable=True),
         sa.ForeignKeyConstraint(['health_profile_id'], ['health_profiles.id'], ),
         sa.PrimaryKeyConstraint('id')
     )

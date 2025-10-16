@@ -1,7 +1,7 @@
 from sqlalchemy import Boolean, Column, Integer, String, DateTime, ForeignKey, Float
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
-from database import Base
+from .base import Base
 from .base import TimestampMixin
 from .health_profile import HealthProfile
 from .metrics_history import MetricsHistory

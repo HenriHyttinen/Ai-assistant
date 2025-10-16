@@ -1,7 +1,7 @@
 from sqlalchemy import Column, Integer, Float, ForeignKey, DateTime
 from sqlalchemy.orm import relationship
 from datetime import datetime
-from database import Base
+from .base import Base
 
 class MetricsHistory(Base):
     __tablename__ = "metrics_history"

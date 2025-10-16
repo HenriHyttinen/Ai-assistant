@@ -42,8 +42,9 @@ cp .env.example .env
 # Initialize database
 python init_db.py
 
-# Run database migrations
-alembic upgrade head
+# Note: The init_db.py script creates all necessary tables.
+# If you encounter Alembic migration errors, you can skip them as the database
+# is already properly initialized with all required tables.
 
 # Start the backend server
 python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000
@@ -161,7 +162,8 @@ SECRET_KEY=your-super-secret-jwt-key
 
 **Database errors:**
 - Delete `dev.db` and run `python init_db.py` again
-- Check if Alembic migrations are up to date: `alembic upgrade head`
+- If you get SQLite syntax errors with `alembic upgrade head`, you can skip this step
+- The `init_db.py` script creates all necessary tables directly
 
 **Email not working:**
 - Check your email configuration in `.env`
