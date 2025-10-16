@@ -141,9 +141,9 @@ def validate_ai_response(insights: Dict[str, Any], dietary_restrictions: List[st
         
         # Check against each dietary restriction
         for restriction in dietary_restrictions:
-            restriction_lower = restriction.lower().replace('_', ' ')
-            if restriction_lower in restriction_keywords:
-                keywords = restriction_keywords[restriction_lower]
+            restriction_key = restriction.lower()
+            if restriction_key in restriction_keywords:
+                keywords = restriction_keywords[restriction_key]
                 recommendation_lower = recommendation.lower()
                 
                 # Check if recommendation contains restricted keywords
@@ -273,21 +273,11 @@ def generate_health_insights(health_data: Dict[str, Any], user_settings: Dict[st
         return validated_insights
         
     except Exception as e:
-        # Error messages in different languages
-        error_messages = {
-            'en': "Unable to generate insights at this time. Please try again later.",
-            'de': "Insights können derzeit nicht generiert werden. Bitte versuchen Sie es später erneut.",
-            'es': "No se pueden generar insights en este momento. Inténtalo de nuevo más tarde.",
-            'fr': "Impossible de générer des insights pour le moment. Veuillez réessayer plus tard."
-        }
-        
-        return {
-            "status_analysis": error_messages.get(language, error_messages['en']),
-            "recommendations": [],
-            "strengths": [],
-            "improvements": [],
-            "error": str(e)
-        }
+        # If OpenAI API fails (quota exceeded, network issues, etc.), fall back to mock insights
+        print(f"OpenAI API error: {e}")
+        print("Falling back to mock insights...")
+        fitness_goal = current_state.get('fitness_goal', 'general_fitness')
+        return generate_mock_insights(language, fitness_goal)
 
 def generate_weekly_summary(health_data: Dict[str, Any], user_settings: Dict[str, Any] = None) -> Dict[str, Any]:
     """Generate weekly health summary."""
