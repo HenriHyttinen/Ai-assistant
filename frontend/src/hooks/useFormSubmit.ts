@@ -1,5 +1,4 @@
 import { useState, useCallback } from 'react';
-import type { AxiosError } from 'axios';
 
 interface UseFormSubmitState {
   loading: boolean;
@@ -27,11 +26,10 @@ export function useFormSubmit<T>(
         setState({ loading: true, error: null, success: false });
         await submitFunction(data);
         setState({ loading: false, error: null, success: true });
-      } catch (error) {
-        const axiosError = error as AxiosError;
+      } catch (error: any) {
         setState({
           loading: false,
-          error: axiosError.response?.data?.message || 'An error occurred',
+          error: error.response?.data?.message || 'An error occurred',
           success: false,
         });
         throw error;

@@ -1,5 +1,4 @@
 import { useState, useCallback } from 'react';
-import type { AxiosError } from 'axios';
 
 interface UseApiState<T> {
   data: T | null;
@@ -27,12 +26,11 @@ export function useApi<T>(
         setState((prev) => ({ ...prev, loading: true, error: null }));
         const response = await apiFunction(...args);
         setState({ data: response.data, loading: false, error: null });
-      } catch (error) {
-        const axiosError = error as AxiosError;
+      } catch (error: any) {
         setState({
           data: null,
           loading: false,
-          error: axiosError.response?.data?.message || 'An error occurred',
+          error: error.response?.data?.message || 'An error occurred',
         });
         throw error;
       }

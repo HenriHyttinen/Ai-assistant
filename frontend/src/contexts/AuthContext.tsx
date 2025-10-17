@@ -1,4 +1,3 @@
-// @ts-nocheck
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { authService } from '../services/auth';
@@ -9,6 +8,7 @@ interface User {
   is_active: boolean;
   is_verified: boolean;
   two_factor_enabled: boolean;
+  is_2fa_enabled?: boolean;
   oauth_provider?: 'google' | 'github';
   profile_picture?: string;
   created_at: string;
@@ -19,6 +19,7 @@ interface AuthContextType {
   user: User | null;
   loading: boolean;
   error: string | null;
+  clearError: () => void;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string) => Promise<void>;
   logout: () => void;
@@ -28,7 +29,7 @@ interface AuthContextType {
   disable2FA: (code: string) => Promise<void>;
 }
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
+export const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
@@ -142,12 +143,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const clearError = () => {
+    setError(null);
+  };
+
   return (
     <AuthContext.Provider
       value={{
         user,
         loading,
         error,
+        clearError,
         login,
         register,
         logout,
