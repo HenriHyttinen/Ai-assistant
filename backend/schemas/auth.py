@@ -12,7 +12,7 @@ class UserBase(BaseModel):
     email: EmailStr
 
 class UserCreate(UserBase):
-    password: constr(min_length=8)
+    password: constr(min_length=8, max_length=72)
 
 class LoginData(UserBase):
     password: str
@@ -45,11 +45,11 @@ class PasswordReset(BaseModel):
 
 class PasswordResetConfirm(BaseModel):
     token: str
-    new_password: constr(min_length=8)
+    new_password: constr(min_length=8, max_length=72)
 
 class ChangePassword(BaseModel):
     current_password: str
-    new_password: constr(min_length=8)
+    new_password: constr(min_length=8, max_length=72)
 
 class OAuthResponse(BaseModel):
     url: str 

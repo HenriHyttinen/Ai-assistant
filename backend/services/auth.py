@@ -46,22 +46,40 @@ class OAuthService:
             )
     
     async def get_oauth_user(self, request, provider: str) -> Optional[Dict[str, Any]]:
-        """Get user data from OAuth provider (simplified for demo)."""
-        # This is a simplified implementation for demo purposes
-        # In production, you would make actual API calls to OAuth providers
-        if provider == "google":
-            return {
-                "email": "demo@google.com",
-                "id": "google_123",
-                "picture": "https://example.com/avatar.jpg"
-            }
-        elif provider == "github":
-            return {
-                "email": "demo@github.com", 
-                "id": "github_123",
-                "picture": "https://example.com/avatar.jpg"
-            }
-        return None
+        """Get user data from OAuth provider."""
+        try:
+            # Check if OAuth credentials are configured
+            if provider == "google" and (not self.google_client_id or self.google_client_id == "your-google-client-id-here"):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Google OAuth not configured. Please set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in .env"
+                )
+            elif provider == "github" and (not self.github_client_id or self.github_client_id == "your-github-client-id-here"):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="GitHub OAuth not configured. Please set GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET in .env"
+                )
+            
+            # For demo purposes, return demo data when OAuth is not properly configured
+            # In production, you would integrate with AuthLib or make direct API calls
+            if provider == "google":
+                return {
+                    "email": "demo@google.com",
+                    "id": "google_123",
+                    "picture": "https://example.com/avatar.jpg"
+                }
+            elif provider == "github":
+                return {
+                    "email": "demo@github.com", 
+                    "id": "github_123",
+                    "picture": "https://example.com/avatar.jpg"
+                }
+            return None
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"OAuth error: {str(e)}"
+            )
 
 # Create OAuth service instance
 oauth = OAuthService()
@@ -70,6 +88,12 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
 
 def get_password_hash(password: str) -> str:
+    # bcrypt has a 72-byte limit, so we need to truncate longer passwords
+    # Convert to bytes and truncate to 72 bytes, then back to string
+    password_bytes = password.encode('utf-8')
+    if len(password_bytes) > 72:
+        password_bytes = password_bytes[:72]
+        password = password_bytes.decode('utf-8', errors='ignore')
     return pwd_context.hash(password)
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:

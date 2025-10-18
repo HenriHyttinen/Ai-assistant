@@ -4,7 +4,19 @@ A comprehensive wellness platform that leverages AI to provide personalized heal
 
 ## For Reviewers - Quick Access
 
-**Easy Login for Testing:**
+### Option 1: Use Pre-configured Test Account (Recommended)
+**Setup the test account:**
+```bash
+cd backend
+source venv/bin/activate
+python create_test_account.py
+```
+
+**Then login with:**
+- Email: `reviewer@test.com`
+- Password: `testpass123`
+
+### Option 2: Create Your Own Account
 1. **Register** with any email (e.g., `your-email@example.com`)
 2. **Verify your account** using this simple command:
    ```bash
@@ -12,10 +24,6 @@ A comprehensive wellness platform that leverages AI to provide personalized heal
    ```
 3. **Login** with your email and password
 4. **2FA Code** (if prompted): Use `123456`
-
-**Alternative - Use Existing Verified Account:**
-- Email: `reviewer@test.com`
-- Password: `testpass123`
 
 **Demo Features to Test:**
 - ✅ Health Profile (create/edit with translations)

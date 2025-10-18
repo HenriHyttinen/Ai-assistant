@@ -46,6 +46,9 @@ python init_db.py
 # If you encounter Alembic migration errors, you can skip them as the database
 # is already properly initialized with all required tables.
 
+# Create test account for reviewers (optional but recommended)
+python create_test_account.py
+
 # Start the backend server
 python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
@@ -129,11 +132,23 @@ SECRET_KEY=your-super-secret-jwt-key
 ## Testing the Application
 
 ### 1. Create a Test Account
+
+**Option A: Use Pre-configured Test Account (Recommended)**
+```bash
+cd backend
+source venv/bin/activate
+python create_test_account.py
+```
+Then login with:
+- Email: `reviewer@test.com`
+- Password: `testpass123`
+
+**Option B: Create Your Own Account**
 1. Go to http://localhost:5173
 2. Click "Register" 
 3. Fill in your details
 4. Check your email for verification (if email is configured)
-5. Verify your account
+5. Verify your account using: `curl -X POST "http://localhost:8000/auth/verify-email-simple?email=your-email@example.com"`
 
 ### 2. Complete Health Profile
 1. Navigate to "Health Profile"

@@ -320,7 +320,8 @@ async def oauth_callback_google(
         # Redirect to frontend with error
         from fastapi.responses import RedirectResponse
         frontend_url = "http://localhost:5173/oauth/callback"
-        return RedirectResponse(url=f"{frontend_url}?error=oauth_failed")
+        error_message = str(e).replace(" ", "%20")  # URL encode spaces
+        return RedirectResponse(url=f"{frontend_url}?error=oauth_failed&message={error_message}")
 
 @router.get("/oauth/github/callback", response_model=Token, name="oauth_callback_github")
 async def oauth_callback_github(
@@ -363,7 +364,8 @@ async def oauth_callback_github(
         # Redirect to frontend with error
         from fastapi.responses import RedirectResponse
         frontend_url = "http://localhost:5173/oauth/callback"
-        return RedirectResponse(url=f"{frontend_url}?error=oauth_failed")
+        error_message = str(e).replace(" ", "%20")  # URL encode spaces
+        return RedirectResponse(url=f"{frontend_url}?error=oauth_failed&message={error_message}")
 
 @router.post("/verify-2fa-setup")
 async def verify_two_factor_setup(
