@@ -158,6 +158,8 @@ export const translations = {
             logWeightRegularly: 'Log your weight regularly for better insights',
             setRealisticGoals: 'Set realistic goals and track progress',
             close: 'Close',
+            timeRange: 'Time Range',
+            activities: 'activities',
   },
   
   es: {
@@ -318,6 +320,8 @@ export const translations = {
             logWeightRegularly: 'Registra tu peso regularmente para mejores perspectivas',
             setRealisticGoals: 'Establece objetivos realistas y rastrea el progreso',
             close: 'Cerrar',
+            timeRange: 'Rango de Tiempo',
+            activities: 'actividades',
   },
   
   fr: {
@@ -478,6 +482,8 @@ export const translations = {
             logWeightRegularly: 'Enregistrez votre poids régulièrement pour de meilleures perspectives',
             setRealisticGoals: 'Définissez des objectifs réalistes et suivez les progrès',
             close: 'Fermer',
+            timeRange: 'Plage de Temps',
+            activities: 'activités',
   },
   
   de: {
@@ -638,6 +644,8 @@ export const translations = {
             logWeightRegularly: 'Notieren Sie Ihr Gewicht regelmäßig für bessere Erkenntnisse',
             setRealisticGoals: 'Setzen Sie realistische Ziele und verfolgen Sie den Fortschritt',
             close: 'Schließen',
+            timeRange: 'Zeitbereich',
+            activities: 'Aktivitäten',
   }
 };
 
