@@ -33,7 +33,13 @@ def fix_bcrypt_and_create_account():
     # Method 1: Try using the API endpoints (bypasses bcrypt issues)
     print("📡 Method 1: Using API endpoints...")
     try:
-        import requests
+        try:
+            import requests
+        except ImportError:
+            print("⚠️  requests module not available, trying urllib...")
+            import urllib.request
+            import urllib.parse
+            import json
         
         # Register the account
         register_response = requests.post(

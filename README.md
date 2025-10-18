@@ -9,16 +9,17 @@ A comprehensive wellness platform that leverages AI to provide personalized heal
 ```bash
 cd backend
 source venv/bin/activate
-python3 fix_bcrypt_issue.py
+python3 setup_reviewer_account.py
 ```
 
-**Alternative if bcrypt issues persist:**
+**Or manually (if script has issues):**
 ```bash
-# Register manually and verify (make sure backend is running)
+# 1. Register the account
 curl -X POST "http://localhost:8000/auth/register" \
   -H "Content-Type: application/json" \
   -d '{"email": "reviewer@test.com", "password": "testpass123"}'
 
+# 2. Verify the account  
 curl -X POST "http://localhost:8000/auth/verify-email-simple?email=reviewer@test.com"
 ```
 
@@ -33,7 +34,7 @@ curl -X POST "http://localhost:8000/auth/verify-email-simple?email=reviewer@test
    curl -X POST "http://localhost:8000/auth/verify-email-simple?email=your-email@example.com"
    ```
 3. **Login** with your email and password
-4. **2FA Code** (if prompted): Use `123456`
+4. **2FA Code** (if prompted): Use `123456` (after enabling 2FA in Settings)
 
 **Demo Features to Test:**
 - ✅ Health Profile (create/edit with translations)

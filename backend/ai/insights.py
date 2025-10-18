@@ -7,7 +7,8 @@ load_dotenv()
 
 # Initialize OpenAI client only if API key is available
 api_key = os.getenv("OPENAI_API_KEY")
-if api_key:
+# For development, disable OpenAI API to improve performance
+if api_key and os.getenv("USE_OPENAI", "false").lower() == "true":
     from openai import OpenAI
     client = OpenAI(api_key=api_key)
 else:

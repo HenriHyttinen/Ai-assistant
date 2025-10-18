@@ -171,6 +171,9 @@ async def get_metrics_history(
     
     return metrics
 
+# Simple in-memory cache for insights (expires after 5 minutes)
+_insights_cache = {}
+
 @router.get("/insights")
 async def get_health_insights(
     current_user: User = Depends(get_current_user),
@@ -186,10 +189,24 @@ async def get_health_insights(
             detail="Health profile not found"
         )
     
+    # Check cache first
+    cache_key = f"insights_{current_user.id}_{profile.updated_at}"
+    if cache_key in _insights_cache:
+        import time
+        cached_data, timestamp = _insights_cache[cache_key]
+        # Cache expires after 5 minutes
+        if time.time() - timestamp < 300:
+            return cached_data
+    
     # Get user settings for data normalization
-    from services.settings import get_user_settings
-    user_settings = get_user_settings(db, current_user.id)
-    settings_dict = user_settings.__dict__ if user_settings else {}
+    try:
+        from services.settings import get_user_settings
+        user_settings = get_user_settings(db, current_user.id)
+        settings_dict = user_settings.__dict__ if user_settings else {}
+    except Exception as e:
+        # If settings service fails, use default settings
+        print(f"Settings service error: {e}")
+        settings_dict = {"language": "en", "measurement_system": "metric"}
     
     # Generate AI insights with normalized data
     insights = generate_health_insights(profile.__dict__, settings_dict)
@@ -199,7 +216,7 @@ async def get_health_insights(
     bmi_category = get_bmi_category(bmi)
     wellness_score = calculate_wellness_score(profile.__dict__)
     
-    return {
+    result = {
         "insights": insights,
         "metrics": {
             "bmi": bmi,
@@ -207,6 +224,12 @@ async def get_health_insights(
             "wellness_score": wellness_score
         }
     }
+    
+    # Cache the result
+    import time
+    _insights_cache[cache_key] = (result, time.time())
+    
+    return result
 
 @router.get("/weekly-summary")
 async def get_weekly_summary(
