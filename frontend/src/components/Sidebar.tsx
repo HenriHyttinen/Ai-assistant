@@ -17,42 +17,8 @@ import {
 } from 'react-icons/fi';
 import { Link as RouterLink } from 'react-router-dom';
 import { useApp } from '../contexts/AppContext';
+import { t } from '../utils/translations';
 
-// Inline translation function to avoid module loading issues
-const translations = {
-  en: {
-    dashboard: 'Dashboard',
-    healthProfile: 'Health Profile',
-    analytics: 'Analytics',
-    goals: 'Goals',
-    settings: 'Settings',
-  },
-  es: {
-    dashboard: 'Panel de Control',
-    healthProfile: 'Perfil de Salud',
-    analytics: 'Analíticas',
-    goals: 'Objetivos',
-    settings: 'Configuración',
-  },
-  fr: {
-    dashboard: 'Tableau de Bord',
-    healthProfile: 'Profil de Santé',
-    analytics: 'Analytiques',
-    goals: 'Objectifs',
-    settings: 'Paramètres',
-  },
-  de: {
-    dashboard: 'Übersicht',
-    healthProfile: 'Gesundheitsprofil',
-    analytics: 'Analytik',
-    goals: 'Ziele',
-    settings: 'Einstellungen',
-  },
-};
-
-const t = (key: keyof typeof translations.en, currentLang: string = 'en') => {
-  return translations[currentLang as keyof typeof translations]?.[key] || translations.en[key] || key;
-};
 
 interface LinkItemProps {
   nameKey: string;
@@ -92,7 +58,7 @@ export default function Sidebar() {
       <VStack spacing={2} align="stretch" px={4}>
         {LinkItems.map((link) => (
           <NavItem key={link.nameKey} icon={link.icon} path={link.path}>
-            {t(link.nameKey as keyof typeof translations.en, language)}
+            {t(link.nameKey as any, language)}
           </NavItem>
         ))}
       </VStack>

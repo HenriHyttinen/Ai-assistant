@@ -18,6 +18,8 @@ import {
 import { useFormik } from 'formik';
 import * as Yup from 'yup';
 import { analytics } from '../services/api';
+import { useApp } from '../contexts/AppContext';
+import { t } from '../utils/translations';
 
 interface ActivityLogModalProps {
   isOpen: boolean;
@@ -32,18 +34,19 @@ interface ActivityFormValues {
   notes: string;
 }
 
-const validationSchema = Yup.object({
-  activity_type: Yup.string().required('Activity type is required'),
-  duration: Yup.number()
-    .min(1, 'Duration must be at least 1 minute')
-    .max(480, 'Duration cannot exceed 8 hours')
-    .required('Duration is required'),
-  intensity: Yup.string().required('Intensity is required'),
-  notes: Yup.string().max(500, 'Notes cannot exceed 500 characters'),
-});
-
 const ActivityLogModal = ({ isOpen, onClose, onActivityLogged }: ActivityLogModalProps) => {
+  const { language } = useApp();
   const toast = useToast();
+
+  const getValidationSchema = (language: string) => Yup.object({
+    activity_type: Yup.string().required(t('activityTypeRequired' as any, language)),
+    duration: Yup.number()
+      .min(1, t('durationMin' as any, language))
+      .max(480, t('durationMax' as any, language))
+      .required(t('durationRequired' as any, language)),
+    intensity: Yup.string().required(t('intensityRequired' as any, language)),
+    notes: Yup.string().max(500, t('notesMaxLength' as any, language)),
+  });
 
   const formik = useFormik<ActivityFormValues>({
     initialValues: {
@@ -52,7 +55,7 @@ const ActivityLogModal = ({ isOpen, onClose, onActivityLogged }: ActivityLogModa
       intensity: 'moderate',
       notes: '',
     },
-    validationSchema,
+    validationSchema: getValidationSchema(language),
     onSubmit: async (values, { setSubmitting, resetForm }) => {
       try {
         await analytics.createActivity({
@@ -63,8 +66,8 @@ const ActivityLogModal = ({ isOpen, onClose, onActivityLogged }: ActivityLogModa
         });
 
         toast({
-          title: 'Activity Logged!',
-          description: 'Your activity has been successfully recorded.',
+          title: t('activityLoggedSuccess' as any, language),
+          description: t('activityLoggedSuccess' as any, language),
           status: 'success',
           duration: 3000,
           isClosable: true,
@@ -75,8 +78,8 @@ const ActivityLogModal = ({ isOpen, onClose, onActivityLogged }: ActivityLogModa
         onActivityLogged?.();
       } catch (error: any) {
         toast({
-          title: 'Error',
-          description: error.response?.data?.detail || 'Failed to log activity',
+          title: t('error' as any, language),
+          description: error.response?.data?.detail || t('activityLoggedError' as any, language),
           status: 'error',
           duration: 5000,
           isClosable: true,
@@ -91,26 +94,26 @@ const ActivityLogModal = ({ isOpen, onClose, onActivityLogged }: ActivityLogModa
     <Modal isOpen={isOpen} onClose={onClose} size="md">
       <ModalOverlay />
       <ModalContent>
-        <ModalHeader>Log Today's Activity</ModalHeader>
+        <ModalHeader>{t('logTodaysActivity' as any, language)}</ModalHeader>
         <ModalCloseButton />
         <form onSubmit={formik.handleSubmit}>
           <ModalBody>
             <VStack spacing={4}>
               <FormControl isInvalid={formik.touched.activity_type && !!formik.errors.activity_type}>
-                <FormLabel>Activity Type</FormLabel>
+                <FormLabel>{t('activityType' as any, language)}</FormLabel>
                 <Select
-                  placeholder="Select activity type"
+                  placeholder={t('selectActivity' as any, language)}
                   {...formik.getFieldProps('activity_type')}
                 >
-                  <option value="running">Running</option>
-                  <option value="walking">Walking</option>
-                  <option value="cycling">Cycling</option>
-                  <option value="swimming">Swimming</option>
-                  <option value="weight_training">Weight Training</option>
-                  <option value="yoga">Yoga</option>
-                  <option value="dancing">Dancing</option>
-                  <option value="sports">Sports</option>
-                  <option value="other">Other</option>
+                  <option value="running">{t('running' as any, language)}</option>
+                  <option value="walking">{t('walking' as any, language)}</option>
+                  <option value="cycling">{t('cycling' as any, language)}</option>
+                  <option value="swimming">{t('swimming' as any, language)}</option>
+                  <option value="weight_training">{t('weightTraining' as any, language)}</option>
+                  <option value="yoga">{t('yoga' as any, language)}</option>
+                  <option value="dancing">{t('dancing' as any, language)}</option>
+                  <option value="sports">{t('sports' as any, language)}</option>
+                  <option value="other">{t('other' as any, language)}</option>
                 </Select>
                 {formik.touched.activity_type && formik.errors.activity_type && (
                   <div style={{ color: 'red', fontSize: 'sm' }}>
@@ -120,7 +123,7 @@ const ActivityLogModal = ({ isOpen, onClose, onActivityLogged }: ActivityLogModa
               </FormControl>
 
               <FormControl isInvalid={formik.touched.duration && !!formik.errors.duration}>
-                <FormLabel>Duration (minutes)</FormLabel>
+                <FormLabel>{t('duration' as any, language)}</FormLabel>
                 <Input
                   type="number"
                   min="1"
@@ -135,12 +138,12 @@ const ActivityLogModal = ({ isOpen, onClose, onActivityLogged }: ActivityLogModa
               </FormControl>
 
               <FormControl isInvalid={formik.touched.intensity && !!formik.errors.intensity}>
-                <FormLabel>Intensity</FormLabel>
+                <FormLabel>{t('intensity' as any, language)}</FormLabel>
                 <Select {...formik.getFieldProps('intensity')}>
-                  <option value="low">Low</option>
-                  <option value="moderate">Moderate</option>
-                  <option value="high">High</option>
-                  <option value="very_high">Very High</option>
+                  <option value="low">{t('low' as any, language)}</option>
+                  <option value="moderate">{t('moderate' as any, language)}</option>
+                  <option value="high">{t('high' as any, language)}</option>
+                  <option value="very_high">{t('veryHigh' as any, language)}</option>
                 </Select>
                 {formik.touched.intensity && formik.errors.intensity && (
                   <div style={{ color: 'red', fontSize: 'sm' }}>
@@ -150,9 +153,9 @@ const ActivityLogModal = ({ isOpen, onClose, onActivityLogged }: ActivityLogModa
               </FormControl>
 
               <FormControl isInvalid={formik.touched.notes && !!formik.errors.notes}>
-                <FormLabel>Notes (optional)</FormLabel>
+                <FormLabel>{t('notes' as any, language)}</FormLabel>
                 <Textarea
-                  placeholder="Any additional notes about your activity..."
+                  placeholder={t('notesPlaceholder' as any, language)}
                   rows={3}
                   {...formik.getFieldProps('notes')}
                 />
@@ -167,14 +170,14 @@ const ActivityLogModal = ({ isOpen, onClose, onActivityLogged }: ActivityLogModa
 
           <ModalFooter>
             <Button variant="ghost" mr={3} onClick={onClose}>
-              Cancel
+              {t('cancel' as any, language)}
             </Button>
             <Button
               colorScheme="blue"
               type="submit"
               isLoading={formik.isSubmitting}
             >
-              Log Activity
+              {t('logActivity' as any, language)}
             </Button>
           </ModalFooter>
         </form>

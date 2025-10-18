@@ -41,7 +41,7 @@ const translations = {
     language: 'Language',
     measurementSystem: 'Measurement System',
     metric: 'Metric (kg, cm)',
-    imperial: 'Imperial (lb, in)',
+    imperial: 'Freedom Units (lb, in)',
     success: 'Success',
     notifications: 'Notifications',
     preferences: 'Preferences',
@@ -248,7 +248,7 @@ const Settings = () => {
       
       toast({
         title: t('success', language),
-        description: 'Your preferences have been updated successfully.',
+        description: t('preferencesUpdatedSuccess' as any, language),
         status: 'success',
         duration: 5000,
         isClosable: true,

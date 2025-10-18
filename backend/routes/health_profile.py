@@ -174,18 +174,11 @@ async def get_metrics_history(
 # Simple in-memory cache for insights (expires after 5 minutes)
 _insights_cache = {}
 
-def clear_insights_cache():
-    """Clear the insights cache to force regeneration."""
-    global _insights_cache
-    _insights_cache = {}
-
 @router.get("/insights")
 async def get_health_insights(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ) -> Dict[str, Any]:
-    # Clear cache to ensure fresh insights with current language
-    clear_insights_cache()
     profile = db.query(HealthProfile).filter(
         HealthProfile.user_id == current_user.id
     ).first()

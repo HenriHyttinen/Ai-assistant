@@ -21,7 +21,7 @@ import {
   Button,
   useDisclosure,
 } from '@chakra-ui/react';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { analytics, healthProfile } from '../services/api';
 import { useApp } from '../contexts/AppContext';
 import ActivityLogModal from '../components/ActivityLogModal';
@@ -67,60 +67,54 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const fetchData = async () => {
+  const fetchData = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      // Fetch analytics data
+      const analyticsResponse = await analytics.getAnalytics();
+      setAnalyticsData(analyticsResponse);
+
+      // Fetch health profile
+      const profileResponse = await healthProfile.getProfile();
+      setProfileData(profileResponse);
+
+      // Fetch AI insights
       try {
-        setLoading(true);
-        setError(null);
-
-        // Fetch analytics data
-        const analyticsResponse = await analytics.getAnalytics();
-        setAnalyticsData(analyticsResponse);
-
-        // Fetch health profile
-        const profileResponse = await healthProfile.getProfile();
-        setProfileData(profileResponse);
-
-        // Fetch AI insights
-        try {
-          console.log('Fetching insights...');
-          const insightsResponse = await healthProfile.getInsights();
-          console.log('Insights response:', insightsResponse);
-          if (insightsResponse && insightsResponse.data && insightsResponse.data.insights) {
-            setAiInsights(insightsResponse.data);
-            console.log('Insights set:', insightsResponse.data.insights);
-          } else {
-            console.log('No insights in response or empty insights array');
-            console.log('Response data:', insightsResponse.data);
-          }
-        } catch (insightsError) {
-          console.error('Failed to refresh insights:', insightsError);
-          // Set fallback insights for development
-          setAiInsights({
-            insights: [
-              "Welcome to your health journey! Start by logging your weight and activities.",
-              "Set up your health profile to get personalized insights.",
-              "Track your daily activities to see your progress over time.",
-              "✅ You're taking the first step towards better health!",
-              "💡 Consider setting specific, achievable health goals"
-            ],
-            metrics: {
-              bmi: 0,
-              bmi_category: "Unknown",
-              wellness_score: 0
-            }
-          });
+        const insightsResponse = await healthProfile.getInsights();
+        if (insightsResponse && insightsResponse.data && insightsResponse.data.insights) {
+          setAiInsights(insightsResponse.data);
         }
-      } catch (err) {
-        console.error('Error fetching dashboard data:', err);
-        setError('Failed to load dashboard data');
-      } finally {
-        setLoading(false);
+      } catch (insightsError) {
+        console.error('Failed to refresh insights:', insightsError);
+        // Set fallback insights for development
+        setAiInsights({
+          insights: [
+            "Welcome to your health journey! Start by logging your weight and activities.",
+            "Set up your health profile to get personalized insights.",
+            "Track your daily activities to see your progress over time.",
+            "✅ You're taking the first step towards better health!",
+            "💡 Consider setting specific, achievable health goals"
+          ],
+          metrics: {
+            bmi: 0,
+            bmi_category: "Unknown",
+            wellness_score: 0
+          }
+        });
       }
-    };
-
-    fetchData();
+    } catch (err) {
+      console.error('Error fetching dashboard data:', err);
+      setError('Failed to load dashboard data');
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
 
   // Listen for profile updates from other pages
   useEffect(() => {
@@ -209,7 +203,7 @@ const Dashboard = () => {
               </StatNumber>
               <StatHelpText>
                 <StatArrow type={analyticsData?.current_wellness_score >= 70 ? 'increase' : 'decrease'} />
-                {analyticsData?.current_wellness_score >= 80 ? 'Excellent' : analyticsData?.current_wellness_score >= 60 ? 'Good' : 'Needs Improvement'}
+                {analyticsData?.current_wellness_score >= 80 ? t('excellent' as any, language) : analyticsData?.current_wellness_score >= 60 ? t('good' as any, language) : t('needsImprovement' as any, language)}
               </StatHelpText>
             </Stat>
           </CardBody>
@@ -218,7 +212,7 @@ const Dashboard = () => {
         <Card>
           <CardBody>
             <Stat>
-              <StatLabel>Progress Towards Goal</StatLabel>
+              <StatLabel>{t('progressTowardsGoal' as any, language)}</StatLabel>
               <StatNumber color={analyticsData?.progress_towards_goal >= 80 ? 'green.500' : analyticsData?.progress_towards_goal >= 50 ? 'orange.500' : 'blue.500'}>
                 {analyticsData?.progress_towards_goal?.toFixed(0) || '0'}%
               </StatNumber>
@@ -239,7 +233,7 @@ const Dashboard = () => {
               </StatNumber>
               <StatHelpText>
                 <StatArrow type={analyticsData?.activity_summary?.activity_count >= 3 ? 'increase' : 'decrease'} />
-                this week
+                {t('thisWeek' as any, language)}
               </StatHelpText>
             </Stat>
           </CardBody>
@@ -257,7 +251,7 @@ const Dashboard = () => {
         </GridItem>
 
         <GridItem>
-          <Card>
+          <Card bg="rgba(255, 255, 255, 0.95)" backdropFilter="blur(10px)" border="1px solid rgba(255, 255, 255, 0.2)" boxShadow="0 8px 32px rgba(0, 0, 0, 0.1)">
             <CardHeader>
               <Heading size="md">{t('activitySummary', language)}</Heading>
             </CardHeader>
@@ -291,7 +285,7 @@ const Dashboard = () => {
       </Grid>
 
       {/* AI Insights */}
-      <Card mt={6}>
+      <Card mt={6} bg="rgba(255, 255, 255, 0.95)" backdropFilter="blur(10px)" border="1px solid rgba(255, 255, 255, 0.2)" boxShadow="0 8px 32px rgba(0, 0, 0, 0.1)">
         <CardHeader>
           <Heading size="md">{t('personalizedHealthInsights', language)}</Heading>
         </CardHeader>

@@ -23,6 +23,17 @@ import MainLayout from './layouts/MainLayout';
 import ProtectedRoute from './components/ProtectedRoute';
 
 const App = () => {
+  // Suppress React DevTools message in development
+  if (process.env.NODE_ENV === 'development') {
+    const originalConsoleLog = console.log;
+    console.log = (...args) => {
+      if (args[0] && typeof args[0] === 'string' && args[0].includes('React DevTools')) {
+        return;
+      }
+      originalConsoleLog(...args);
+    };
+  }
+
   return (
     <ChakraProvider theme={theme}>
       <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>

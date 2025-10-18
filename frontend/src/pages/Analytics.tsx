@@ -475,8 +475,8 @@ const Analytics = () => {
           <CardBody>
             {goalsList.length === 0 ? (
               <Box textAlign="center" py={8}>
-                <Text color="gray.500" mb={4}>No goals set yet</Text>
-                <Button colorScheme="blue" as="a" href="/goals">Create your first goal</Button>
+                <Text color="gray.500" mb={4}>{t('noGoalsSetYet' as any, language)}</Text>
+                <Button colorScheme="blue" as="a" href="/goals">{t('createYourFirstGoal' as any, language)}</Button>
               </Box>
             ) : (
               <VStack spacing={6} align="stretch">
