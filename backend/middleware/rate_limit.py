@@ -60,7 +60,7 @@ class RateLimiter:
         return request.client.host if request.client else "unknown"
 
 # Global rate limiter instance
-rate_limiter = RateLimiter(max_requests=100, time_window=60)  # 100 requests per minute
+rate_limiter = RateLimiter(max_requests=200, time_window=60)  # 200 requests per minute for development
 
 async def rate_limit_middleware(request: Request, call_next):
     """Rate limiting middleware."""

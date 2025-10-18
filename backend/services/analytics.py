@@ -47,7 +47,7 @@ def calculate_weekly_summary(user_id: int, db: Session) -> Dict[str, Any]:
         "activities": {
             "total_duration": sum(a.duration for a in activities),
             "activity_count": len(activities),
-            "average_duration": sum(a.duration for a in activities) / len(activities) if activities else 0,
+            "average_duration": round(sum(a.duration for a in activities) / len(activities), 1) if activities else 0,
             "activity_types": list(set(a.activity_type for a in activities))
         }
     }

@@ -14,6 +14,7 @@ import {
   FiCompass,
   FiStar,
   FiSettings,
+  FiAward,
 } from 'react-icons/fi';
 import { Link as RouterLink } from 'react-router-dom';
 import { useApp } from '../contexts/AppContext';
@@ -31,6 +32,7 @@ const LinkItems: Array<LinkItemProps> = [
   { nameKey: 'healthProfile', icon: FiTrendingUp, path: '/profile' },
   { nameKey: 'analytics', icon: FiCompass, path: '/analytics' },
   { nameKey: 'goals', icon: FiStar, path: '/goals' },
+  { nameKey: 'achievements', icon: FiAward, path: '/achievements' },
   { nameKey: 'settings', icon: FiSettings, path: '/settings' },
 ];
 

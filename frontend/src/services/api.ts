@@ -155,7 +155,7 @@ interface Settings {
 
 // Health Profile API calls
 export const healthProfile = {
-  getProfile: () => api.get<HealthProfile>('/health/profiles/me'),
+  getProfile: () => api.get<HealthProfile>(`/health/profiles/me?t=${Date.now()}`),
   updateProfile: (data: Partial<HealthProfile>) => api.put<HealthProfile>('/health/profiles/me', data),
   createProfile: (data: Partial<HealthProfile>) => api.post<HealthProfile>('/health/profiles', data),
   getInsights: () => api.get('/health/insights'),
@@ -163,7 +163,7 @@ export const healthProfile = {
 
 // Analytics API calls
 export const analytics = {
-  getAnalytics: () => api.get<HealthAnalytics>('/health/profiles/me/analytics'),
+  getAnalytics: () => api.get<HealthAnalytics>(`/health/profiles/me/analytics?t=${Date.now()}`),
   getMetrics: (days: number = 30) => api.get<MetricsHistory[]>(`/health/profiles/me/metrics?days=${days}`),
   getActivities: (days: number = 7) => api.get<ActivityLog[]>(`/health/profiles/me/activities?days=${days}`),
   createActivity: (data: Partial<ActivityLog>) => api.post<ActivityLog>('/health/profiles/me/activities', data),

@@ -32,6 +32,7 @@ interface HealthAnalytics {
   current_bmi: number;
   current_wellness_score: number;
   weight_trend: number[];
+  weight_trend_timestamps: string[];
   activity_summary: {
     activity_count: number;
     total_duration: number;
@@ -45,6 +46,7 @@ interface HealthProfile {
   weight: number;
   height: number;
   target_weight?: number;
+  fitness_goal?: string;
   updated_at: string;
 }
 
@@ -59,6 +61,20 @@ interface AIInsights {
 
 const Dashboard = () => {
   const { measurementSystem, language } = useApp();
+
+  // Helper function to format duration in hours and minutes
+  const formatDuration = (minutes: number): string => {
+    const hours = Math.floor(minutes / 60);
+    const remainingMinutes = Math.round(minutes % 60);
+    
+    if (hours === 0) {
+      return `${remainingMinutes}min`;
+    } else if (remainingMinutes === 0) {
+      return `${hours}h`;
+    } else {
+      return `${hours}h ${remainingMinutes}min`;
+    }
+  };
   const { isOpen: isActivityModalOpen, onOpen: onActivityModalOpen, onClose: onActivityModalClose } = useDisclosure();
   
   const [analyticsData, setAnalyticsData] = useState<HealthAnalytics | null>(null);
@@ -68,25 +84,25 @@ const Dashboard = () => {
   const [error, setError] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      // Fetch analytics data
-      const analyticsResponse = await analytics.getAnalytics();
-      setAnalyticsData(analyticsResponse.data);
-
-      // Fetch health profile
-      const profileResponse = await healthProfile.getProfile();
-      setProfileData(profileResponse.data);
-
-      // Fetch AI insights
       try {
-        const insightsResponse = await healthProfile.getInsights();
+        setLoading(true);
+        setError(null);
+        
+        // Fetch analytics data
+        const analyticsResponse = await analytics.getAnalytics();
+        setAnalyticsData(analyticsResponse.data);
+        
+      // Fetch health profile
+        const profileResponse = await healthProfile.getProfile();
+        setProfileData(profileResponse.data);
+        
+      // Fetch AI insights
+        try {
+          const insightsResponse = await healthProfile.getInsights();
         if (insightsResponse && insightsResponse.data && insightsResponse.data.insights) {
           setAiInsights(insightsResponse.data);
-        }
-      } catch (insightsError) {
+          }
+        } catch (insightsError) {
         console.error('Failed to refresh insights:', insightsError);
         // Set fallback insights for development
         setAiInsights({
@@ -107,9 +123,9 @@ const Dashboard = () => {
     } catch (err) {
       console.error('Error fetching dashboard data:', err);
       setError('Failed to load dashboard data');
-    } finally {
-      setLoading(false);
-    }
+      } finally {
+        setLoading(false);
+      }
   }, []);
 
   useEffect(() => {
@@ -177,7 +193,7 @@ const Dashboard = () => {
   return (
     <Box p={4}>
       <Heading mb={6}>{t('dashboard', language)}</Heading>
-
+      
       {/* Key Metrics */}
       <SimpleGrid columns={{ base: 1, md: 2, lg: 4 }} spacing={6} mb={8}>
         <Card>
@@ -247,7 +263,9 @@ const Dashboard = () => {
             currentWeight={profileData?.weight || 0}
             targetWeight={profileData?.target_weight || 0}
             weightTrend={analyticsData?.weight_trend || []}
+            weightTrendTimestamps={analyticsData?.weight_trend_timestamps || []}
             measurementSystem={measurementSystem}
+            fitnessGoal={profileData?.fitness_goal}
           />
         </GridItem>
 
@@ -264,11 +282,11 @@ const Dashboard = () => {
                 </Box>
                 <Box>
                   <Text fontWeight="bold" color="gray.500">{t('totalDuration', language)}</Text>
-                  <Text fontSize="2xl">{analyticsData?.activity_summary?.total_duration || 0} {t('minTotal', language)}</Text>
+                  <Text fontSize="2xl">{formatDuration(analyticsData?.activity_summary?.total_duration || 0)}</Text>
                 </Box>
                 <Box>
                   <Text fontWeight="bold" color="gray.500">{t('averageDuration', language)}</Text>
-                  <Text fontSize="2xl">{analyticsData?.activity_summary?.average_duration || 0} min</Text>
+                  <Text fontSize="2xl">{formatDuration(analyticsData?.activity_summary?.average_duration || 0)}</Text>
                 </Box>
                 <Box>
                   <Text fontWeight="bold" color="gray.500">{t('activityTypes', language)}</Text>
@@ -287,23 +305,24 @@ const Dashboard = () => {
 
       {/* AI Insights */}
       <Card mt={6} bg="rgba(255, 255, 255, 0.95)" backdropFilter="blur(10px)" border="1px solid rgba(255, 255, 255, 0.2)" boxShadow="0 8px 32px rgba(0, 0, 0, 0.1)">
-        <CardHeader>
+              <CardHeader>
           <Heading size="md">{t('personalizedHealthInsights', language)}</Heading>
-        </CardHeader>
-        <CardBody>
+              </CardHeader>
+              <CardBody>
           <VStack spacing={4} align="stretch">
             {aiInsights?.insights?.map((insight, index) => (
               <Box key={index} p={4} bg="blue.50" borderRadius="md" border="1px" borderColor="blue.200">
                 <Text color="blue.800">{insight}</Text>
-              </Box>
+                    </Box>
             )) || (
               <Box p={4} bg="blue.50" borderRadius="md" border="1px" borderColor="blue.200">
                 <Text color="blue.800">Welcome to your health journey! Start by logging your weight and activities.</Text>
-              </Box>
+                    </Box>
             )}
-          </VStack>
-        </CardBody>
-      </Card>
+                </VStack>
+              </CardBody>
+            </Card>
+
 
       <ActivityLogModal
         isOpen={isActivityModalOpen}
@@ -313,8 +332,9 @@ const Dashboard = () => {
           window.location.reload();
         }}
       />
+
     </Box>
   );
 };
 
-export default Dashboard;
+export default Dashboard; 

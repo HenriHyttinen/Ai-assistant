@@ -85,10 +85,11 @@ class WellnessScoreResponse(BaseModel):
     components: Dict[str, float]
 
 class HealthAnalytics(BaseModel):
-    current_bmi: float
-    current_wellness_score: float
-    weight_trend: List[float]
-    bmi_trend: List[float]
-    wellness_score_trend: List[float]
-    activity_summary: dict
-    progress_towards_goal: float  # percentage 
+    current_bmi: Optional[float] = None
+    current_wellness_score: Optional[float] = None
+    weight_trend: List[float] = []
+    bmi_trend: List[float] = []
+    wellness_score_trend: List[float] = []
+    weight_trend_timestamps: List[str] = []  # ISO format timestamps
+    activity_summary: dict = {}
+    progress_towards_goal: Optional[float] = None  # percentage 

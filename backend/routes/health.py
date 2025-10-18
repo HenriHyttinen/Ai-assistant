@@ -124,6 +124,19 @@ def create_activity_log(
         user_id=current_user.id,
         **activity.dict()
     )
+    
+    # Check for new achievements after logging activity
+    try:
+        from services.achievement_service import AchievementService
+        achievement_service = AchievementService(db)
+        new_achievements = achievement_service.check_and_award_achievements(current_user.id)
+        # Note: We could return new achievements in the response, but for now we'll just log them
+        if new_achievements:
+            print(f"User {current_user.id} unlocked {len(new_achievements)} new achievements!")
+    except Exception as e:
+        # Don't fail the activity logging if achievement checking fails
+        print(f"Error checking achievements: {e}")
+    
     return ActivityLogResponse.model_validate(db_activity)
 
 @router.get("/profiles/me/activities", response_model=List[ActivityLogResponse])
@@ -161,16 +174,21 @@ def get_my_health_analytics(
         # Create initial metrics if none exist
         from analytics.health_metrics import calculate_bmi, calculate_wellness_score
         
-        bmi = calculate_bmi(profile.weight, profile.height)
-        wellness_score = calculate_wellness_score({
-            'weight': profile.weight,
-            'height': profile.height,
-            'activity_level': profile.activity_level,
-            'weekly_activity_frequency': profile.weekly_activity_frequency,
-            'exercise_types': profile.exercise_types,
-            'average_session_duration': profile.average_session_duration,
-            'fitness_level': profile.fitness_level
-        })
+        # Only calculate metrics if we have the required data
+        bmi = None
+        wellness_score = None
+        
+        if profile.weight and profile.height:
+            bmi = calculate_bmi(profile.weight, profile.height)
+            wellness_score = calculate_wellness_score({
+                'weight': profile.weight,
+                'height': profile.height,
+                'activity_level': profile.activity_level,
+                'weekly_activity_frequency': profile.weekly_activity_frequency,
+                'exercise_types': profile.exercise_types,
+                'average_session_duration': profile.average_session_duration,
+                'fitness_level': profile.fitness_level
+            })
         
         # Create metrics history record
         latest_metrics = health.MetricsHistory(
@@ -186,30 +204,70 @@ def get_my_health_analytics(
     
     # Get metrics trends
     metrics_history = health.get_metrics_history(db, profile.id, days=30)
-    weight_trend = [m.weight for m in metrics_history]
-    bmi_trend = [m.bmi for m in metrics_history]
-    wellness_score_trend = [m.wellness_score for m in metrics_history]
     
-    # If no history, use current values
+    # Filter out None values and create trend data with timestamps
+    weight_trend = []
+    bmi_trend = []
+    wellness_score_trend = []
+    weight_trend_timestamps = []
+    
+    for m in metrics_history:
+        if m.weight is not None:
+            weight_trend.append(m.weight)
+            weight_trend_timestamps.append(m.recorded_at.isoformat())
+        if m.bmi is not None:
+            bmi_trend.append(m.bmi)
+        if m.wellness_score is not None:
+            wellness_score_trend.append(m.wellness_score)
+    
+    # Reverse the trends to show chronological order (oldest first)
+    # get_metrics_history returns newest first, but graph needs oldest first
+    weight_trend = weight_trend[::-1]
+    bmi_trend = bmi_trend[::-1]
+    wellness_score_trend = wellness_score_trend[::-1]
+    weight_trend_timestamps = weight_trend_timestamps[::-1]
+    
+    # If no history, use current values (only if they exist)
     if not weight_trend:
-        weight_trend = [profile.weight]
-        bmi_trend = [latest_metrics.bmi]
-        wellness_score_trend = [latest_metrics.wellness_score]
+        weight_trend = [profile.weight] if profile.weight else []
+        weight_trend_timestamps = [datetime.utcnow().isoformat()] if profile.weight else []
+        bmi_trend = [latest_metrics.bmi] if latest_metrics.bmi else []
+        wellness_score_trend = [latest_metrics.wellness_score] if latest_metrics.wellness_score else []
+    else:
+        # Ensure the latest weight from profile is included in the trend if it's newer
+        if profile.weight and (not weight_trend or profile.weight != weight_trend[-1]):
+            # Add current profile weight as the latest entry if it's different from the last trend entry
+            weight_trend.append(profile.weight)
+            weight_trend_timestamps.append(datetime.utcnow().isoformat())
     
     # Get activity summary
     activity_logs = health.get_activity_logs(db, current_user.id, days=7)
     activity_summary = {
         "total_duration": sum(log.duration for log in activity_logs),
         "activity_count": len(activity_logs),
-        "average_duration": sum(log.duration for log in activity_logs) / len(activity_logs) if activity_logs else 0,
+        "average_duration": round(sum(log.duration for log in activity_logs) / len(activity_logs), 1) if activity_logs else 0,
         "activity_types": list(set(log.activity_type for log in activity_logs))
     }
     
     # Calculate progress towards goal
-    if profile.target_weight and profile.weight:
-        weight_diff = abs(profile.target_weight - profile.weight)
-        initial_diff = abs(profile.target_weight - weight_trend[-1]) if weight_trend else weight_diff
-        progress = (1 - (weight_diff / initial_diff)) * 100 if initial_diff > 0 else 100
+    if profile.target_weight and profile.weight and weight_trend:
+        if profile.fitness_goal == "muscle_gain":
+            # For weight gain: progress is how much we've gained towards the target
+            starting_weight = weight_trend[0]  # First weight in trend
+            total_to_gain = profile.target_weight - starting_weight
+            gained_so_far = profile.weight - starting_weight
+            progress = (gained_so_far / total_to_gain) * 100 if total_to_gain > 0 else 0
+        elif profile.fitness_goal == "weight_loss":
+            # For weight loss: progress is how much we've lost towards the target
+            starting_weight = weight_trend[0]  # First weight in trend
+            total_to_lose = starting_weight - profile.target_weight
+            lost_so_far = starting_weight - profile.weight
+            progress = (lost_so_far / total_to_lose) * 100 if total_to_lose > 0 else 0
+        else:
+            # For other goals, use simple distance calculation
+            weight_diff = abs(profile.target_weight - profile.weight)
+            initial_diff = abs(profile.target_weight - weight_trend[0]) if weight_trend else weight_diff
+            progress = (1 - (weight_diff / initial_diff)) * 100 if initial_diff > 0 else 100
     else:
         progress = 0
     
@@ -219,6 +277,7 @@ def get_my_health_analytics(
         weight_trend=weight_trend,
         bmi_trend=bmi_trend,
         wellness_score_trend=wellness_score_trend,
+        weight_trend_timestamps=weight_trend_timestamps,
         activity_summary=activity_summary,
         progress_towards_goal=progress
     ) 

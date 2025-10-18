@@ -41,7 +41,8 @@ const translations = {
     language: 'Language',
     measurementSystem: 'Measurement System',
     metric: 'Metric (kg, cm)',
-    imperial: 'Freedom Units (lb, in)',
+    imperial: 'Imperial (lb, in)',
+    freedomUnits: 'Freedom Units (lb, in)',
     success: 'Success',
     notifications: 'Notifications',
     preferences: 'Preferences',
@@ -72,6 +73,7 @@ const translations = {
     measurementSystem: 'Sistema de Medidas',
     metric: 'Métrico (kg, cm)',
     imperial: 'Imperial (lb, pulg)',
+    freedomUnits: 'Unidades de Libertad (lb, pulg)',
     success: 'Éxito',
     notifications: 'Notificaciones',
     preferences: 'Preferencias',
@@ -102,6 +104,7 @@ const translations = {
     measurementSystem: 'Système de Mesure',
     metric: 'Métrique (kg, cm)',
     imperial: 'Impérial (lb, po)',
+    freedomUnits: 'Unités de Liberté (lb, po)',
     success: 'Succès',
     notifications: 'Notifications',
     preferences: 'Préférences',
@@ -132,6 +135,7 @@ const translations = {
     measurementSystem: 'Maßsystem',
     metric: 'Metrisch (kg, cm)',
     imperial: 'Imperial (lb, Zoll)',
+    freedomUnits: 'Freiheitseinheiten (lb, Zoll)',
     success: 'Erfolg',
     notifications: 'Benachrichtigungen',
     preferences: 'Einstellungen',
@@ -429,7 +433,7 @@ const Settings = () => {
                   onChange={(e) => handleSettingChange('measurementSystem', e.target.value)}
                 >
                   <option value="metric">{t('metric', language)}</option>
-                  <option value="imperial">{t('imperial', language)}</option>
+                  <option value="imperial">{t('freedomUnits', language)}</option>
                 </Select>
               </FormControl>
 
@@ -439,10 +443,10 @@ const Settings = () => {
                   value={settings.language}
                   onChange={(e) => handleSettingChange('language', e.target.value)}
                 >
-                  <option value="en">{t('english', language)}</option>
-                  <option value="es">{t('spanish', language)}</option>
-                  <option value="fr">{t('french', language)}</option>
-                  <option value="de">{t('german', language)}</option>
+                  <option value="en">English</option>
+                  <option value="es">Español</option>
+                  <option value="fr">Français</option>
+                  <option value="de">Deutsch</option>
                 </Select>
               </FormControl>
             </VStack>

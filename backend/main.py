@@ -15,6 +15,7 @@ from models.metrics_history import MetricsHistory
 from models.goal import Goal
 from models.user_settings import UserSettings
 from models.consent import DataConsent
+from models.achievement import Achievement, UserAchievement
 from routes.auth import router as auth_router
 from routes.health import router as health_router
 from routes.health_profile import router as health_profile_router
@@ -22,6 +23,7 @@ from routes.export import router as export_router
 from routes.goals import router as goals_router
 from routes.settings import router as settings_router
 from routes.consent import router as consent_router
+from routes.achievements import router as achievements_router
 from services.tasks import start_background_tasks
 from config import get_settings
 from logging_config import setup_logging
@@ -57,8 +59,14 @@ app.add_middleware(
         "http://127.0.0.1:5174",
         "http://localhost:5175",
         "http://127.0.0.1:5175",
+        "http://localhost:5176",
+        "http://127.0.0.1:5176",
+        "http://localhost:5177",
+        "http://127.0.0.1:5177",
+        "http://localhost:5178",
+        "http://127.0.0.1:5178",
     ],
-    allow_origin_regex=r"^http://(localhost|127\\.0\\.0\\.1):(5173|5174|5175)$",
+    allow_origin_regex=r"^http://(localhost|127\\.0\\.0\\.1):(5173|5174|5175|5176|5177|5178)$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -89,6 +97,7 @@ app.include_router(export_router, prefix="/export", tags=["Export"])
 app.include_router(goals_router, prefix="/goals", tags=["Goals"])
 app.include_router(settings_router, prefix="/settings", tags=["Settings"])
 app.include_router(consent_router, tags=["Data Consent"])
+app.include_router(achievements_router, prefix="/achievements", tags=["Achievements"])
 
 @app.get("/")
 async def root():

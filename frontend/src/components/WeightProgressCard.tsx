@@ -33,19 +33,24 @@ import { useState } from 'react';
 import { useApp } from '../contexts/AppContext';
 import { t } from '../utils/translations';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { healthProfile } from '../services/api';
 
 interface WeightProgressCardProps {
   currentWeight: number;
   targetWeight: number;
   weightTrend: number[];
+  weightTrendTimestamps?: string[];
   measurementSystem: 'metric' | 'imperial';
+  fitnessGoal?: string;
 }
 
 const WeightProgressCard = ({ 
   currentWeight, 
   targetWeight, 
-  weightTrend, 
-  measurementSystem 
+  weightTrend,
+  weightTrendTimestamps = [],
+  measurementSystem,
+  fitnessGoal
 }: WeightProgressCardProps) => {
   const { language } = useApp();
   const { isOpen, onOpen, onClose } = useDisclosure();
@@ -56,23 +61,123 @@ const WeightProgressCard = ({
 
   // Calculate progress
   const weightDifference = currentWeight - targetWeight;
-  const progressPercentage = Math.max(0, Math.min(100, (weightDifference / Math.abs(weightDifference + targetWeight)) * 100));
   
-  // Determine if gaining or losing weight
-  const isLosingWeight = currentWeight > targetWeight;
+  // Determine if gaining or losing weight based on fitness goal
+  const isGainingWeight = fitnessGoal?.toLowerCase().includes('muscle') || 
+                          fitnessGoal?.toLowerCase().includes('gain') || 
+                          fitnessGoal?.toLowerCase().includes('bulk') ||
+                          (currentWeight < targetWeight && !fitnessGoal?.toLowerCase().includes('lose'));
+  const isLosingWeight = fitnessGoal?.toLowerCase().includes('lose') || 
+                        fitnessGoal?.toLowerCase().includes('weight loss') ||
+                        (currentWeight > targetWeight && !fitnessGoal?.toLowerCase().includes('muscle') && !fitnessGoal?.toLowerCase().includes('gain'));
   
-  // Calculate trend
+  // Progress calculation based on goal type
+  const getProgressPercentage = () => {
+    if (isGainingWeight) {
+      // For weight gain: progress is how much we've gained towards the target
+      if (weightTrend.length > 0) {
+        // Use historical data if available
+        const startingWeight = weightTrend[0];
+        const totalToGain = targetWeight - startingWeight;
+        const gainedSoFar = currentWeight - startingWeight;
+        return totalToGain > 0 ? Math.max(0, Math.min(100, (gainedSoFar / totalToGain) * 100)) : 0;
+      } else {
+        // No historical data: calculate progress based on current vs target
+        // For weight gain, show progress based on how close we are to target
+        const totalToGain = targetWeight - currentWeight;
+        if (totalToGain <= 0) return 100; // Already at or above target
+        // Estimate starting weight as current weight for now
+        // This will be more accurate once user logs more weight entries
+        return 0; // Start at 0% and build up as user logs weight
+      }
+    } else if (isLosingWeight) {
+      // For weight loss: progress is how much we've lost towards the target
+      if (weightTrend.length > 0) {
+        // Use historical data if available
+        const startingWeight = weightTrend[0];
+        const totalToLose = startingWeight - targetWeight;
+        const lostSoFar = startingWeight - currentWeight;
+        return totalToLose > 0 ? Math.max(0, Math.min(100, (lostSoFar / totalToLose) * 100)) : 0;
+      } else {
+        // No historical data: calculate progress based on current vs target
+        // For weight loss, assume user started at current weight if no history
+        const totalToLose = currentWeight - targetWeight;
+        return totalToLose > 0 ? 0 : 100; // If already at or below target, show 100% progress
+      }
+    }
+    return 0;
+  };
+  
+  const progressPercentage = getProgressPercentage();
+  
+  // Calculate trend based on goal direction
   const getTrend = () => {
-    if (weightTrend.length < 2) return 'stable';
+    if (weightTrend.length < 2) {
+      // If we have current weight and target, we can still determine if we're on track
+      if (isGainingWeight && currentWeight < targetWeight) return 'up';    // On track to gain
+      if (isLosingWeight && currentWeight > targetWeight) return 'up';     // On track to lose
+      return 'stable';
+    }
+    
     const recent = weightTrend.slice(-3);
     const trend = recent[recent.length - 1] - recent[0];
-    if (trend > 0.5) return 'up';
-    if (trend < -0.5) return 'down';
+    
+    // For weight gain goals: positive trend (gaining weight) is good
+    if (isGainingWeight) {
+      if (trend > 0.5) return 'up';    // Gaining weight = good progress
+      if (trend < -0.5) return 'down';  // Losing weight = concerning
+      return 'stable';
+    } 
+    // For weight loss goals: negative trend (losing weight) is good
+    else if (isLosingWeight) {
+      if (trend < -0.5) return 'up';    // Losing weight = good progress
+      if (trend > 0.5) return 'down';   // Gaining weight = concerning
+      return 'stable';
+    }
     return 'stable';
   };
 
   const trend = getTrend();
-  const trendColor = trend === 'up' ? 'red' : trend === 'down' ? 'green' : 'gray';
+  
+  // Color logic based on goal type
+  const getTrendColor = () => {
+    if (isGainingWeight) {
+      // For weight gain goals: up is good (green), down is bad (red)
+      return trend === 'up' ? 'green' : trend === 'down' ? 'red' : 'gray';
+    } else if (isLosingWeight) {
+      // For weight loss goals: up (good progress) is green, down (bad progress) is red
+      return trend === 'up' ? 'green' : trend === 'down' ? 'red' : 'gray';
+    }
+    return 'gray';
+  };
+  
+  const trendColor = getTrendColor();
+  
+  // Get appropriate trend text based on goal type
+  const getTrendText = () => {
+    if (isGainingWeight) {
+      // For weight gain goals
+      if (trend === 'up') {
+        return '🎯 GAINING WEIGHT';
+      } else if (trend === 'down') {
+        return '⚠️ LOSING WEIGHT';
+      } else {
+        return '📊 STABLE';
+      }
+    } else if (isLosingWeight) {
+      // For weight loss goals
+      if (trend === 'up') {
+        return '🎯 LOSING WEIGHT';
+      } else if (trend === 'down') {
+        return '⚠️ GAINING WEIGHT';
+      } else {
+        return '📊 STABLE';
+      }
+    }
+    return '📊 STABLE';
+  };
+
+  // Debug logging removed to prevent console spam
 
   const handleSubmit = async () => {
     if (!newWeight || isNaN(Number(newWeight))) {
@@ -88,8 +193,8 @@ const WeightProgressCard = ({
 
     setIsSubmitting(true);
     try {
-      // Here you would call the API to add weight entry
-      // await analytics.addWeightEntry(Number(newWeight));
+      // Update the health profile with the new weight
+      await healthProfile.updateProfile({ weight: Number(newWeight) });
       
       toast({
         title: 'Weight Logged!',
@@ -103,6 +208,7 @@ const WeightProgressCard = ({
       onClose();
       window.location.reload(); // Refresh to show new data
     } catch (error) {
+      console.error('Error logging weight:', error);
       toast({
         title: 'Error',
         description: 'Failed to log weight',
@@ -117,16 +223,35 @@ const WeightProgressCard = ({
 
   const getProgressMessage = () => {
     const unit = measurementSystem === 'metric' ? 'kg' : 'lbs';
-    return t('weightProgressMessage' as any, language).replace('{amount}', Math.abs(weightDifference).toFixed(1)).replace('{unit}', unit);
+    const amount = Math.abs(weightDifference).toFixed(1);
+    
+    if (isGainingWeight) {
+      return `You're ${amount}${unit} away from your goal!`;
+    } else if (isLosingWeight) {
+      return `You're ${amount}${unit} away from your goal!`;
+    }
+    return `You're ${amount}${unit} away from your goal!`;
   };
 
   const getMotivationalMessage = () => {
-    if (trend === 'down' && isLosingWeight) {
-      return t('greatProgressMovingRight' as any, language);
-    } else if (trend === 'up' && isLosingWeight) {
-      return t('dontWorryWeightFluctuates' as any, language);
-    } else if (trend === 'stable') {
-      return t('weightStableKeepGoodWork' as any, language);
+    if (isGainingWeight) {
+      // For weight gain goals
+      if (trend === 'up') {
+        return t('greatProgressMovingRight' as any, language);
+      } else if (trend === 'down') {
+        return t('dontWorryWeightFluctuates' as any, language);
+      } else if (trend === 'stable') {
+        return t('weightStableKeepGoodWork' as any, language);
+      }
+    } else if (isLosingWeight) {
+      // For weight loss goals
+      if (trend === 'up') {
+        return t('greatProgressMovingRight' as any, language);
+      } else if (trend === 'down') {
+        return t('dontWorryWeightFluctuates' as any, language);
+      } else if (trend === 'stable') {
+        return t('weightStableKeepGoodWork' as any, language);
+      }
     }
     return t('everyStepCounts' as any, language);
   };
@@ -152,8 +277,8 @@ const WeightProgressCard = ({
               <Text color="gray.600" fontSize="sm">
                 {t('currentWeight' as any, language)}
               </Text>
-              <Badge colorScheme={trendColor} mt={2}>
-                {trend === 'up' ? t('trendingUp' as any, language) : trend === 'down' ? t('trendingDown' as any, language) : t('stable' as any, language)}
+              <Badge colorScheme={trendColor} mt={2} textTransform="none">
+                {getTrendText()}
               </Badge>
             </Box>
 
@@ -169,7 +294,7 @@ const WeightProgressCard = ({
               </HStack>
               <Progress 
                 value={progressPercentage} 
-                colorScheme={isLosingWeight ? 'green' : 'blue'}
+                colorScheme={isGainingWeight ? 'green' : isLosingWeight ? 'green' : 'blue'}
                 size="lg"
                 borderRadius="md"
               />
@@ -299,16 +424,43 @@ const WeightProgressCard = ({
                   </Text>
                   <Box p={4} bg="white" borderRadius="md" border="1px" borderColor="gray.200" height="300px">
                     <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={weightTrend.slice(-10).map((weight, index) => ({
-                        entry: index + 1,
-                        weight: weight,
-                        target: targetWeight
-                      }))}>
+                      <LineChart data={weightTrend.slice(-10).map((weight, index) => {
+                        const recentTimestamps = weightTrendTimestamps.slice(-10);
+                        const timestamp = recentTimestamps[index] || 
+                                        new Date(Date.now() - (weightTrend.length - 1 - index) * 24 * 60 * 60 * 1000).toISOString();
+                        return {
+                          date: new Date(timestamp).toLocaleDateString(),
+                          weight: weight,
+                          target: targetWeight
+                        };
+                      })}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                         <XAxis 
-                          dataKey="entry" 
+                          dataKey="date" 
                           stroke="#718096"
                           fontSize={12}
+                          tickFormatter={(tickItem: any, index: number) => {
+                            // Get all data points to determine unique dates
+                            const data = weightTrend.slice(-10).map((weight, i) => {
+                                const recentTimestamps = weightTrendTimestamps.slice(-10);
+                                const ts = recentTimestamps[i] || new Date(Date.now() - (weightTrend.length - 1 - i) * 24 * 60 * 60 * 1000).toISOString();
+                                return { date: new Date(ts).toLocaleDateString(), weight: weight };
+                            });
+                            
+                            // Count occurrences of each date
+                            const dateCounts: { [key: string]: number } = {};
+                            data.forEach(item => {
+                                dateCounts[item.date] = (dateCounts[item.date] || 0) + 1;
+                            });
+                            
+                            // If this date appears multiple times, add a counter
+                            if (dateCounts[tickItem] > 1) {
+                                const dateIndex = data.slice(0, index + 1).filter(item => item.date === tickItem).length;
+                                return `${tickItem} (${dateIndex})`;
+                            }
+                            
+                            return tickItem;
+                          }}
                         />
                         <YAxis 
                           stroke="#718096"
@@ -320,7 +472,7 @@ const WeightProgressCard = ({
                             `${value} ${measurementSystem === 'metric' ? 'kg' : 'lbs'}`, 
                             name === 'weight' ? t('currentWeight' as any, language) : t('targetWeight' as any, language)
                           ]}
-                          labelFormatter={(label: any) => `${t('entry' as any, language)} ${label}`}
+                          labelFormatter={(label: any) => `${t('date' as any, language)}: ${label}`}
                           contentStyle={{
                             backgroundColor: '#f7fafc',
                             border: '1px solid #e2e8f0',

@@ -11,6 +11,7 @@ import Dashboard from './pages/Dashboard';
 import Profile from './pages/Profile';
 import Analytics from './pages/Analytics';
 import Goals from './pages/Goals';
+import Achievements from './pages/Achievements';
 import Settings from './pages/Settings';
 import DataExport from './pages/DataExport';
 import DataConsent from './pages/DataConsent';
@@ -38,32 +39,35 @@ const App = () => {
     <ChakraProvider theme={theme}>
       <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <AuthProvider>
-          <Routes>
-            <Route path="/login" element={<Login />} />
-            <Route path="/register" element={<Register />} />
-            <Route path="/forgot-password" element={<ForgotPassword />} />
-            <Route path="/reset-password" element={<ResetPassword />} />
-            <Route path="/verify-2fa" element={<Verify2FA />} />
-            <Route path="/verify-email" element={<VerifyEmail />} />
-            <Route path="/oauth/callback" element={<OAuthCallback />} />
-            <Route
-              path="/"
-              element={
-                <ProtectedRoute>
-                  <MainLayout />
-                </ProtectedRoute>
-              }
-            >
-              <Route index element={<Navigate to="/dashboard" replace />} />
-              <Route path="dashboard" element={<Dashboard />} />
-              <Route path="profile" element={<Profile />} />
-              <Route path="analytics" element={<Analytics />} />
-              <Route path="goals" element={<Goals />} />
-              <Route path="settings" element={<Settings />} />
-              <Route path="export" element={<DataExport />} />
-              <Route path="consent" element={<DataConsent />} />
-            </Route>
+          <AppProvider>
+            <Routes>
+              <Route path="/login" element={<Login />} />
+              <Route path="/register" element={<Register />} />
+              <Route path="/forgot-password" element={<ForgotPassword />} />
+              <Route path="/reset-password" element={<ResetPassword />} />
+              <Route path="/verify-2fa" element={<Verify2FA />} />
+              <Route path="/verify-email" element={<VerifyEmail />} />
+              <Route path="/oauth/callback" element={<OAuthCallback />} />
+              <Route
+                path="/"
+                element={
+                  <ProtectedRoute>
+                    <MainLayout />
+                  </ProtectedRoute>
+                }
+              >
+                <Route index element={<Navigate to="/dashboard" replace />} />
+                <Route path="dashboard" element={<Dashboard />} />
+                <Route path="profile" element={<Profile />} />
+                <Route path="analytics" element={<Analytics />} />
+                <Route path="goals" element={<Goals />} />
+                <Route path="achievements" element={<Achievements />} />
+                <Route path="settings" element={<Settings />} />
+                <Route path="export" element={<DataExport />} />
+                <Route path="consent" element={<DataConsent />} />
+              </Route>
             </Routes>
+          </AppProvider>
         </AuthProvider>
       </Router>
     </ChakraProvider>

@@ -27,4 +27,5 @@ class User(Base, TimestampMixin):
     activity_logs = relationship("ActivityLog", back_populates="user")
     goals = relationship("Goal", back_populates="user")
     settings = relationship("UserSettings", back_populates="user", uselist=False)
-    consent = relationship("DataConsent", back_populates="user", uselist=False) 
+    consent = relationship("DataConsent", back_populates="user", uselist=False)
+    achievements = relationship("UserAchievement", back_populates="user") 

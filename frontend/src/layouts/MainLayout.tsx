@@ -2,6 +2,7 @@ import { Box, Container, Flex, useColorModeValue } from '@chakra-ui/react';
 import { Outlet } from 'react-router-dom';
 import Navbar from '../components/Navbar';
 import Sidebar from '../components/Sidebar';
+import AchievementNotification from '../components/AchievementNotification';
 import { AppProvider } from '../contexts/AppContext';
 
 const MainLayout = () => {
@@ -24,6 +25,7 @@ const MainLayout = () => {
             </Container>
           </Box>
         </Flex>
+        <AchievementNotification />
       </Box>
     </AppProvider>
   );

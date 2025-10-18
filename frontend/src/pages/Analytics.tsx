@@ -6,7 +6,6 @@ import {
   CardHeader,
   CardBody,
   Text,
-  Select,
   HStack,
   Spinner,
   Alert,
@@ -21,10 +20,9 @@ import {
   useDisclosure,
 } from '@chakra-ui/react';
 import { useState, useEffect } from 'react';
-import { analytics, goals } from '../services/api';
+import { analytics, goals, healthProfile } from '../services/api';
 import { useApp } from '../contexts/AppContext';
 import ActivityLogModal from '../components/ActivityLogModal';
-import WeightProgressCard from '../components/WeightProgressCard';
 import { t } from '../utils/translations';
 
 // Helper functions for BMI and wellness score statuses
@@ -68,23 +66,39 @@ interface Goal {
 
 const Analytics = () => {
   const { measurementSystem, language } = useApp();
+
+  // Helper function to format duration in hours and minutes
+  const formatDuration = (minutes: number): string => {
+    const hours = Math.floor(minutes / 60);
+    const remainingMinutes = Math.round(minutes % 60);
+    
+    if (hours === 0) {
+      return `${remainingMinutes}min`;
+    } else if (remainingMinutes === 0) {
+      return `${hours}h`;
+    } else {
+      return `${hours}h ${remainingMinutes}min`;
+    }
+  };
   const [analyticsData, setAnalyticsData] = useState<HealthAnalytics | null>(null);
   const [goalsList, setGoalsList] = useState<Goal[]>([]);
+  const [profileData, setProfileData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [timeRange, setTimeRange] = useState('30');
   const { isOpen, onOpen, onClose } = useDisclosure();
 
     const fetchData = async () => {
       try {
         setLoading(true);
-      const [analyticsResponse, goalsResponse] = await Promise.all([
+      const [analyticsResponse, goalsResponse, profileResponse] = await Promise.all([
         analytics.getAnalytics(),
-        goals.getGoals()
+        goals.getGoals(),
+        healthProfile.getProfile()
       ]);
         
         setAnalyticsData(analyticsResponse.data);
         setGoalsList(goalsResponse.data);
+        setProfileData(profileResponse.data);
     } catch (err) {
       setError('Failed to load analytics data');
       console.error('Analytics error:', err);
@@ -122,19 +136,16 @@ const Analytics = () => {
         {t('analytics' as any, language)}
       </Heading>
 
-      {/* Time Range Selector */}
-      <HStack mb={6}>
-        <Text>{t('timeRange' as any, language)}:</Text>
-        <Select 
-          value={timeRange}
-          onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setTimeRange(e.target.value)}
-          maxW="200px"
+      {/* Refresh Button */}
+      <HStack mb={6} justify="flex-end">
+        <Button 
+          size="sm" 
+          colorScheme="blue" 
+          onClick={fetchData}
+          isLoading={loading}
         >
-          <option value="7">{t('last7Days' as any, language)}</option>
-          <option value="30">{t('last30Days' as any, language)}</option>
-          <option value="90">{t('last90Days' as any, language)}</option>
-          <option value="365">{t('lastYear' as any, language)}</option>
-        </Select>
+          {t('refresh' as any, language)}
+        </Button>
       </HStack>
 
       <SimpleGrid columns={{ base: 1, lg: 2 }} spacing={6}>
@@ -145,12 +156,38 @@ const Analytics = () => {
           </CardHeader>
           <CardBody>
             {analyticsData?.weight_trend && analyticsData.weight_trend.length > 0 ? (
-              <WeightProgressCard
-                currentWeight={analyticsData.weight_trend[analyticsData.weight_trend.length - 1]}
-                targetWeight={Number(goalsList.find(g => g.title.toLowerCase().includes('weight'))?.target) || 0}
-                weightTrend={analyticsData.weight_trend}
-                measurementSystem={measurementSystem}
-              />
+              <Box>
+                {/* Read-only weight progress display */}
+                <VStack spacing={4} align="stretch">
+                  <HStack justify="space-between">
+                    <Text fontSize="lg" fontWeight="bold">
+                      {t('weightProgress' as any, language)}
+                    </Text>
+                  </HStack>
+                  
+                  {/* Current Weight Display */}
+                  <Box p={4} bg="blue.50" borderRadius="md" textAlign="center">
+                    <Text fontSize="3xl" fontWeight="bold" color="blue.600">
+                      {analyticsData.weight_trend[analyticsData.weight_trend.length - 1].toFixed(1)}
+                    </Text>
+                    <Text fontSize="sm" color="gray.600">
+                      {t('currentWeight' as any, language)}
+                    </Text>
+                </Box>
+
+                  {/* Progress Info */}
+                  <Box>
+                    <HStack justify="space-between" mb={2}>
+                      <Text fontSize="sm" color="gray.600">
+                        {t('targetWeight' as any, language)}: {profileData?.target_weight?.toFixed(1) || '0.0'} {measurementSystem === 'metric' ? 'kg' : 'lbs'}
+                      </Text>
+                </HStack>
+                    <Text fontSize="sm" color="gray.600" textAlign="center">
+                      {t('weightProgressAnalytics' as any, language)}
+                  </Text>
+                </Box>
+              </VStack>
+              </Box>
             ) : (
               <Box textAlign="center" py={8}>
                 <Text color="gray.500" mb={4}>
@@ -185,12 +222,12 @@ const Analytics = () => {
                   <Stat textAlign="center">
                     <StatLabel>{t('totalDuration' as any, language)}</StatLabel>
                     <StatNumber fontSize="2xl" color="green.600">
-                      {Math.round(analyticsData.activity_summary.total_duration / 60)}h
+                      {formatDuration(analyticsData.activity_summary.total_duration)}
                     </StatNumber>
                   </Stat>
                 </SimpleGrid>
                 <Text fontSize="sm" color="gray.600" textAlign="center">
-                  {t('averageSession' as any, language)}: {Math.round(analyticsData.activity_summary.average_duration)} {t('minutes' as any, language)}
+                  {t('averageSession' as any, language)}: {formatDuration(analyticsData.activity_summary.average_duration)}
                 </Text>
               </VStack>
             ) : (
@@ -223,7 +260,7 @@ const Analytics = () => {
                 <StatNumber fontSize="2xl" color="blue.600">
                   {analyticsData.current_bmi?.toFixed(1) || '0.0'}
                 </StatNumber>
-                <Badge colorScheme="blue" mt={2}>
+                <Badge colorScheme="blue" mt={2} textTransform="none">
                   {getBMIStatus(analyticsData.current_bmi || 0, language)}
                 </Badge>
               </Stat>
@@ -233,7 +270,7 @@ const Analytics = () => {
                 <StatNumber fontSize="2xl" color="green.600">
                   {analyticsData.current_wellness_score?.toFixed(0) || '0'}%
                 </StatNumber>
-                <Badge colorScheme="green" mt={2}>
+                <Badge colorScheme="green" mt={2} textTransform="none">
                   {getWellnessStatus(analyticsData.current_wellness_score || 0, language)}
                 </Badge>
               </Stat>
@@ -291,28 +328,28 @@ const Analytics = () => {
                   <Box key={goal.id} p={4} border="1px" borderColor="gray.200" borderRadius="md">
                         <HStack justify="space-between" mb={2}>
                       <Text fontWeight="bold">{goal.title}</Text>
-                      <Badge colorScheme={goal.status === 'completed' ? 'green' : 'blue'}>
+                      <Badge colorScheme={goal.status === 'completed' ? 'green' : 'blue'} textTransform="none">
                         {goal.status === 'completed' ? t('completed' as any, language) : t('inProgress' as any, language)}
-                          </Badge>
+                      </Badge>
                         </HStack>
                     <Text color="gray.600" mb={3}>{goal.description}</Text>
                     <VStack spacing={2} align="stretch">
                       <HStack justify="space-between">
                         <Text fontSize="sm">{t('progress' as any, language)}</Text>
                         <Text fontSize="sm" fontWeight="bold">
-                          {goal.current_progress}% / {goal.target}
+                          {Math.round((goal.current_progress / goal.target) * 100)}% / {goal.target}
                         </Text>
                       </HStack>
                       <Progress 
                         value={(goal.current_progress / goal.target) * 100} 
-                        colorScheme={goal.current_progress >= goal.target ? 'green' : 'blue'}
+                        colorScheme={(goal.current_progress / goal.target) * 100 >= 100 ? 'green' : 'blue'}
                         size="lg"
                         borderRadius="md"
                       />
                     </VStack>
                       </Box>
                     ))}
-              </VStack>
+                  </VStack>
               </VStack>
             )}
           </CardBody>
