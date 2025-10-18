@@ -18,6 +18,7 @@ import {
   Stat,
   StatLabel,
   StatNumber,
+  useDisclosure,
 } from '@chakra-ui/react';
 import {
   LineChart,
@@ -33,6 +34,7 @@ import {
 import { useState, useEffect } from 'react';
 import { analytics, goals } from '../services/api';
 import { useApp } from '../contexts/AppContext';
+import ActivityLogModal from '../components/ActivityLogModal';
 import { convertWeightForDisplay, getWeightUnit } from '../utils/unitConversion';
 
 // Inline translation function to avoid module loading issues
@@ -298,6 +300,7 @@ const getStatusColor = (status: string) => {
 
 const Analytics = () => {
   const { measurementSystem, language } = useApp();
+  const { isOpen: isActivityModalOpen, onOpen: onActivityModalOpen, onClose: onActivityModalClose } = useDisclosure();
   const [analyticsData, setAnalyticsData] = useState<HealthAnalytics | null>(null);
   const [goalsList, setGoalsList] = useState<Goal[]>([]);
   const [loading, setLoading] = useState(true);
@@ -336,12 +339,16 @@ const Analytics = () => {
 
   // Prepare weight progress data
   const prepareWeightProgressData = () => {
-    if (!analyticsData?.weight_trend) return [];
+    if (!analyticsData?.weight_trend || analyticsData.weight_trend.length === 0) {
+      return [];
+    }
     
-    return analyticsData.weight_trend.map((weight, index) => ({
+    const data = analyticsData.weight_trend.map((weight, index) => ({
       date: `Day ${index + 1}`,
       weight: convertWeightForDisplay(weight, measurementSystem),
     }));
+    
+    return data;
   };
 
   // Prepare activity data (mock weekly data for now)
@@ -525,7 +532,7 @@ const Analytics = () => {
                   {t('logDailyActivities', language)}
                 </Text>
                 <VStack spacing={3}>
-                  <Button colorScheme="green" as="a" href="/profile">
+                  <Button colorScheme="green" onClick={onActivityModalOpen}>
                     {t('logTodaysActivity', language)}
                   </Button>
                   <Text color="gray.500" fontSize="xs">
@@ -682,6 +689,16 @@ const Analytics = () => {
           </CardBody>
         </Card>
       </SimpleGrid>
+
+      {/* Activity Logging Modal */}
+      <ActivityLogModal
+        isOpen={isActivityModalOpen}
+        onClose={onActivityModalClose}
+        onActivityLogged={() => {
+          // Refresh data when activity is logged
+          window.location.reload();
+        }}
+      />
     </Box>
   );
 };

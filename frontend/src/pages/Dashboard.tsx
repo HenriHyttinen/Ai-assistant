@@ -15,17 +15,18 @@ import {
   CardBody,
   Stack,
   VStack,
-  HStack,
   Spinner,
   Alert,
   AlertIcon,
   Button,
+  useDisclosure,
 } from '@chakra-ui/react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useState, useEffect } from 'react';
 import { analytics, healthProfile } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import { useApp } from '../contexts/AppContext';
+import ActivityLogModal from '../components/ActivityLogModal';
+import WeightProgressCard from '../components/WeightProgressCard';
 
 // Move translations outside component to avoid recreation on every render
 const translations = {
@@ -63,6 +64,9 @@ const translations = {
     averageDuration: 'Average Duration',
     activityTypes: 'Activity Types',
     noneRecorded: 'None recorded',
+    noWeightData: 'No Weight Data Yet',
+    startTrackingWeight: 'Start tracking your weight to see progress over time',
+    addWeightEntry: 'Add Weight Entry',
     healthJourney: 'Your health journey is off to a great start! Your consistent activity levels show you\'re committed to your wellness goals. Keep up the momentum!',
     waterGoal: 'Aim for 8-10 glasses of water daily to support your active lifestyle',
     stretching: 'Include 15 minutes of stretching in your routine for better recovery',
@@ -106,6 +110,9 @@ const translations = {
     averageDuration: 'Duración Promedio',
     activityTypes: 'Tipos de Actividad',
     noneRecorded: 'Ninguna registrada',
+    noWeightData: 'Sin Datos de Peso Aún',
+    startTrackingWeight: 'Comienza a rastrear tu peso para ver el progreso',
+    addWeightEntry: 'Agregar Entrada de Peso',
     healthJourney: '¡Tu viaje de salud ha comenzado muy bien! Tus niveles de actividad consistentes muestran que estás comprometido con tus objetivos de bienestar. ¡Mantén el impulso!',
     waterGoal: 'Apunta a 8-10 vasos de agua diarios para apoyar tu estilo de vida activo',
     stretching: 'Incluye 15 minutos de estiramiento en tu rutina para mejor recuperación',
@@ -149,6 +156,9 @@ const translations = {
     averageDuration: 'Durée Moyenne',
     activityTypes: 'Types d\'Activité',
     noneRecorded: 'Aucune enregistrée',
+    noWeightData: 'Pas de Données de Poids Encore',
+    startTrackingWeight: 'Commencez à suivre votre poids pour voir les progrès',
+    addWeightEntry: 'Ajouter une Entrée de Poids',
     healthJourney: 'Votre voyage de santé commence très bien ! Vos niveaux d\'activité constants montrent que vous êtes engagé envers vos objectifs de bien-être. Continuez sur cette lancée !',
     waterGoal: 'Visez 8-10 verres d\'eau par jour pour soutenir votre mode de vie actif',
     stretching: 'Incluez 15 minutes d\'étirement dans votre routine pour une meilleure récupération',
@@ -192,6 +202,9 @@ const translations = {
     averageDuration: 'Durchschnittsdauer',
     activityTypes: 'Aktivitätstypen',
     noneRecorded: 'Keine aufgezeichnet',
+    noWeightData: 'Noch Keine Gewichtsdaten',
+    startTrackingWeight: 'Beginnen Sie mit der Gewichtsverfolgung, um Fortschritte zu sehen',
+    addWeightEntry: 'Gewichtseintrag Hinzufügen',
     healthJourney: 'Ihre Gesundheitsreise hat einen großartigen Start! Ihre konstanten Aktivitätsniveaus zeigen, dass Sie Ihren Wellnesszielen verpflichtet sind. Behalten Sie den Schwung bei!',
     waterGoal: 'Streben Sie 8-10 Gläser Wasser täglich an, um Ihren aktiven Lebensstil zu unterstützen',
     stretching: 'Fügen Sie 15 Minuten Dehnen in Ihre Routine für bessere Erholung ein',
@@ -239,6 +252,7 @@ interface AIInsights {
 const Dashboard = () => {
   const { user } = useAuth();
   const { measurementSystem, language } = useApp();
+  const { isOpen: isActivityModalOpen, onClose: onActivityModalClose } = useDisclosure();
   
   const [analyticsData, setAnalyticsData] = useState<HealthAnalytics | null>(null);
   const [profileData, setProfileData] = useState<HealthProfile | null>(null);
@@ -312,15 +326,6 @@ const Dashboard = () => {
     return () => window.removeEventListener('storage', handleStorageChange);
   }, []);
 
-  // Prepare chart data from weight trend
-  const prepareChartData = () => {
-    if (!analyticsData?.weight_trend) return [];
-    
-    return analyticsData.weight_trend.map((weight, index) => ({
-      date: `Day ${index + 1}`,
-      weight: weight,
-    }));
-  };
 
   // Get BMI category
   const getBMICategory = (bmi: number, lang: string) => {
@@ -370,7 +375,6 @@ const Dashboard = () => {
     );
   }
 
-  const chartData = prepareChartData();
   const bmiCategory = getBMICategory(analyticsData.current_bmi, language);
   const wellnessScoreColor = getWellnessScoreColor(analyticsData.current_wellness_score);
 
@@ -453,86 +457,12 @@ const Dashboard = () => {
 
       <Grid templateColumns={{ base: '1fr', lg: '2fr 1fr' }} gap={6}>
         <GridItem>
-          <Card>
-            <CardHeader>
-              <Heading size="md">{t('weightProgress', language)}</Heading>
-            </CardHeader>
-            <CardBody>
-              <Box h="300px">
-                {chartData.length === 0 ? (
-                  <VStack spacing={4} justify="center" h="100%" p={6}>
-                    <Text color="gray.500" fontSize="lg" fontWeight="medium">
-                      No weight data available
-                    </Text>
-                    <Text color="gray.400" fontSize="sm" textAlign="center">
-                      Start tracking your weight to see progress over time
-                    </Text>
-                    <Button colorScheme="blue" size="sm" as="a" href="/profile">
-                      Add Weight Entry
-                    </Button>
-                  </VStack>
-                ) : chartData.length === 1 ? (
-                  <VStack spacing={4} align="stretch" h="100%" justify="center" p={4}>
-                    {/* Current Weight Display */}
-                    <Box textAlign="center" py={4} bg="gray.50" borderRadius="md">
-                      <Text color="blue.600" fontSize="2xl" fontWeight="bold">
-                        {chartData[0].weight} kg
-                      </Text>
-                      <Text color="gray.600" fontSize="md" mb={1}>
-                        {t('currentWeightLabel', language)}
-                      </Text>
-                      <Text color="gray.500" fontSize="sm">
-                        {t('recordedOn', language)} {chartData[0].date}
-                      </Text>
-                    </Box>
-
-                    {/* Progress Insights */}
-                    <Box p={3} bg="blue.50" borderRadius="md" border="1px" borderColor="blue.200">
-                      <Text color="blue.800" fontWeight="bold" mb={2} fontSize="sm">
-                        📊 {t('startYourWeightJourney', language)}
-                      </Text>
-                      <Text color="blue.600" fontSize="xs" mb={1}>
-                        • {t('addEntries', language)}
-                      </Text>
-                      <Text color="blue.600" fontSize="xs" mb={1}>
-                        • {t('trackDaily', language)}
-                      </Text>
-                      <Text color="blue.600" fontSize="xs">
-                        • {t('setWeightGoal', language)}
-                      </Text>
-                    </Box>
-
-                    {/* Action Buttons */}
-                    <HStack spacing={2} justify="center">
-                      <Button colorScheme="blue" size="xs" as="a" href="/profile">
-                        {t('addEntry', language)}
-                      </Button>
-                      <Button colorScheme="green" variant="outline" size="xs" as="a" href="/goals">
-                        {t('setGoal', language)}
-                      </Button>
-                    </HStack>
-
-                    {/* Motivational Message */}
-                    <Box p={2} bg="green.50" borderRadius="md" border="1px" borderColor="green.200">
-                      <Text color="green.800" fontSize="xs" textAlign="center">
-                        💪 {t('everyJourney', language)}
-                      </Text>
-                    </Box>
-                  </VStack>
-                ) : (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={chartData}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="date" />
-                      <YAxis />
-                      <Tooltip />
-                      <Line type="monotone" dataKey="weight" stroke="#0967D2" />
-                    </LineChart>
-                  </ResponsiveContainer>
-                )}
-              </Box>
-            </CardBody>
-          </Card>
+          <WeightProgressCard
+            currentWeight={profileData?.weight || 0}
+            targetWeight={profileData?.target_weight || 0}
+            weightTrend={analyticsData?.weight_trend || []}
+            measurementSystem={measurementSystem}
+          />
         </GridItem>
 
         <GridItem>
@@ -634,6 +564,16 @@ const Dashboard = () => {
           </SimpleGrid>
         </Box>
       )}
+
+      {/* Activity Logging Modal */}
+      <ActivityLogModal
+        isOpen={isActivityModalOpen}
+        onClose={onActivityModalClose}
+        onActivityLogged={() => {
+          // Refresh data when activity is logged
+          window.location.reload();
+        }}
+      />
     </Box>
   );
 };

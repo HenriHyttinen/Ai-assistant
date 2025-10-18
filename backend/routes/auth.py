@@ -100,7 +100,7 @@ def login(
     if user.two_factor_enabled:
         access_token = auth.create_access_token(
             data={"sub": user.email, "temp": True},
-            expires_delta=timedelta(minutes=5)
+            expires_delta=timedelta(minutes=30)  # Extended from 5 to 30 minutes for 2FA
         )
         return Token(access_token=access_token, token_type="bearer", requires_2fa=True)
     
@@ -444,6 +444,54 @@ async def reset_password(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
         )
+
+@router.post("/reset-password-with-2fa")
+async def reset_password_with_2fa(
+    email: str = Query(...),
+    backup_code: str = Query(...),
+    new_password: str = Query(...),
+    db: Session = Depends(get_db)
+):
+    """Reset password using 2FA backup code."""
+    # Find user by email
+    user = db.query(User).filter(User.email == email).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+    
+    # Check if user has 2FA enabled
+    if not user.two_factor_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="2FA is not enabled for this user"
+        )
+    
+    # Verify backup code
+    if not user.backup_codes:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No backup codes available"
+        )
+    
+    import json
+    backup_codes = json.loads(user.backup_codes)
+    if backup_code not in backup_codes:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid backup code"
+        )
+    
+    # Remove used backup code
+    backup_codes.remove(backup_code)
+    user.backup_codes = json.dumps(backup_codes)
+    
+    # Update password
+    user.hashed_password = get_password_hash(new_password)
+    db.commit()
+    
+    return {"message": "Password reset successful"}
 
 @router.post("/change-password")
 def change_password(
