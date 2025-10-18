@@ -9,12 +9,12 @@ A comprehensive wellness platform that leverages AI to provide personalized heal
 ```bash
 cd backend
 source venv/bin/activate
-python3 create_test_account.py
+python3 fix_bcrypt_issue.py
 ```
 
-**Alternative if bcrypt issues occur:**
+**Alternative if bcrypt issues persist:**
 ```bash
-# Register manually and verify
+# Register manually and verify (make sure backend is running)
 curl -X POST "http://localhost:8000/auth/register" \
   -H "Content-Type: application/json" \
   -d '{"email": "reviewer@test.com", "password": "testpass123"}'
