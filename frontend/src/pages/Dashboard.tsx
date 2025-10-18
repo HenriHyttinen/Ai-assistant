@@ -74,11 +74,11 @@ const Dashboard = () => {
 
       // Fetch analytics data
       const analyticsResponse = await analytics.getAnalytics();
-      setAnalyticsData(analyticsResponse);
+      setAnalyticsData(analyticsResponse.data);
 
       // Fetch health profile
       const profileResponse = await healthProfile.getProfile();
-      setProfileData(profileResponse);
+      setProfileData(profileResponse.data);
 
       // Fetch AI insights
       try {
@@ -115,6 +115,7 @@ const Dashboard = () => {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
 
   // Listen for profile updates from other pages
   useEffect(() => {

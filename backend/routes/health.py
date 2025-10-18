@@ -158,16 +158,43 @@ def get_my_health_analytics(
         .first()
     
     if not latest_metrics:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="No metrics history found"
+        # Create initial metrics if none exist
+        from analytics.health_metrics import calculate_bmi, calculate_wellness_score
+        
+        bmi = calculate_bmi(profile.weight, profile.height)
+        wellness_score = calculate_wellness_score({
+            'weight': profile.weight,
+            'height': profile.height,
+            'activity_level': profile.activity_level,
+            'weekly_activity_frequency': profile.weekly_activity_frequency,
+            'exercise_types': profile.exercise_types,
+            'average_session_duration': profile.average_session_duration,
+            'fitness_level': profile.fitness_level
+        })
+        
+        # Create metrics history record
+        latest_metrics = health.MetricsHistory(
+            health_profile_id=profile.id,
+            weight=profile.weight,
+            bmi=bmi,
+            wellness_score=wellness_score
         )
+        
+        db.add(latest_metrics)
+        db.commit()
+        db.refresh(latest_metrics)
     
     # Get metrics trends
     metrics_history = health.get_metrics_history(db, profile.id, days=30)
     weight_trend = [m.weight for m in metrics_history]
     bmi_trend = [m.bmi for m in metrics_history]
     wellness_score_trend = [m.wellness_score for m in metrics_history]
+    
+    # If no history, use current values
+    if not weight_trend:
+        weight_trend = [profile.weight]
+        bmi_trend = [latest_metrics.bmi]
+        wellness_score_trend = [latest_metrics.wellness_score]
     
     # Get activity summary
     activity_logs = health.get_activity_logs(db, current_user.id, days=7)

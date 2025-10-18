@@ -160,6 +160,10 @@ export const translations = {
             close: 'Close',
             timeRange: 'Time Range',
             activities: 'activities',
+            totalActivities: 'Total Activities',
+            totalDuration: 'Total Duration',
+            averageSession: 'Average Session',
+            minutes: 'minutes',
   },
   
   es: {
@@ -322,6 +326,10 @@ export const translations = {
             close: 'Cerrar',
             timeRange: 'Rango de Tiempo',
             activities: 'actividades',
+            totalActivities: 'Total de Actividades',
+            totalDuration: 'Duración Total',
+            averageSession: 'Sesión Promedio',
+            minutes: 'minutos',
   },
   
   fr: {
@@ -484,6 +492,10 @@ export const translations = {
             close: 'Fermer',
             timeRange: 'Plage de Temps',
             activities: 'activités',
+            totalActivities: 'Total des Activités',
+            totalDuration: 'Durée Totale',
+            averageSession: 'Session Moyenne',
+            minutes: 'minutes',
   },
   
   de: {
@@ -646,6 +658,10 @@ export const translations = {
             close: 'Schließen',
             timeRange: 'Zeitbereich',
             activities: 'Aktivitäten',
+            totalActivities: 'Gesamtaktivitäten',
+            totalDuration: 'Gesamtdauer',
+            averageSession: 'Durchschnittliche Sitzung',
+            minutes: 'Minuten',
   }
 };
 
