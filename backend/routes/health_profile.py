@@ -174,11 +174,18 @@ async def get_metrics_history(
 # Simple in-memory cache for insights (expires after 5 minutes)
 _insights_cache = {}
 
+def clear_insights_cache():
+    """Clear the insights cache to force regeneration."""
+    global _insights_cache
+    _insights_cache = {}
+
 @router.get("/insights")
 async def get_health_insights(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ) -> Dict[str, Any]:
+    # Clear cache to ensure fresh insights with current language
+    clear_insights_cache()
     profile = db.query(HealthProfile).filter(
         HealthProfile.user_id == current_user.id
     ).first()
@@ -189,16 +196,7 @@ async def get_health_insights(
             detail="Health profile not found"
         )
     
-    # Check cache first
-    cache_key = f"insights_{current_user.id}_{profile.updated_at}"
-    if cache_key in _insights_cache:
-        import time
-        cached_data, timestamp = _insights_cache[cache_key]
-        # Cache expires after 5 minutes
-        if time.time() - timestamp < 300:
-            return cached_data
-    
-    # Get user settings for data normalization
+    # Get user settings for data normalization first
     try:
         from services.settings import get_user_settings
         user_settings = get_user_settings(db, current_user.id)
@@ -207,6 +205,16 @@ async def get_health_insights(
         # If settings service fails, use default settings
         print(f"Settings service error: {e}")
         settings_dict = {"language": "en", "measurement_system": "metric"}
+    
+    # Check cache first (include language in cache key)
+    cache_key = f"insights_{current_user.id}_{profile.updated_at}_{settings_dict.get('language', 'en')}"
+    if cache_key in _insights_cache:
+        import time
+        cached_data, timestamp = _insights_cache[cache_key]
+        # Cache expires after 5 minutes
+        if time.time() - timestamp < 300:
+            return cached_data
+    
     
     # Generate AI insights with normalized data
     insights_data = generate_health_insights(profile.__dict__, settings_dict)
