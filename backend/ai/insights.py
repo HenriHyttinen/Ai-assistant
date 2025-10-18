@@ -15,6 +15,40 @@ else:
     client = None
 
 
+def get_fitness_goal_translation(goal: str, language: str) -> str:
+    """Translate fitness goal to the specified language."""
+    translations = {
+        'en': {
+            'weight_loss': 'weight loss',
+            'muscle_gain': 'muscle gain',
+            'endurance': 'endurance',
+            'strength': 'strength',
+            'general_fitness': 'general fitness'
+        },
+        'de': {
+            'weight_loss': 'Gewichtsverlust',
+            'muscle_gain': 'Muskelaufbau',
+            'endurance': 'Ausdauer',
+            'strength': 'Kraft',
+            'general_fitness': 'allgemeine Fitness'
+        },
+        'es': {
+            'weight_loss': 'pérdida de peso',
+            'muscle_gain': 'ganancia de músculo',
+            'endurance': 'resistencia',
+            'strength': 'fuerza',
+            'general_fitness': 'fitness general'
+        },
+        'fr': {
+            'weight_loss': 'perte de poids',
+            'muscle_gain': 'prise de muscle',
+            'endurance': 'endurance',
+            'strength': 'force',
+            'general_fitness': 'fitness général'
+        }
+    }
+    return translations.get(language, translations['en']).get(goal, goal)
+
 def generate_mock_insights(language: str = 'en', fitness_goal: str = 'general_fitness') -> Dict[str, Any]:
     """Generate mock insights when OpenAI API is not available."""
     
@@ -69,7 +103,7 @@ def generate_mock_insights(language: str = 'en', fitness_goal: str = 'general_fi
             ]
         },
         'de': {
-            "status_analysis": f"Dein aktueller Fokus auf {fitness_goal} ist ein großer Schritt zu besserer Gesundheit.",
+            "status_analysis": f"Dein aktueller Fokus auf {get_fitness_goal_translation(fitness_goal, 'de')} ist ein großer Schritt zu besserer Gesundheit.",
             "recommendations": [
                 "Konzentriere dich auf regelmäßige Bewegung",
                 "Achte auf eine ausgewogene Ernährung",
@@ -85,7 +119,7 @@ def generate_mock_insights(language: str = 'en', fitness_goal: str = 'general_fi
             ]
         },
         'es': {
-            "status_analysis": f"Tu enfoque actual en {fitness_goal} es un gran paso hacia una mejor salud.",
+            "status_analysis": f"Tu enfoque actual en {get_fitness_goal_translation(fitness_goal, 'es')} es un gran paso hacia una mejor salud.",
             "recommendations": [
                 "Enfócate en el ejercicio regular",
                 "Mantén una dieta equilibrada",
@@ -101,7 +135,7 @@ def generate_mock_insights(language: str = 'en', fitness_goal: str = 'general_fi
             ]
         },
         'fr': {
-            "status_analysis": f"Votre focus actuel sur {fitness_goal} est un grand pas vers une meilleure santé.",
+            "status_analysis": f"Votre focus actuel sur {get_fitness_goal_translation(fitness_goal, 'fr')} est un grand pas vers une meilleure santé.",
             "recommendations": [
                 "Concentrez-vous sur l'exercice régulier",
                 "Maintenez une alimentation équilibrée",

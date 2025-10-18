@@ -21,8 +21,6 @@ import {
   useDisclosure,
 } from '@chakra-ui/react';
 import {
-  LineChart,
-  Line,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -35,7 +33,7 @@ import { useState, useEffect } from 'react';
 import { analytics, goals } from '../services/api';
 import { useApp } from '../contexts/AppContext';
 import ActivityLogModal from '../components/ActivityLogModal';
-import { convertWeightForDisplay, getWeightUnit } from '../utils/unitConversion';
+import WeightProgressCard from '../components/WeightProgressCard';
 
 // Inline translation function to avoid module loading issues
 const translations = {
@@ -337,19 +335,6 @@ const Analytics = () => {
     fetchData();
   }, [timeRange, measurementSystem, language]);
 
-  // Prepare weight progress data
-  const prepareWeightProgressData = () => {
-    if (!analyticsData?.weight_trend || analyticsData.weight_trend.length === 0) {
-      return [];
-    }
-    
-    const data = analyticsData.weight_trend.map((weight, index) => ({
-      date: `Day ${index + 1}`,
-      weight: convertWeightForDisplay(weight, measurementSystem),
-    }));
-    
-    return data;
-  };
 
   // Prepare activity data (mock weekly data for now)
   const prepareActivityData = () => {
@@ -406,7 +391,6 @@ const Analytics = () => {
     );
   }
 
-  const weightProgressData = prepareWeightProgressData();
   const activityData = prepareActivityData();
 
   return (
@@ -427,96 +411,12 @@ const Analytics = () => {
       </HStack>
 
       <SimpleGrid columns={{ base: 1, lg: 2 }} spacing={8}>
-        <Card>
-          <CardHeader>
-            <Heading size="md">{t('weightProgress', language)}</Heading>
-          </CardHeader>
-          <CardBody>
-            {weightProgressData.length === 0 ? (
-              <Box textAlign="center" py={8}>
-                <Text color="gray.500" mb={4} fontSize="lg">
-                  📊 {t('readyToTrack', language)}
-                </Text>
-                <Text color="gray.600" mb={6} fontSize="sm">
-                  {t('startLogging', language)}
-                </Text>
-                <Button colorScheme="blue" as="a" href="/profile">
-                  {t('logYourWeight', language)}
-                </Button>
-              </Box>
-            ) : weightProgressData.length === 1 ? (
-              <VStack spacing={6} align="stretch">
-                {/* Current Weight Display */}
-                <Box textAlign="center" py={4} bg="gray.50" borderRadius="md">
-                  <Text color="blue.600" fontSize="3xl" fontWeight="bold">
-                    {convertWeightForDisplay(weightProgressData[0].weight, measurementSystem).toFixed(1)} {getWeightUnit(measurementSystem)}
-                  </Text>
-                  <Text color="gray.600" fontSize="md" mb={2}>
-                    {t('currentWeight', language)}
-                  </Text>
-                  <Text color="gray.500" fontSize="sm">
-                    {t('recordedOn', language)} {weightProgressData[0].date}
-                  </Text>
-                </Box>
-
-                {/* Progress Insights */}
-                <Box p={4} bg="blue.50" borderRadius="md" border="1px" borderColor="blue.200">
-                  <Text color="blue.800" fontWeight="bold" mb={3} fontSize="lg">
-                    📊 {t('startYourWeightJourney', language)}
-                  </Text>
-                  <VStack spacing={3} align="stretch">
-                    <Text color="blue.700" fontSize="sm">
-                      <strong>Next Steps:</strong>
-                    </Text>
-                    <Text color="blue.600" fontSize="sm">
-                      • {t('addEntries', language)}
-                    </Text>
-                    <Text color="blue.600" fontSize="sm">
-                      • {t('trackDaily', language)}
-                    </Text>
-                    <Text color="blue.600" fontSize="sm">
-                      • {t('setWeightGoal', language)}
-                    </Text>
-                  </VStack>
-                </Box>
-
-                {/* Action Buttons */}
-                <HStack spacing={3} justify="center">
-                  <Button colorScheme="blue" size="sm" as="a" href="/profile">
-                    {t('addWeightEntry', language)}
-                  </Button>
-                  <Button colorScheme="green" variant="outline" size="sm" as="a" href="/goals">
-                    {t('setWeightGoalBtn', language)}
-                  </Button>
-                </HStack>
-
-                {/* Motivational Message */}
-                <Box p={3} bg="green.50" borderRadius="md" border="1px" borderColor="green.200">
-                  <Text color="green.800" fontSize="sm" textAlign="center">
-                    💪 {t('everyJourney', language)}
-                  </Text>
-                </Box>
-              </VStack>
-            ) : (
-              <Box h="300px">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={weightProgressData}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="date" />
-                    <YAxis />
-                    <Tooltip />
-                    <Line
-                      type="monotone"
-                      dataKey="weight"
-                      stroke="#0967D2"
-                      strokeWidth={2}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-              </Box>
-            )}
-          </CardBody>
-        </Card>
+        <WeightProgressCard
+          currentWeight={analyticsData?.weight_trend?.[analyticsData.weight_trend.length - 1] || 0}
+          targetWeight={Number(goalsList.find(g => g.title.toLowerCase().includes('weight'))?.target) || 0}
+          weightTrend={analyticsData?.weight_trend || []}
+          measurementSystem={measurementSystem}
+        />
 
         <Card>
           <CardHeader>

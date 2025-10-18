@@ -209,7 +209,37 @@ async def get_health_insights(
         settings_dict = {"language": "en", "measurement_system": "metric"}
     
     # Generate AI insights with normalized data
-    insights = generate_health_insights(profile.__dict__, settings_dict)
+    insights_data = generate_health_insights(profile.__dict__, settings_dict)
+    
+    # Format insights as an array of strings for frontend
+    insights_array = []
+    if insights_data:
+        # Add status analysis
+        if insights_data.get('status_analysis'):
+            insights_array.append(insights_data['status_analysis'])
+        
+        # Add recommendations
+        if insights_data.get('recommendations'):
+            insights_array.extend(insights_data['recommendations'])
+        
+        # Add strengths
+        if insights_data.get('strengths'):
+            for strength in insights_data['strengths']:
+                insights_array.append(f"✅ {strength}")
+        
+        # Add improvements
+        if insights_data.get('improvements'):
+            for improvement in insights_data['improvements']:
+                insights_array.append(f"💡 {improvement}")
+    else:
+        # Fallback insights when no data is available
+        insights_array = [
+            "Welcome to your health journey! Start by logging your weight and activities.",
+            "Set up your health profile to get personalized insights.",
+            "Track your daily activities to see your progress over time.",
+            "✅ You're taking the first step towards better health!",
+            "💡 Consider setting specific, achievable health goals"
+        ]
     
     # Add calculated metrics
     bmi = calculate_bmi(profile.weight, profile.height)
@@ -217,7 +247,7 @@ async def get_health_insights(
     wellness_score = calculate_wellness_score(profile.__dict__)
     
     result = {
-        "insights": insights,
+        "insights": insights_array,
         "metrics": {
             "bmi": bmi,
             "bmi_category": bmi_category,
