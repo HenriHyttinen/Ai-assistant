@@ -50,6 +50,8 @@ class ActivityLogBase(BaseModel):
     duration: int = Field(gt=0)  # in minutes
     intensity: Optional[str] = None
     notes: Optional[str] = None
+    # Optional timestamp when the activity actually happened
+    performed_at: Optional[datetime] = None
 
 class ActivityLogCreate(ActivityLogBase):
     pass

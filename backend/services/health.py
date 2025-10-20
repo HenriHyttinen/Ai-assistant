@@ -168,7 +168,8 @@ def create_activity_log(
     activity_type: str,
     duration: int,
     intensity: Optional[str] = None,
-    notes: Optional[str] = None
+    notes: Optional[str] = None,
+    performed_at: Optional[datetime] = None
 ) -> ActivityLog:
     """Create a new activity log entry."""
     db_activity = ActivityLog(
@@ -176,7 +177,9 @@ def create_activity_log(
         activity_type=activity_type,
         duration=duration,
         intensity=intensity,
-        notes=notes
+        notes=notes,
+        # Store the time the user performed the activity; default to now
+        created_at=performed_at or datetime.utcnow()
     )
     db.add(db_activity)
     db.commit()

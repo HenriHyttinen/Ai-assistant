@@ -37,6 +37,9 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/token")
 DB = Annotated[Session, Depends(get_db)]
 CurrentUser = Annotated[User, Depends(get_current_user)]
 
+# Configurable email verification token expiry (minutes)
+EMAIL_TOKEN_EXPIRE_MINUTES = int(os.getenv("EMAIL_TOKEN_EXPIRE_MINUTES", "2"))
+
 @router.post("/register", response_model=UserResponse)
 async def register_user(
     user: UserCreate,
@@ -55,7 +58,7 @@ async def register_user(
     try:
         verification_token = auth.create_access_token(
             data={"sub": created_user.email, "type": "email_verification"},
-            expires_delta=timedelta(hours=24)
+            expires_delta=timedelta(minutes=EMAIL_TOKEN_EXPIRE_MINUTES)
         )
         await send_verification_email(created_user.email, verification_token)
         print(f"Verification email sent to {created_user.email}")
@@ -563,7 +566,7 @@ async def resend_verification_email(
     try:
         verification_token = auth.create_access_token(
             data={"sub": current_user.email, "type": "email_verification"},
-            expires_delta=timedelta(hours=24)
+            expires_delta=timedelta(minutes=EMAIL_TOKEN_EXPIRE_MINUTES)
         )
         await send_verification_email(current_user.email, verification_token)
         return {"message": "Verification email sent"}

@@ -25,6 +25,7 @@ JWT_SECRET_KEY=your-super-secret-key-change-in-production
 JWT_ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=30
 REFRESH_TOKEN_EXPIRE_DAYS=7
+EMAIL_TOKEN_EXPIRE_MINUTES=2
 
 # Email settings (SendGrid SMTP)
 MAIL_SERVER=smtp.sendgrid.net
