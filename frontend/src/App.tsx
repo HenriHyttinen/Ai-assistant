@@ -13,6 +13,7 @@ import Analytics from './pages/Analytics';
 import Goals from './pages/Goals';
 import Achievements from './pages/Achievements';
 import Settings from './pages/Settings';
+import ActivityHistory from './pages/ActivityHistory';
 import DataExport from './pages/DataExport';
 import DataConsent from './pages/DataConsent';
 import Verify2FA from './pages/Verify2FA';
@@ -60,6 +61,7 @@ const App = () => {
                 <Route path="dashboard" element={<Dashboard />} />
                 <Route path="profile" element={<Profile />} />
                 <Route path="analytics" element={<Analytics />} />
+                <Route path="activities" element={<ActivityHistory />} />
                 <Route path="goals" element={<Goals />} />
                 <Route path="achievements" element={<Achievements />} />
                 <Route path="settings" element={<Settings />} />

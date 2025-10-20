@@ -32,6 +32,7 @@ interface ActivityFormValues {
   duration: number;
   intensity: string;
   notes: string;
+  performed_at: string; // ISO datetime-local string
 }
 
 const ActivityLogModal = ({ isOpen, onClose, onActivityLogged }: ActivityLogModalProps) => {
@@ -54,6 +55,7 @@ const ActivityLogModal = ({ isOpen, onClose, onActivityLogged }: ActivityLogModa
       duration: 30,
       intensity: 'moderate',
       notes: '',
+      performed_at: new Date().toISOString().slice(0,16),
     },
     validationSchema: getValidationSchema(language),
     onSubmit: async (values, { setSubmitting, resetForm }) => {
@@ -63,6 +65,7 @@ const ActivityLogModal = ({ isOpen, onClose, onActivityLogged }: ActivityLogModa
           duration: values.duration,
           intensity: values.intensity,
           notes: values.notes,
+          performed_at: values.performed_at ? new Date(values.performed_at).toISOString() : undefined,
         });
 
         toast({
@@ -120,6 +123,14 @@ const ActivityLogModal = ({ isOpen, onClose, onActivityLogged }: ActivityLogModa
                     {formik.errors.activity_type}
                   </div>
                 )}
+              </FormControl>
+
+              <FormControl>
+                <FormLabel>{t('performedAt' as any, language)}</FormLabel>
+                <Input
+                  type="datetime-local"
+                  {...formik.getFieldProps('performed_at')}
+                />
               </FormControl>
 
               <FormControl isInvalid={formik.touched.duration && !!formik.errors.duration}>

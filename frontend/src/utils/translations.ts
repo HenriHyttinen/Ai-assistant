@@ -8,6 +8,7 @@ export const translations = {
     healthProfile: 'Health Profile',
     settings: 'Settings',
     goals: 'Goals',
+    activityHistory: 'Activity History',
     achievements: 'Achievements',
     viewAll: 'View All',
     viewAchievements: 'View Achievements',
@@ -134,6 +135,7 @@ export const translations = {
     startTrackingWeight: 'Start tracking your weight to see progress over time',
     addWeightEntry: 'Add Weight Entry',
     logTodaysActivity: 'Log Today\'s Activity',
+    performedAt: 'Activity time',
     
     // Health Journey Messages
     healthJourney: 'Your health journey is off to a great start! Your consistent activity levels show you\'re committed to your wellness goals. Keep up the momentum!',
@@ -163,6 +165,7 @@ export const translations = {
   refresh: 'Refresh',
   running: 'Running',
   date: 'Date',
+  performedAt: 'Activity time',
     walking: 'Walking',
     cycling: 'Cycling',
     swimming: 'Swimming',
@@ -253,6 +256,7 @@ export const translations = {
     healthProfile: 'Perfil de Salud',
     settings: 'Configuración',
     goals: 'Objetivos',
+    activityHistory: 'Historial de Actividad',
     achievements: 'Logros',
     viewAll: 'Ver Todo',
     viewAchievements: 'Ver Logros',
@@ -379,6 +383,7 @@ export const translations = {
     startTrackingWeight: 'Comienza a rastrear tu peso para ver el progreso',
     addWeightEntry: 'Agregar Entrada de Peso',
     logTodaysActivity: 'Registrar Actividad de Hoy',
+    performedAt: 'Hora de la actividad',
     
     // Health Journey Messages
     healthJourney: '¡Tu viaje de salud ha comenzado muy bien! Tus niveles de actividad consistentes muestran que estás comprometido con tus objetivos de bienestar. ¡Mantén el impulso!',
@@ -408,6 +413,7 @@ export const translations = {
   refresh: 'Actualizar',
   running: 'Correr',
   date: 'Fecha',
+  performedAt: 'Hora de la actividad',
     walking: 'Caminar',
     cycling: 'Ciclismo',
     swimming: 'Natación',
@@ -502,6 +508,7 @@ export const translations = {
     healthProfile: 'Profil de Santé',
     settings: 'Paramètres',
     goals: 'Objectifs',
+    activityHistory: 'Historique d\'Activité',
     achievements: 'Succès',
     viewAll: 'Voir Tout',
     viewAchievements: 'Voir les Succès',
@@ -628,6 +635,7 @@ export const translations = {
     startTrackingWeight: 'Commencez à suivre votre poids pour voir les progrès',
     addWeightEntry: 'Ajouter une Entrée de Poids',
     logTodaysActivity: 'Enregistrer l\'Activité d\'Aujourd\'hui',
+    performedAt: 'Heure de l\'activité',
     
     // Health Journey Messages
     healthJourney: 'Votre voyage de santé commence très bien ! Vos niveaux d\'activité constants montrent que vous êtes engagé envers vos objectifs de bien-être. Continuez sur cette lancée !',
@@ -657,6 +665,7 @@ export const translations = {
     selectActivity: 'Sélectionner Type d\'Activité',
     running: 'Course',
     date: 'Date',
+    performedAt: 'Heure de l\'activité',
     walking: 'Marche',
     cycling: 'Cyclisme',
     swimming: 'Natation',
@@ -751,6 +760,7 @@ export const translations = {
     healthProfile: 'Gesundheitsprofil',
     settings: 'Einstellungen',
     goals: 'Ziele',
+    activityHistory: 'Aktivitätsverlauf',
     achievements: 'Erfolge',
     viewAll: 'Alle Anzeigen',
     viewAchievements: 'Erfolge Anzeigen',
@@ -877,6 +887,7 @@ export const translations = {
     startTrackingWeight: 'Beginnen Sie mit der Gewichtsverfolgung, um Fortschritte zu sehen',
     addWeightEntry: 'Gewichtseintrag Hinzufügen',
     logTodaysActivity: 'Heutige Aktivität Aufzeichnen',
+    performedAt: 'Zeit der Aktivität',
     
     // Health Journey Messages
     healthJourney: 'Ihre Gesundheitsreise hat einen großartigen Start! Ihre konstanten Aktivitätsniveaus zeigen, dass Sie Ihren Wellnesszielen verpflichtet sind. Behalten Sie den Schwung bei!',
@@ -906,6 +917,7 @@ export const translations = {
     refresh: 'Aktualisieren',
     running: 'Laufen',
     date: 'Datum',
+    performedAt: 'Zeit der Aktivität',
     walking: 'Gehen',
     cycling: 'Radfahren',
     swimming: 'Schwimmen',
