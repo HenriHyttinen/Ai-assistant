@@ -65,7 +65,7 @@ const ActivityLogModal = ({ isOpen, onClose, onActivityLogged }: ActivityLogModa
           duration: values.duration,
           intensity: values.intensity,
           notes: values.notes,
-          performed_at: values.performed_at ? new Date(values.performed_at).toISOString() : undefined,
+          performed_at: values.performed_at ? values.performed_at + ':00' : undefined,
         });
 
         toast({

@@ -1,4 +1,4 @@
-from pydantic import BaseModel, conint, confloat, Field
+from pydantic import BaseModel, conint, confloat, Field, validator
 from typing import List, Optional, Dict
 from datetime import datetime
 
@@ -52,6 +52,19 @@ class ActivityLogBase(BaseModel):
     notes: Optional[str] = None
     # Optional timestamp when the activity actually happened
     performed_at: Optional[datetime] = None
+    
+    @validator('performed_at', pre=True)
+    def parse_performed_at(cls, v):
+        if isinstance(v, str):
+            # Handle datetime-local format (YYYY-MM-DDTHH:MM:SS)
+            if 'T' in v and len(v) == 19:  # YYYY-MM-DDTHH:MM:SS
+                return datetime.fromisoformat(v)
+            # Handle ISO format
+            try:
+                return datetime.fromisoformat(v.replace('Z', '+00:00'))
+            except:
+                return datetime.fromisoformat(v)
+        return v
 
 class ActivityLogCreate(ActivityLogBase):
     pass
