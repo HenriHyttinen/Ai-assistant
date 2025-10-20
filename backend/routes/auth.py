@@ -266,17 +266,22 @@ async def oauth_login(
     
     try:
         # Create redirect URI for the specific provider
-        base_url = str(request.base_url)
+        base_url = str(request.base_url).replace("localhost", "127.0.0.1").replace(":8000", ":8001")
         if provider == "google":
-            redirect_uri = f"{base_url}auth/oauth/google/callback"
+            redirect_uri = f"{base_url}oauth/callback"
+            client_id = os.getenv('GOOGLE_CLIENT_ID')
+            scope = "openid email profile"
         elif provider == "github":
-            redirect_uri = f"{base_url}auth/oauth/github/callback"
+            redirect_uri = f"{base_url}auth/callback"
+            client_id = os.getenv('GITHUB_CLIENT_ID')
+            scope = "user:email"
         
-        # Generate OAuth authorization URL
-        url = await auth.oauth.create_authorization_url(
-            redirect_uri=redirect_uri,
-            provider=provider
-        )
+        # Generate OAuth authorization URL manually
+        if provider == "google":
+            url = f"https://accounts.google.com/oauth/authorize?client_id={client_id}&redirect_uri={redirect_uri}&scope={scope}&response_type=code"
+        elif provider == "github":
+            url = f"https://github.com/login/oauth/authorize?client_id={client_id}&redirect_uri={redirect_uri}&scope={scope}"
+        
         return OAuthResponse(url=url)
         
     except Exception as e:
@@ -292,13 +297,47 @@ async def oauth_callback_google(
 ):
     """Handle Google OAuth callback and return access token."""
     try:
-        # Get user data from Google OAuth
-        user_data = await auth.oauth.get_oauth_user(request, "google")
-        if not user_data:
+        # Get authorization code from query params
+        code = request.query_params.get('code')
+        if not code:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Failed to get user data from Google OAuth"
+                detail="Authorization code not found"
             )
+        
+        # Exchange code for access token
+        import httpx
+        token_url = "https://oauth2.googleapis.com/token"
+        token_data = {
+            'client_id': os.getenv('GOOGLE_CLIENT_ID'),
+            'client_secret': os.getenv('GOOGLE_CLIENT_SECRET'),
+            'code': code,
+            'grant_type': 'authorization_code',
+            'redirect_uri': f"{request.base_url}auth/oauth/google/callback"
+        }
+        
+        async with httpx.AsyncClient() as client:
+            token_response = await client.post(token_url, data=token_data)
+            token_response.raise_for_status()
+            token_info = token_response.json()
+            access_token = token_info['access_token']
+        
+        # Get user info from Google
+        user_info_url = "https://www.googleapis.com/oauth2/v2/userinfo"
+        headers = {'Authorization': f'Bearer {access_token}'}
+        
+        async with httpx.AsyncClient() as client:
+            user_response = await client.get(user_info_url, headers=headers)
+            user_response.raise_for_status()
+            user_info = user_response.json()
+        
+        user_data = {
+            'id': user_info.get('id'),
+            'email': user_info['email'],
+            'name': user_info.get('name', ''),
+            'picture': user_info.get('picture', ''),
+            'provider': 'google'
+        }
         
         # Find or create user
         user = db.query(User).filter(User.email == user_data["email"]).first()

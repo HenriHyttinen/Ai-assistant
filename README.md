@@ -4,6 +4,14 @@ A comprehensive wellness platform that leverages AI to provide personalized heal
 
 ## For Reviewers - Quick Access
 
+### Database Setup (Required First)
+**If you get "no such table" errors, run this first:**
+```bash
+cd backend
+source venv/bin/activate
+python3 setup_database.py
+```
+
 ### Option 1: Use Pre-configured Test Account (Recommended)
 **Setup the test account:**
 ```bash

@@ -6,39 +6,177 @@ import sys
 import os
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from database import SessionLocal, engine
-from sqlalchemy import text
+from database import SessionLocal
+from models.achievement import Achievement
 
 def create_achievements():
     db = SessionLocal()
     try:
-        # Check if achievements table exists
-        result = db.execute(text("SELECT COUNT(*) FROM achievements")).scalar()
-        if result > 0:
-            print(f"Achievements already exist ({result} found). Skipping creation.")
+        # Check if achievements already exist
+        existing_count = db.query(Achievement).count()
+        if existing_count > 0:
+            print(f"Achievements already exist ({existing_count} found). Skipping creation.")
             return
         
-        # Create achievements directly with SQL
-        achievements_sql = """
-        INSERT INTO achievements (name, description, icon, category, requirement_type, requirement_value, points, is_active, created_at) VALUES
-        ('First Steps', 'Log your first activity', '🥾', 'activity', 'first_activity', 1, 10, 1, datetime('now')),
-        ('Getting Started', 'Log 5 activities', '🏃‍♂️', 'activity', 'total_activities', 5, 25, 1, datetime('now')),
-        ('Active Lifestyle', 'Log 25 activities', '💪', 'activity', 'total_activities', 25, 50, 1, datetime('now')),
-        ('Activity Master', 'Log 100 activities', '🏆', 'activity', 'total_activities', 100, 100, 1, datetime('now')),
-        ('Time Investment', 'Log 100 minutes of total activity time', '⏱️', 'duration', 'total_duration', 100, 20, 1, datetime('now')),
-        ('Endurance Builder', 'Log 500 minutes of total activity time', '🔥', 'duration', 'total_duration', 500, 50, 1, datetime('now')),
-        ('Time Champion', 'Log 100+ minutes in a single session', '⏰', 'duration', 'single_session_duration', 100, 75, 1, datetime('now')),
-        ('Consistent Logger', 'Log activities for 3 consecutive days', '📅', 'consistency', 'activity_streak', 3, 30, 1, datetime('now')),
-        ('Week Warrior', 'Log activities for 7 consecutive days', '🗓️', 'consistency', 'activity_streak', 7, 75, 1, datetime('now')),
-        ('Monthly Master', 'Log activities for 30 consecutive days', '📆', 'consistency', 'activity_streak', 30, 200, 1, datetime('now')),
-        ('Explorer', 'Try 3 different activity types', '🎯', 'variety', 'activity_variety', 3, 40, 1, datetime('now')),
-        ('Diverse Athlete', 'Try 5 different activity types', '🌟', 'variety', 'activity_variety', 5, 75, 1, datetime('now')),
-        ('Activity Explorer', 'Try 10 different activity types', '🗺️', 'variety', 'activity_variety', 10, 150, 1, datetime('now')),
-        ('Weekly Warrior', 'Be consistent for 2 weeks', '⚔️', 'weekly_consistency', 'weekly_consistency', 2, 60, 1, datetime('now')),
-        ('Monthly Champion', 'Be consistent for 4 weeks', '👑', 'weekly_consistency', 'weekly_consistency', 4, 150, 1, datetime('now'));
-        """
+        # Create achievements using ORM
+        achievements_data = [
+            {
+                "name": "First Steps",
+                "description": "Log your first activity",
+                "icon": "🥾",
+                "category": "activity",
+                "requirement_type": "first_activity",
+                "requirement_value": 1,
+                "points": 10,
+                "is_active": True
+            },
+            {
+                "name": "Getting Started",
+                "description": "Log 5 activities",
+                "icon": "🏃‍♂️",
+                "category": "activity",
+                "requirement_type": "total_activities",
+                "requirement_value": 5,
+                "points": 25,
+                "is_active": True
+            },
+            {
+                "name": "Active Lifestyle",
+                "description": "Log 25 activities",
+                "icon": "💪",
+                "category": "activity",
+                "requirement_type": "total_activities",
+                "requirement_value": 25,
+                "points": 50,
+                "is_active": True
+            },
+            {
+                "name": "Activity Master",
+                "description": "Log 100 activities",
+                "icon": "🏆",
+                "category": "activity",
+                "requirement_type": "total_activities",
+                "requirement_value": 100,
+                "points": 100,
+                "is_active": True
+            },
+            {
+                "name": "Time Investment",
+                "description": "Log 100 minutes of total activity time",
+                "icon": "⏱️",
+                "category": "duration",
+                "requirement_type": "total_duration",
+                "requirement_value": 100,
+                "points": 20,
+                "is_active": True
+            },
+            {
+                "name": "Endurance Builder",
+                "description": "Log 500 minutes of total activity time",
+                "icon": "🔥",
+                "category": "duration",
+                "requirement_type": "total_duration",
+                "requirement_value": 500,
+                "points": 50,
+                "is_active": True
+            },
+            {
+                "name": "Time Champion",
+                "description": "Log 100+ minutes in a single session",
+                "icon": "⏰",
+                "category": "duration",
+                "requirement_type": "single_session_duration",
+                "requirement_value": 100,
+                "points": 75,
+                "is_active": True
+            },
+            {
+                "name": "Consistent Logger",
+                "description": "Log activities for 3 consecutive days",
+                "icon": "📅",
+                "category": "consistency",
+                "requirement_type": "activity_streak",
+                "requirement_value": 3,
+                "points": 30,
+                "is_active": True
+            },
+            {
+                "name": "Week Warrior",
+                "description": "Log activities for 7 consecutive days",
+                "icon": "🗓️",
+                "category": "consistency",
+                "requirement_type": "activity_streak",
+                "requirement_value": 7,
+                "points": 75,
+                "is_active": True
+            },
+            {
+                "name": "Monthly Master",
+                "description": "Log activities for 30 consecutive days",
+                "icon": "📆",
+                "category": "consistency",
+                "requirement_type": "activity_streak",
+                "requirement_value": 30,
+                "points": 200,
+                "is_active": True
+            },
+            {
+                "name": "Explorer",
+                "description": "Try 3 different activity types",
+                "icon": "🎯",
+                "category": "variety",
+                "requirement_type": "activity_variety",
+                "requirement_value": 3,
+                "points": 40,
+                "is_active": True
+            },
+            {
+                "name": "Diverse Athlete",
+                "description": "Try 5 different activity types",
+                "icon": "🌟",
+                "category": "variety",
+                "requirement_type": "activity_variety",
+                "requirement_value": 5,
+                "points": 75,
+                "is_active": True
+            },
+            {
+                "name": "Activity Explorer",
+                "description": "Try 10 different activity types",
+                "icon": "🗺️",
+                "category": "variety",
+                "requirement_type": "activity_variety",
+                "requirement_value": 10,
+                "points": 150,
+                "is_active": True
+            },
+            {
+                "name": "Weekly Warrior",
+                "description": "Be consistent for 2 weeks",
+                "icon": "⚔️",
+                "category": "weekly_consistency",
+                "requirement_type": "weekly_consistency",
+                "requirement_value": 2,
+                "points": 60,
+                "is_active": True
+            },
+            {
+                "name": "Monthly Champion",
+                "description": "Be consistent for 4 weeks",
+                "icon": "👑",
+                "category": "weekly_consistency",
+                "requirement_type": "weekly_consistency",
+                "requirement_value": 4,
+                "points": 150,
+                "is_active": True
+            }
+        ]
         
-        db.execute(text(achievements_sql))
+        # Create achievement objects
+        for achievement_data in achievements_data:
+            achievement = Achievement(**achievement_data)
+            db.add(achievement)
+        
         db.commit()
         print("Successfully created 15 achievements!")
         

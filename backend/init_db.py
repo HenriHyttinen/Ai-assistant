@@ -7,6 +7,8 @@ from models.activity_log import ActivityLog
 from models.metrics_history import MetricsHistory
 from models.consent import DataConsent
 from models.goal import Goal
+from models.achievement import Achievement, UserAchievement
+from models.user_settings import UserSettings
 
 def init_db():
     Base.metadata.create_all(bind=engine)
