@@ -26,19 +26,21 @@ JWT_ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=30
 REFRESH_TOKEN_EXPIRE_DAYS=7
 
-# Email settings
-MAIL_USERNAME=your-email@example.com
-MAIL_PASSWORD=your-app-specific-password
-MAIL_FROM=your-email@example.com
+# Email settings (SendGrid SMTP)
+MAIL_SERVER=smtp.sendgrid.net
 MAIL_PORT=587
-MAIL_SERVER=smtp.gmail.com
+MAIL_USERNAME=apikey
+# IMPORTANT: replace with a NEW SendGrid API key (rotate if leaked)
+MAIL_PASSWORD=REPLACE_WITH_NEW_SENDGRID_API_KEY
+# IMPORTANT: set to the exact Single Sender or domain-authenticated address you verified
+MAIL_FROM=REPLACE_WITH_VERIFIED_SENDER@example.com
 MAIL_FROM_NAME="Numbers Don't Lie"
 MAIL_STARTTLS=True
 MAIL_SSL_TLS=False
 USE_CREDENTIALS=True
 
 # Frontend URL
-FRONTEND_URL=http://localhost:3000
+FRONTEND_URL=http://localhost:5173
 
 # Security settings
 PASSWORD_MIN_LENGTH=8

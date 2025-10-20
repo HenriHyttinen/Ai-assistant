@@ -520,7 +520,8 @@ async def verify_email(
 ):
     """Verify user email with token."""
     try:
-        payload = auth.verify_token(token)
+        # Use the correctly imported verifier from auth.utils
+        payload = verify_token(token)
         if payload.get("type") != "email_verification":
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
