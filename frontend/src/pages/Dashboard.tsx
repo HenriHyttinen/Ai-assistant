@@ -19,9 +19,12 @@ import {
   Alert,
   AlertIcon,
   Button,
+  Icon,
   useDisclosure,
 } from '@chakra-ui/react';
 import { useState, useEffect, useCallback } from 'react';
+import { Link } from 'react-router-dom';
+import { MdPersonAdd, MdPerson } from 'react-icons/md';
 import { analytics, healthProfile } from '../services/api';
 import { useApp } from '../contexts/AppContext';
 import ActivityLogModal from '../components/ActivityLogModal';
@@ -82,19 +85,42 @@ const Dashboard = () => {
   const [aiInsights, setAiInsights] = useState<AIInsights | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [needsHealthProfile, setNeedsHealthProfile] = useState(false);
 
   const fetchData = useCallback(async () => {
       try {
         setLoading(true);
         setError(null);
+        setNeedsHealthProfile(false);
         
-        // Fetch analytics data
-        const analyticsResponse = await analytics.getAnalytics();
-        setAnalyticsData(analyticsResponse.data);
+        // First, try to fetch health profile
+        let profileResponse;
+        try {
+          profileResponse = await healthProfile.getProfile();
+          setProfileData(profileResponse.data);
+        } catch (profileError: any) {
+          if (profileError?.response?.status === 404) {
+            // User doesn't have a health profile yet
+            setNeedsHealthProfile(true);
+            setLoading(false);
+            return;
+          }
+          throw profileError;
+        }
         
-      // Fetch health profile
-        const profileResponse = await healthProfile.getProfile();
-        setProfileData(profileResponse.data);
+        // If we have a profile, fetch analytics data
+        try {
+          const analyticsResponse = await analytics.getAnalytics();
+          setAnalyticsData(analyticsResponse.data);
+        } catch (analyticsError: any) {
+          if (analyticsError?.response?.status === 404) {
+            // Analytics not found, likely because profile is incomplete
+            setNeedsHealthProfile(true);
+            setLoading(false);
+            return;
+          }
+          throw analyticsError;
+        }
         
       // Fetch AI insights
         try {
@@ -173,6 +199,36 @@ const Dashboard = () => {
           <AlertIcon />
           {error}
         </Alert>
+      </Box>
+    );
+  }
+
+  if (needsHealthProfile) {
+    return (
+      <Box p={6} textAlign="center">
+        <VStack spacing={6} maxW="600px" mx="auto">
+          <Icon as={MdPersonAdd} boxSize={16} color="blue.500" />
+          <Heading size="lg" color="gray.700">
+            {t('welcomeToHealthTracking', language)}
+          </Heading>
+          <Text fontSize="lg" color="gray.600" lineHeight="1.6">
+            {t('createHealthProfileMessage', language)}
+          </Text>
+          <VStack spacing={4} align="stretch" w="full">
+            <Button
+              as={Link}
+              to="/profile"
+              colorScheme="blue"
+              size="lg"
+              leftIcon={<Icon as={MdPerson} />}
+            >
+              {t('createHealthProfile', language)}
+            </Button>
+            <Text fontSize="sm" color="gray.500">
+              {t('healthProfileBenefits', language)}
+            </Text>
+          </VStack>
+        </VStack>
       </Box>
     );
   }
