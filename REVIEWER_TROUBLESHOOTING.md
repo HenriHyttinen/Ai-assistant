@@ -63,6 +63,29 @@ npm run dev
 3. **Check Database:** Run `python3 setup_reviewer.py` if you get table errors
 4. **Check Logs:** Look at terminal output for any error messages
 
+## 7. "no such column: activity_logs.performed_at" Error
+
+**Problem:** You see errors like `(sqlite3.OperationalError) no such column: activity_logs.performed_at` in the backend logs.
+
+**Reason:** The database was created before the `performed_at` column was added to the `activity_logs` table.
+
+**Solution:** Run the column fix script:
+
+```bash
+cd backend
+source venv/bin/activate
+python3 fix_performed_at_column.py
+```
+
+This will:
+- Add the missing `performed_at` column to the `activity_logs` table
+- Populate it with existing `created_at` values
+- Fix the "no such column" error
+
+After running this, restart your backend server.
+
+---
+
 ## Getting Help
 
 If you encounter issues not covered here:
