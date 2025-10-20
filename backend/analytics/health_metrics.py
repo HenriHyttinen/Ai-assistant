@@ -88,7 +88,10 @@ def calculate_habits_score(exercise_types: list, session_duration: str,
         "intermediate": 80,
         "advanced": 100
     }
-    score += level_scores.get(fitness_level.lower(), 0)
+    if fitness_level:
+        score += level_scores.get(fitness_level.lower(), 0)
+    else:
+        score += 50  # Default score for missing fitness level
     
     return score / 3
 
