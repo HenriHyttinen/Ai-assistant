@@ -119,25 +119,33 @@ def create_activity_log(
     current_user: User = Depends(auth.get_current_user)
 ) -> Any:
     """Create a new activity log entry for the current user."""
-    db_activity = health.create_activity_log(
-        db=db,
-        user_id=current_user.id,
-        **activity.dict()
-    )
-    
-    # Check for new achievements after logging activity
     try:
-        from services.achievement_service import AchievementService
-        achievement_service = AchievementService(db)
-        new_achievements = achievement_service.check_and_award_achievements(current_user.id)
-        # Note: We could return new achievements in the response, but for now we'll just log them
-        if new_achievements:
-            print(f"User {current_user.id} unlocked {len(new_achievements)} new achievements!")
-    except Exception as e:
-        # Don't fail the activity logging if achievement checking fails
-        print(f"Error checking achievements: {e}")
+        db_activity = health.create_activity_log(
+            db=db,
+            user_id=current_user.id,
+            **activity.dict()
+        )
+        
+        # Check for new achievements after logging activity
+        try:
+            from services.achievement_service import AchievementService
+            achievement_service = AchievementService(db)
+            new_achievements = achievement_service.check_and_award_achievements(current_user.id)
+            # Note: We could return new achievements in the response, but for now we'll just log them
+            if new_achievements:
+                print(f"User {current_user.id} unlocked {len(new_achievements)} new achievements!")
+        except Exception as e:
+            # Don't fail the activity logging if achievement checking fails
+            print(f"Error checking achievements: {e}")
+        
+        return ActivityLogResponse.model_validate(db_activity)
     
-    return ActivityLogResponse.model_validate(db_activity)
+    except ValueError as e:
+        # Handle duplicate activity error
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
 
 @router.get("/profiles/me/activities", response_model=List[ActivityLogResponse])
 def get_my_activity_logs(

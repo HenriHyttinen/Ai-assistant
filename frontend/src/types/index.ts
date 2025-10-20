@@ -45,6 +45,7 @@ export interface ActivityLog {
   duration: number; // in minutes
   intensity: 'low' | 'moderate' | 'high';
   notes?: string;
+  performed_at?: string;
   created_at: string;
 }
 

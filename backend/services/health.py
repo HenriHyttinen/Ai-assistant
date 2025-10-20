@@ -171,15 +171,31 @@ def create_activity_log(
     notes: Optional[str] = None,
     performed_at: Optional[datetime] = None
 ) -> ActivityLog:
-    """Create a new activity log entry."""
+    """Create a new activity log entry with duplicate prevention."""
+    # Check for duplicate activities within the same hour
+    if performed_at:
+        # Round to the nearest hour for duplicate checking
+        check_time = performed_at.replace(minute=0, second=0, microsecond=0)
+        end_time = check_time + timedelta(hours=1)
+        
+        existing_activity = db.query(ActivityLog).filter(
+            ActivityLog.user_id == user_id,
+            ActivityLog.activity_type == activity_type,
+            ActivityLog.performed_at >= check_time,
+            ActivityLog.performed_at < end_time
+        ).first()
+        
+        if existing_activity:
+            raise ValueError(f"Duplicate activity detected: {activity_type} already logged for this time period")
+    
     db_activity = ActivityLog(
         user_id=user_id,
         activity_type=activity_type,
         duration=duration,
         intensity=intensity,
         notes=notes,
-        # Store the time the user performed the activity; default to now
-        created_at=performed_at or datetime.utcnow()
+        performed_at=performed_at,  # Store when the activity was performed
+        created_at=datetime.utcnow()  # Store when the log was created
     )
     db.add(db_activity)
     db.commit()

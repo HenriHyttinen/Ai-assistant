@@ -80,9 +80,12 @@ const ActivityLogModal = ({ isOpen, onClose, onActivityLogged }: ActivityLogModa
         onClose();
         onActivityLogged?.();
       } catch (error: any) {
+        const errorMessage = error.response?.data?.detail || t('activityLoggedError' as any, language);
+        const isDuplicateError = errorMessage.includes('Duplicate activity detected');
+        
         toast({
           title: t('error' as any, language),
-          description: error.response?.data?.detail || t('activityLoggedError' as any, language),
+          description: isDuplicateError ? t('duplicateActivityError' as any, language) : errorMessage,
           status: 'error',
           duration: 5000,
           isClosable: true,

@@ -13,7 +13,8 @@ class ActivityLog(Base):
     duration = Column(Integer, nullable=False)  # in minutes
     intensity = Column(String, nullable=True)
     notes = Column(String, nullable=True)
-    created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+    performed_at = Column(DateTime(timezone=True), nullable=True)  # When the activity was performed
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)  # When the log was created
 
     # Relationships
     user = relationship("User", back_populates="activity_logs") 

@@ -11,6 +11,7 @@ interface ActivityLog {
   duration: number;
   intensity?: string;
   notes?: string;
+  performed_at?: string;
   created_at: string;
 }
 
@@ -66,7 +67,7 @@ const ActivityHistory = () => {
           <Tbody>
             {logs.map((log) => (
               <Tr key={log.id}>
-                <Td>{formatDate(log.created_at)}</Td>
+                <Td>{formatDate(log.performed_at || log.created_at)}</Td>
                 <Td textTransform="capitalize">{log.activity_type.replace('_',' ')}</Td>
                 <Td isNumeric>{log.duration} min</Td>
                 <Td>{log.intensity || '-'}</Td>
