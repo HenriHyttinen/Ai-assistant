@@ -1,8 +1,10 @@
 // @ts-nocheck
 import axios from 'axios';
 
+const API_BASE_URL = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8001';
+
 const api = axios.create({
-  baseURL: 'http://localhost:8000',
+  baseURL: API_BASE_URL,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -39,7 +41,7 @@ api.interceptors.response.use(
           throw new Error('No refresh token available');
         }
 
-        const response = await axios.post('http://localhost:8000/auth/refresh', { refresh_token: refreshToken });
+        const response = await axios.post(`${API_BASE_URL}/auth/refresh`, { refresh_token: refreshToken });
         const { access_token } = response.data;
 
         localStorage.setItem('token', access_token);
