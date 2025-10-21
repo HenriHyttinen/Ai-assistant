@@ -131,9 +131,27 @@ const MobileOptimizedWeightCard = ({
     }
   };
 
-  // Calculate progress
-  const progress = targetWeight && currentWeight ? 
-    Math.max(0, Math.min(100, ((currentWeight - targetWeight) / Math.abs(targetWeight - currentWeight)) * 100)) : 0;
+  // Calculate progress - fixed calculation
+  const calculateProgress = () => {
+    if (!targetWeight || !currentWeight) return 0;
+    
+    // For weight loss goals
+    if (currentWeight > targetWeight) {
+      const totalToLose = currentWeight - targetWeight;
+      const lostSoFar = weightTrend.length > 0 ? Math.max(...weightTrend) - currentWeight : 0;
+      return totalToLose > 0 ? Math.max(0, Math.min(100, (lostSoFar / totalToLose) * 100)) : 0;
+    }
+    // For weight gain goals
+    else if (currentWeight < targetWeight) {
+      const totalToGain = targetWeight - currentWeight;
+      const gainedSoFar = weightTrend.length > 0 ? currentWeight - Math.min(...weightTrend) : 0;
+      return totalToGain > 0 ? Math.max(0, Math.min(100, (gainedSoFar / totalToGain) * 100)) : 0;
+    }
+    // Already at target
+    return 100;
+  };
+  
+  const progress = calculateProgress();
 
   // Prepare chart data
   const chartData = weightTrend.slice(-10).map((weight, index) => {

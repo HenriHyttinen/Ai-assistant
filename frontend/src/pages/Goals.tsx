@@ -518,6 +518,20 @@ const Goals = () => {
                   <Progress value={goal.progress} colorScheme="blue" mb={2} />
                   <Text fontSize="sm">{goal.progress}% {t('complete', language)}</Text>
                   
+                  {/* Milestone Message */}
+                  {goal.progress > 0 && (
+                    <Box mt={2} p={2} bg="green.50" borderRadius="md" border="1px" borderColor="green.200">
+                      <Text fontSize="xs" color="green.800" textAlign="center" fontWeight="medium">
+                        {goal.progress >= 100 ? "🎉 Goal completed!" :
+                         goal.progress >= 90 ? `🔥 Almost there! ${100 - goal.progress}% to go!` :
+                         goal.progress >= 75 ? `💪 Great progress! Keep it up!` :
+                         goal.progress >= 50 ? `🎯 Halfway there! You're doing great!` :
+                         goal.progress >= 25 ? `⭐ Good start! ${goal.progress}% done!` :
+                         `🌱 Getting started! ${goal.progress}% complete!`}
+                      </Text>
+                    </Box>
+                  )}
+                  
                   {/* Progress Input for in_progress goals */}
                   {goal.status === 'in_progress' && (
                     <Box mt={3}>

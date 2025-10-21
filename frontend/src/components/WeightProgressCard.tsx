@@ -65,8 +65,6 @@ const WeightProgressCard = ({
   const chartHeight = useBreakpointValue({ base: 200, md: 250, lg: 300 });
   const fontSize = useBreakpointValue({ base: 10, md: 12, lg: 14 });
   const gridColumns = useBreakpointValue({ base: 1, md: 2, lg: 3 });
-  const headingSize = useBreakpointValue({ base: 'sm', md: 'md', lg: 'lg' });
-  const textSize = useBreakpointValue({ base: 'xs', md: 'sm', lg: 'md' });
 
   // Calculate progress
   const weightDifference = currentWeight - targetWeight;
@@ -82,42 +80,64 @@ const WeightProgressCard = ({
   
   // Progress calculation based on goal type
   const getProgressPercentage = () => {
+    if (!targetWeight || !currentWeight) return 0;
+    
     if (isGainingWeight) {
       // For weight gain: progress is how much we've gained towards the target
       if (weightTrend.length > 0) {
         // Use historical data if available
-        const startingWeight = weightTrend[0];
+        const startingWeight = Math.min(...weightTrend); // Use lowest weight as starting point
         const totalToGain = targetWeight - startingWeight;
         const gainedSoFar = currentWeight - startingWeight;
         return totalToGain > 0 ? Math.max(0, Math.min(100, (gainedSoFar / totalToGain) * 100)) : 0;
       } else {
         // No historical data: calculate progress based on current vs target
-        // For weight gain, show progress based on how close we are to target
         const totalToGain = targetWeight - currentWeight;
         if (totalToGain <= 0) return 100; // Already at or above target
-        // Estimate starting weight as current weight for now
-        // This will be more accurate once user logs more weight entries
         return 0; // Start at 0% and build up as user logs weight
       }
     } else if (isLosingWeight) {
       // For weight loss: progress is how much we've lost towards the target
       if (weightTrend.length > 0) {
         // Use historical data if available
-        const startingWeight = weightTrend[0];
+        const startingWeight = Math.max(...weightTrend); // Use highest weight as starting point
         const totalToLose = startingWeight - targetWeight;
         const lostSoFar = startingWeight - currentWeight;
         return totalToLose > 0 ? Math.max(0, Math.min(100, (lostSoFar / totalToLose) * 100)) : 0;
       } else {
         // No historical data: calculate progress based on current vs target
-        // For weight loss, assume user started at current weight if no history
         const totalToLose = currentWeight - targetWeight;
-        return totalToLose > 0 ? 0 : 100; // If already at or below target, show 100% progress
+        if (totalToLose <= 0) return 100; // Already at or below target
+        return 0; // Start at 0% and build up as user logs weight
       }
     }
     return 0;
   };
   
   const progressPercentage = getProgressPercentage();
+  
+  // Milestone tracking and encouraging messages
+  const getMilestoneMessage = () => {
+    const percentage = Math.round(progressPercentage);
+    
+    if (percentage >= 100) {
+      return "🎉 Congratulations! You've reached your goal!";
+    } else if (percentage >= 90) {
+      return `🔥 Amazing! You're ${percentage}% there! Just ${100 - percentage}% to go!`;
+    } else if (percentage >= 75) {
+      return `💪 Great job! You're ${percentage}% done! Keep pushing!`;
+    } else if (percentage >= 50) {
+      return `🎯 Excellent progress! You're halfway there at ${percentage}%!`;
+    } else if (percentage >= 25) {
+      return `⭐ Good start! You're ${percentage}% of the way to your goal!`;
+    } else if (percentage >= 10) {
+      return `🚀 You're getting started! ${percentage}% complete, ${100 - percentage}% to go!`;
+    } else if (percentage > 0) {
+      return `🌱 Every step counts! You're ${percentage}% on your way!`;
+    } else {
+      return "💫 Ready to start your journey? Log your weight to begin tracking!";
+    }
+  };
   
   // Calculate trend based on goal direction
   const getTrend = () => {
@@ -242,28 +262,6 @@ const WeightProgressCard = ({
     return `You're ${amount}${unit} away from your goal!`;
   };
 
-  const getMotivationalMessage = () => {
-    if (isGainingWeight) {
-      // For weight gain goals
-      if (trend === 'up') {
-        return t('greatProgressMovingRight' as any, language);
-      } else if (trend === 'down') {
-        return t('dontWorryWeightFluctuates' as any, language);
-      } else if (trend === 'stable') {
-        return t('weightStableKeepGoodWork' as any, language);
-      }
-    } else if (isLosingWeight) {
-      // For weight loss goals
-      if (trend === 'up') {
-        return t('greatProgressMovingRight' as any, language);
-      } else if (trend === 'down') {
-        return t('dontWorryWeightFluctuates' as any, language);
-      } else if (trend === 'stable') {
-        return t('weightStableKeepGoodWork' as any, language);
-      }
-    }
-    return t('everyStepCounts' as any, language);
-  };
 
   return (
     <>
@@ -309,10 +307,10 @@ const WeightProgressCard = ({
               />
             </Box>
 
-            {/* Motivational Message */}
+            {/* Milestone Message */}
             <Box p={3} bg="green.50" borderRadius="md" border="1px" borderColor="green.200">
-              <Text color="green.800" fontSize="sm" textAlign="center">
-                {getMotivationalMessage()}
+              <Text color="green.800" fontSize="sm" textAlign="center" fontWeight="medium">
+                {getMilestoneMessage()}
               </Text>
             </Box>
 

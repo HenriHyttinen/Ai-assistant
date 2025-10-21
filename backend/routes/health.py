@@ -292,7 +292,7 @@ def get_my_health_analytics(
     if profile.target_weight and profile.weight and weight_trend:
         if profile.fitness_goal == "muscle_gain":
             # For weight gain: progress is how much we've gained towards the target
-            starting_weight = weight_trend[0]  # First weight in trend
+            starting_weight = min(weight_trend)  # Use lowest weight as starting point
             total_to_gain = profile.target_weight - starting_weight
             gained_so_far = profile.weight - starting_weight
             if total_to_gain > 0:
