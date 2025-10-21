@@ -4,7 +4,10 @@ from typing import List, Dict, Any
 import time
 
 from database import get_db
-from models.user import User, HealthProfile, ActivityLog, MetricsHistory
+from models.user import User
+from models.health_profile import HealthProfile
+from models.activity_log import ActivityLog
+from models.metrics_history import MetricsHistory
 from schemas.user import (
     HealthProfileCreate,
     HealthProfileResponse,
@@ -200,7 +203,7 @@ async def get_health_insights(
         )
     
     # Get user settings for language preferences
-    from models.user import UserSettings
+    from models.user_settings import UserSettings
     user_settings = db.query(UserSettings).filter(
         UserSettings.user_id == current_user.id
     ).first()

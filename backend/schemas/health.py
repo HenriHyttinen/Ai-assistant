@@ -1,12 +1,12 @@
-from pydantic import BaseModel, conint, confloat, Field, field_validator
+from pydantic import BaseModel, conint, confloat, Field, field_validator, ValidationError
 from typing import List, Optional, Dict
 from datetime import datetime
 
 class HealthProfileBase(BaseModel):
     age: Optional[int] = Field(None, ge=0, le=120)
     gender: Optional[str] = None
-    height: Optional[float] = Field(None, gt=0)  # in cm
-    weight: Optional[float] = Field(None, gt=0)  # in kg
+    height: Optional[float] = Field(None, gt=50, le=300)  # in cm (20 inches to 10 feet)
+    weight: Optional[float] = Field(None, gt=20, le=500)  # in kg (44 lbs to 1100 lbs)
     occupation_type: Optional[str] = None
     activity_level: Optional[str] = None
     
@@ -16,7 +16,7 @@ class HealthProfileBase(BaseModel):
     meal_preferences: Optional[str] = None  # breakfast, lunch, dinner preferences
     
     fitness_goal: Optional[str] = None
-    target_weight: Optional[float] = Field(None, gt=0)
+    target_weight: Optional[float] = Field(None, gt=20, le=500)  # in kg (44 lbs to 1100 lbs)
     target_activity_level: Optional[str] = None
     preferred_exercise_time: Optional[str] = None
     preferred_exercise_environment: Optional[str] = None
@@ -29,6 +29,36 @@ class HealthProfileBase(BaseModel):
     current_endurance_minutes: Optional[int] = Field(None, ge=0)  # How long can run/walk
     pushup_count: Optional[int] = Field(None, ge=0)  # Number of pushups can do
     squat_count: Optional[int] = Field(None, ge=0)  # Number of squats can do
+    
+    @field_validator('height')
+    @classmethod
+    def validate_height(cls, v):
+        if v is not None:
+            if v < 50:
+                raise ValueError('Height must be at least 50 cm (about 20 inches)')
+            if v > 300:
+                raise ValueError('Height must be no more than 300 cm (about 10 feet)')
+        return v
+    
+    @field_validator('weight')
+    @classmethod
+    def validate_weight(cls, v):
+        if v is not None:
+            if v < 20:
+                raise ValueError('Weight must be at least 20 kg (about 44 lbs)')
+            if v > 500:
+                raise ValueError('Weight must be no more than 500 kg (about 1100 lbs)')
+        return v
+    
+    @field_validator('target_weight')
+    @classmethod
+    def validate_target_weight(cls, v):
+        if v is not None:
+            if v < 20:
+                raise ValueError('Target weight must be at least 20 kg (about 44 lbs)')
+            if v > 500:
+                raise ValueError('Target weight must be no more than 500 kg (about 1100 lbs)')
+        return v
 
 class HealthProfileCreate(HealthProfileBase):
     pass
@@ -36,9 +66,37 @@ class HealthProfileCreate(HealthProfileBase):
 class HealthProfileUpdate(HealthProfileBase):
     pass
 
-class HealthProfileResponse(HealthProfileBase):
+class HealthProfileResponse(BaseModel):
+    """Response schema for reading health profile data - no strict validation for existing data."""
     id: int
     user_id: int
+    age: Optional[int] = None
+    gender: Optional[str] = None
+    height: Optional[float] = None  # No validation for reading existing data
+    weight: Optional[float] = None  # No validation for reading existing data
+    occupation_type: Optional[str] = None
+    activity_level: Optional[str] = None
+    
+    # Dietary preferences and restrictions
+    dietary_preferences: Optional[str] = None
+    dietary_restrictions: Optional[str] = None
+    meal_preferences: Optional[str] = None
+    
+    fitness_goal: Optional[str] = None
+    target_weight: Optional[float] = None  # No validation for reading existing data
+    target_activity_level: Optional[str] = None
+    preferred_exercise_time: Optional[str] = None
+    preferred_exercise_environment: Optional[str] = None
+    weekly_activity_frequency: Optional[int] = None
+    exercise_types: Optional[str] = None
+    average_session_duration: Optional[str] = None
+    fitness_level: Optional[str] = None
+    endurance_level: Optional[int] = None
+    strength_indicators: Optional[str] = None
+    current_endurance_minutes: Optional[int] = None
+    pushup_count: Optional[int] = None
+    squat_count: Optional[int] = None
+    
     created_at: datetime
     updated_at: datetime
 

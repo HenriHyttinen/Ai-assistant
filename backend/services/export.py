@@ -3,7 +3,10 @@ import csv
 from io import StringIO
 from typing import List, Dict, Any
 from datetime import datetime, timedelta
-from models.user import User, HealthProfile, ActivityLog, MetricsHistory
+from models.user import User
+from models.health_profile import HealthProfile
+from models.activity_log import ActivityLog
+from models.metrics_history import MetricsHistory
 from sqlalchemy.orm import Session
 
 class DataExporter:

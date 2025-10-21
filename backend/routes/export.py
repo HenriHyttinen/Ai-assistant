@@ -8,9 +8,12 @@ import io
 from datetime import datetime, timedelta
 
 from database import get_db
-from models.user import User, HealthProfile, ActivityLog, MetricsHistory
+from models.user import User
+from models.health_profile import HealthProfile
+from models.activity_log import ActivityLog
+from models.metrics_history import MetricsHistory
 # DataConsent import removed due to model issues
-from routes.auth import get_current_user
+from auth.supabase_auth import get_current_user_supabase as get_current_user
 
 router = APIRouter(prefix="/export", tags=["data export"])
 

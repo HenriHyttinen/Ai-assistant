@@ -7,7 +7,7 @@ from database import get_db
 from models.user import User
 from models.consent import DataConsent
 from schemas.consent import DataConsent as DataConsentSchema, ConsentResponse, ConsentUpdate
-from routes.auth import get_current_user
+from auth.supabase_auth import get_current_user_supabase as get_current_user
 
 router = APIRouter(prefix="/consent", tags=["data consent"])
 

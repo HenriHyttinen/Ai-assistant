@@ -28,7 +28,7 @@ from schemas.auth import (
     RefreshToken
 )
 from services import auth
-from services.auth import get_current_user
+from auth.supabase_auth import get_current_user_supabase as get_current_user
 
 router = APIRouter(tags=["authentication"])
 

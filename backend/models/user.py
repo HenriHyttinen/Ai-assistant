@@ -3,9 +3,6 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from .base import Base
 from .base import TimestampMixin
-from .health_profile import HealthProfile
-from .metrics_history import MetricsHistory
-from .activity_log import ActivityLog
 
 class User(Base, TimestampMixin):
     __tablename__ = "users"
@@ -22,7 +19,7 @@ class User(Base, TimestampMixin):
     oauth_id = Column(String, nullable=True)
     profile_picture = Column(String, nullable=True)
 
-    # Relationships
+    # Relationships - using string references to avoid circular imports
     health_profile = relationship("HealthProfile", back_populates="user", uselist=False)
     activity_logs = relationship("ActivityLog", back_populates="user")
     goals = relationship("Goal", back_populates="user")

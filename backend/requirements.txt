@@ -33,4 +33,5 @@ black==23.11.0
 isort==5.12.0
 flake8==6.1.0
 mypy==1.7.1
-cryptography==41.0.7 
+cryptography==41.0.7
+supabase==2.3.0 
