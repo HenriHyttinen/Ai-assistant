@@ -89,17 +89,17 @@ async def export_health_data(
                 "recorded_at": metric.recorded_at.isoformat(),
                 "weight": metric.weight,
                 "bmi": metric.bmi,
-                "wellness_score": metric.wellness_score,
-                "created_at": metric.created_at.isoformat() if metric.created_at else None
+                "wellness_score": metric.wellness_score
             }
             for metric in metrics_history
         ],
         "activity_logs": [
             {
                 "activity_type": log.activity_type,
-                "duration_minutes": log.duration_minutes,
+                "duration": log.duration,
                 "intensity": log.intensity,
                 "notes": log.notes,
+                "performed_at": log.performed_at.isoformat() if log.performed_at else None,
                 "created_at": log.created_at.isoformat() if log.created_at else None
             }
             for log in activity_logs
@@ -141,13 +141,130 @@ async def export_health_data(
         return StreamingResponse(
             io.BytesIO(output.getvalue().encode('utf-8')),
             media_type="text/csv",
-            headers={"Content-Disposition": f"attachment; filename=health_data_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"}
+            headers={
+                "Content-Disposition": f"attachment; filename=health_data_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+                "Access-Control-Allow-Headers": "Content-Type, Authorization"
+            }
         )
     else:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid format. Supported formats: json, csv"
         )
+
+@router.get("/activities")
+async def export_activities(
+    days: int = 30,
+    format: str = "csv",
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Export activity logs for the current user."""
+    
+    # Get activity logs for the specified time range
+    start_date = datetime.utcnow() - timedelta(days=days)
+    activity_logs = db.query(ActivityLog).filter(
+        ActivityLog.user_id == current_user.id,
+        ActivityLog.created_at >= start_date
+    ).order_by(ActivityLog.created_at.desc()).all()
+    
+    if not activity_logs:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No activity logs found for the specified time range"
+        )
+    
+    # Prepare export data
+    export_data = {
+        "export_info": {
+            "exported_at": datetime.utcnow().isoformat(),
+            "user_id": current_user.id,
+            "user_email": current_user.email,
+            "export_format": format,
+            "time_range_days": days,
+            "activity_count": len(activity_logs)
+        },
+        "activities": [
+            {
+                "id": log.id,
+                "activity_type": log.activity_type,
+                "duration": log.duration,
+                "intensity": log.intensity,
+                "notes": log.notes,
+                "performed_at": log.performed_at.isoformat() if log.performed_at else None,
+                "created_at": log.created_at.isoformat()
+            }
+            for log in activity_logs
+        ]
+    }
+    
+    if format.lower() == "json":
+        # Return JSON data
+        return export_data
+    elif format.lower() == "csv":
+        # Convert to CSV format
+        csv_data = convert_activities_to_csv(export_data)
+        
+        # Create CSV file in memory
+        output = io.StringIO()
+        writer = csv.writer(output)
+        
+        # Write CSV data
+        for row in csv_data:
+            writer.writerow(row)
+        
+        # Return CSV file
+        output.seek(0)
+        return StreamingResponse(
+            io.BytesIO(output.getvalue().encode('utf-8')),
+            media_type="text/csv",
+            headers={
+                "Content-Disposition": f"attachment; filename=activities_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+                "Access-Control-Allow-Headers": "Content-Type, Authorization"
+            }
+        )
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid format. Supported formats: json, csv"
+        )
+
+def convert_activities_to_csv(data: Dict[str, Any]) -> List[List[str]]:
+    """Convert activities export data to CSV format."""
+    csv_rows = []
+    
+    # Add export info
+    csv_rows.append(["Export Information"])
+    csv_rows.append(["Exported At", data["export_info"]["exported_at"]])
+    csv_rows.append(["User Email", data["export_info"]["user_email"]])
+    csv_rows.append(["Time Range (days)", str(data["export_info"]["time_range_days"])])
+    csv_rows.append(["Activity Count", str(data["export_info"]["activity_count"])])
+    csv_rows.append([])  # Empty row
+    
+    # Add activities header
+    csv_rows.append(["Activities"])
+    csv_rows.append([
+        "ID", "Activity Type", "Duration (min)", "Intensity", 
+        "Notes", "Performed At", "Created At"
+    ])
+    
+    # Add activities data
+    for activity in data["activities"]:
+        csv_rows.append([
+            str(activity["id"]),
+            activity["activity_type"],
+            str(activity["duration"]),
+            activity["intensity"] or "",
+            activity["notes"] or "",
+            activity["performed_at"] or "",
+            activity["created_at"]
+        ])
+    
+    return csv_rows
 
 def convert_to_csv(data: Dict[str, Any]) -> List[List[str]]:
     """Convert export data to CSV format."""

@@ -170,8 +170,12 @@ export const healthProfile = {
 export const analytics = {
   getAnalytics: () => api.get<HealthAnalytics>(`/health/profiles/me/analytics?t=${Date.now()}`),
   getMetrics: (days: number = 30) => api.get<MetricsHistory[]>(`/health/profiles/me/metrics?days=${days}`),
-  getActivities: (days: number = 7) => api.get<ActivityLog[]>(`/health/profiles/me/activities?days=${days}`),
+  getActivities: (days: number = 7, sortOrder: string = 'desc') => api.get<ActivityLog[]>(`/health/profiles/me/activities?days=${days}&sort_order=${sortOrder}`),
   createActivity: (data: Partial<ActivityLog>) => api.post<ActivityLog>('/health/profiles/me/activities', data),
+  getWeeklySummary: () => api.get('/health/profiles/me/weekly-summary'),
+  getMonthlySummary: () => api.get('/health/profiles/me/monthly-summary'),
+  exportActivities: (days: number = 30, format: string = 'csv') => api.get(`/export/activities?days=${days}&format=${format}`, { responseType: 'blob' }),
+  exportHealthData: (format: string = 'json') => api.get(`/export/health-data?format=${format}`, { responseType: 'blob' }),
 };
 
 // Settings API calls

@@ -205,14 +205,23 @@ def create_activity_log(
 def get_activity_logs(
     db: Session,
     user_id: int,
-    days: int = 7
+    days: int = 7,
+    sort_order: str = "desc"
 ) -> List[ActivityLog]:
     """Get activity logs for a user within the specified time range."""
     start_date = datetime.utcnow() - timedelta(days=days)
-    return db.query(ActivityLog)\
+    
+    # Use performed_at if available, otherwise fall back to created_at
+    query = db.query(ActivityLog)\
         .filter(
             ActivityLog.user_id == user_id,
             ActivityLog.created_at >= start_date
-        )\
-        .order_by(ActivityLog.created_at.desc())\
-        .all() 
+        )
+    
+    # Sort by performed_at if available, otherwise created_at
+    if sort_order == "desc":
+        query = query.order_by(ActivityLog.performed_at.desc().nullslast(), ActivityLog.created_at.desc())
+    else:
+        query = query.order_by(ActivityLog.performed_at.asc().nullslast(), ActivityLog.created_at.asc())
+    
+    return query.all() 

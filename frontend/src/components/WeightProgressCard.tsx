@@ -28,6 +28,7 @@ import {
   StatNumber,
   StatHelpText,
   StatArrow,
+  useBreakpointValue,
 } from '@chakra-ui/react';
 import { useState } from 'react';
 import { useApp } from '../contexts/AppContext';
@@ -58,6 +59,14 @@ const WeightProgressCard = ({
   const toast = useToast();
   const [newWeight, setNewWeight] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Mobile-responsive values
+  const isMobile = useBreakpointValue({ base: true, md: false });
+  const chartHeight = useBreakpointValue({ base: 200, md: 250, lg: 300 });
+  const fontSize = useBreakpointValue({ base: 10, md: 12, lg: 14 });
+  const gridColumns = useBreakpointValue({ base: 1, md: 2, lg: 3 });
+  const headingSize = useBreakpointValue({ base: 'sm', md: 'md', lg: 'lg' });
+  const textSize = useBreakpointValue({ base: 'xs', md: 'sm', lg: 'md' });
 
   // Calculate progress
   const weightDifference = currentWeight - targetWeight;
@@ -381,7 +390,7 @@ const WeightProgressCard = ({
       </Modal>
 
       {/* Weight Analytics Modal */}
-      <Modal isOpen={isTrendOpen} onClose={onTrendClose} size="xl">
+      <Modal isOpen={isTrendOpen} onClose={onTrendClose} size={isMobile ? "sm" : "xl"}>
         <ModalOverlay />
         <ModalContent>
           <ModalHeader>{t('graphs' as any, language)}</ModalHeader>
@@ -389,7 +398,7 @@ const WeightProgressCard = ({
           <ModalBody>
             <VStack spacing={6} align="stretch">
               {/* Analytics Overview */}
-              <SimpleGrid columns={3} spacing={4}>
+              <SimpleGrid columns={gridColumns} spacing={4}>
                 <Stat textAlign="center">
                   <StatLabel>{t('currentWeight' as any, language)}</StatLabel>
                   <StatNumber fontSize="2xl" color="blue.600">
@@ -422,7 +431,7 @@ const WeightProgressCard = ({
                   <Text fontSize="lg" fontWeight="bold" mb={4}>
                     {t('weightTrendChart' as any, language)}
                   </Text>
-                  <Box p={4} bg="white" borderRadius="md" border="1px" borderColor="gray.200" height="300px">
+                  <Box p={isMobile ? 2 : 4} bg="white" borderRadius="md" border="1px" borderColor="gray.200" height={`${chartHeight}px`}>
                     <ResponsiveContainer width="100%" height="100%">
                       <LineChart data={weightTrend.slice(-10).map((weight, index) => {
                         const recentTimestamps = weightTrendTimestamps.slice(-10);
@@ -438,7 +447,10 @@ const WeightProgressCard = ({
                         <XAxis 
                           dataKey="date" 
                           stroke="#718096"
-                          fontSize={12}
+                          fontSize={fontSize}
+                          angle={isMobile ? -45 : 0}
+                          textAnchor={isMobile ? "end" : "middle"}
+                          height={isMobile ? 60 : 40}
                           tickFormatter={(tickItem: any, index: number) => {
                             // Get all data points to determine unique dates
                             const data = weightTrend.slice(-10).map((weight, i) => {
@@ -464,8 +476,9 @@ const WeightProgressCard = ({
                         />
                         <YAxis 
                           stroke="#718096"
-                          fontSize={12}
+                          fontSize={fontSize}
                           domain={['dataMin - 2', 'dataMax + 2']}
+                          width={isMobile ? 50 : 60}
                         />
                         <Tooltip 
                           formatter={(value: any, name: any) => [
@@ -476,15 +489,20 @@ const WeightProgressCard = ({
                           contentStyle={{
                             backgroundColor: '#f7fafc',
                             border: '1px solid #e2e8f0',
-                            borderRadius: '6px'
+                            borderRadius: '6px',
+                            fontSize: fontSize
+                          }}
+                          labelStyle={{
+                            fontSize: fontSize,
+                            fontWeight: 'bold'
                           }}
                         />
                         <Line 
                           type="monotone" 
                           dataKey="weight" 
                           stroke="#3182ce" 
-                          strokeWidth={3}
-                          dot={{ fill: '#3182ce', strokeWidth: 2, r: 4 }}
+                          strokeWidth={isMobile ? 2 : 3}
+                          dot={{ fill: '#3182ce', strokeWidth: 2, r: isMobile ? 3 : 4 }}
                           name="weight"
                         />
                         {targetWeight > 0 && (
@@ -492,7 +510,7 @@ const WeightProgressCard = ({
                             type="monotone" 
                             dataKey="target" 
                             stroke="#38a169" 
-                            strokeWidth={2}
+                            strokeWidth={isMobile ? 1 : 2}
                             strokeDasharray="5 5"
                             dot={false}
                             name="target"

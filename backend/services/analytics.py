@@ -96,4 +96,67 @@ def check_goal_achievements(user_id: int, db: Session) -> List[Dict[str, Any]]:
                 "achieved_at": datetime.utcnow().isoformat()
             })
     
-    return achievements 
+    return achievements
+
+def calculate_monthly_summary(user_id: int, db: Session) -> Dict[str, Any]:
+    """Calculate monthly summary for a user."""
+    # Get user's health profile
+    profile = db.query(HealthProfile).filter(HealthProfile.user_id == user_id).first()
+    if not profile:
+        return None
+    
+    # Get metrics for the last month
+    start_date = datetime.utcnow() - timedelta(days=30)
+    metrics = db.query(MetricsHistory)\
+        .filter(
+            MetricsHistory.health_profile_id == profile.id,
+            MetricsHistory.recorded_at >= start_date
+        )\
+        .order_by(MetricsHistory.recorded_at.desc())\
+        .all()
+    
+    # Get activity logs for the last month
+    activities = db.query(ActivityLog)\
+        .filter(
+            ActivityLog.user_id == user_id,
+            ActivityLog.created_at >= start_date
+        )\
+        .order_by(ActivityLog.created_at.desc())\
+        .all()
+    
+    # Calculate monthly summary
+    summary = {
+        "period": {
+            "start": start_date.isoformat(),
+            "end": datetime.utcnow().isoformat(),
+            "type": "monthly"
+        },
+        "metrics": {
+            "current_weight": metrics[0].weight if metrics else None,
+            "weight_change": metrics[0].weight - metrics[-1].weight if len(metrics) > 1 else 0,
+            "current_bmi": metrics[0].bmi if metrics else None,
+            "current_wellness_score": metrics[0].wellness_score if metrics else None,
+            "wellness_score_change": metrics[0].wellness_score - metrics[-1].wellness_score if len(metrics) > 1 else 0
+        },
+        "activities": {
+            "total_duration": sum(a.duration for a in activities),
+            "activity_count": len(activities),
+            "average_duration": round(sum(a.duration for a in activities) / len(activities), 1) if activities else 0,
+            "activity_types": list(set(a.activity_type for a in activities)),
+            "weekly_average": round(sum(a.duration for a in activities) / 4, 1) if activities else 0
+        },
+        "goals_progress": {
+            "weight_goal": {
+                "target": profile.target_weight,
+                "current": metrics[0].weight if metrics else None,
+                "progress_percentage": round(((metrics[0].weight - profile.target_weight) / profile.target_weight * 100), 1) if profile.target_weight and metrics else 0
+            },
+            "activity_goal": {
+                "target_frequency": profile.weekly_activity_frequency,
+                "actual_frequency": len(activities) // 4,  # Approximate weekly frequency
+                "progress_percentage": round((len(activities) // 4) / profile.weekly_activity_frequency * 100, 1) if profile.weekly_activity_frequency else 0
+            }
+        }
+    }
+    
+    return summary 

@@ -150,12 +150,43 @@ def create_activity_log(
 @router.get("/profiles/me/activities", response_model=List[ActivityLogResponse])
 def get_my_activity_logs(
     days: int = 7,
+    sort_order: str = "desc",
     db: Session = Depends(get_db),
     current_user: User = Depends(auth.get_current_user)
 ) -> Any:
     """Get the current user's activity logs."""
-    logs = health.get_activity_logs(db, current_user.id, days)
+    logs = health.get_activity_logs(db, current_user.id, days, sort_order)
     return [ActivityLogResponse.model_validate(log) for log in logs]
+
+@router.get("/profiles/me/weekly-summary")
+def get_weekly_summary(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(auth.get_current_user)
+) -> Any:
+    """Get weekly health summary for the current user."""
+    from services.analytics import calculate_weekly_summary
+    summary = calculate_weekly_summary(current_user.id, db)
+    if not summary:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Health profile not found"
+        )
+    return summary
+
+@router.get("/profiles/me/monthly-summary")
+def get_monthly_summary(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(auth.get_current_user)
+) -> Any:
+    """Get monthly health summary for the current user."""
+    from services.analytics import calculate_monthly_summary
+    summary = calculate_monthly_summary(current_user.id, db)
+    if not summary:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Health profile not found"
+        )
+    return summary
 
 @router.get("/profiles/me/analytics", response_model=HealthAnalytics)
 def get_my_health_analytics(

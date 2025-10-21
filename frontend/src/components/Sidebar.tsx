@@ -11,7 +11,7 @@ import type { IconType } from 'react-icons';
 import {
   FiHome,
   FiTrendingUp,
-  FiCompass,
+  FiActivity,
   FiStar,
   FiSettings,
   FiAward,
@@ -31,7 +31,7 @@ interface LinkItemProps {
 const LinkItems: Array<LinkItemProps> = [
   { nameKey: 'dashboard', icon: FiHome, path: '/dashboard' },
   { nameKey: 'healthProfile', icon: FiTrendingUp, path: '/profile' },
-  { nameKey: 'analytics', icon: FiCompass, path: '/analytics' },
+  { nameKey: 'analytics', icon: FiActivity, path: '/analytics' },
   { nameKey: 'activityHistory', icon: FiList, path: '/activities' },
   { nameKey: 'goals', icon: FiStar, path: '/goals' },
   { nameKey: 'achievements', icon: FiAward, path: '/achievements' },

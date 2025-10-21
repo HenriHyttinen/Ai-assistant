@@ -8,9 +8,6 @@ import {
   Collapse,
   Icon,
   Link,
-  Popover,
-  PopoverTrigger,
-  PopoverContent,
   useColorModeValue,
   useBreakpointValue,
   useDisclosure,
@@ -20,14 +17,32 @@ import {
   MenuList,
   MenuItem,
   MenuDivider,
+  VStack,
 } from '@chakra-ui/react';
 import {
   HamburgerIcon,
   CloseIcon,
-  ChevronDownIcon,
-  ChevronRightIcon,
+  ViewIcon,
+  ArrowUpIcon,
+  StarIcon,
+  TriangleUpIcon,
+  SettingsIcon,
 } from '@chakra-ui/icons';
+import { FiActivity, FiList } from 'react-icons/fi';
 import { useAuth } from '../contexts/AuthContext';
+import { useApp } from '../contexts/AppContext';
+import { t } from '../utils/translations';
+
+// Navigation items - same as in Sidebar
+const LinkItems = [
+  { nameKey: 'dashboard', icon: ViewIcon, path: '/dashboard' },
+  { nameKey: 'healthProfile', icon: ArrowUpIcon, path: '/profile' },
+  { nameKey: 'analytics', icon: FiActivity, path: '/analytics' },
+  { nameKey: 'activityHistory', icon: FiList, path: '/activities' },
+  { nameKey: 'goals', icon: StarIcon, path: '/goals' },
+  { nameKey: 'achievements', icon: TriangleUpIcon, path: '/achievements' },
+  { nameKey: 'settings', icon: SettingsIcon, path: '/settings' },
+];
 
 export default function Navbar() {
   const { isOpen, onToggle } = useDisclosure();
@@ -126,166 +141,63 @@ export default function Navbar() {
 }
 
 const DesktopNav = () => {
-  const linkColor = useColorModeValue('gray.600', 'gray.200');
-  const linkHoverColor = useColorModeValue('gray.800', 'white');
-  const popoverContentBgColor = useColorModeValue('white', 'gray.800');
-
-  return (
-    <Stack direction={'row'} spacing={4}>
-      {NAV_ITEMS.map((navItem) => (
-        <Box key={navItem.label}>
-          <Popover trigger={'hover'} placement={'bottom-start'}>
-            <PopoverTrigger>
-              <Link
-                p={2}
-                href={navItem.href ?? '#'}
-                fontSize={'sm'}
-                fontWeight={500}
-                color={linkColor}
-                _hover={{
-                  textDecoration: 'none',
-                  color: linkHoverColor,
-                }}
-              >
-                {navItem.label}
-              </Link>
-            </PopoverTrigger>
-
-            {navItem.children && (
-              <PopoverContent
-                border={0}
-                boxShadow={'xl'}
-                bg={popoverContentBgColor}
-                p={4}
-                rounded={'xl'}
-                minW={'sm'}
-              >
-                <Stack>
-                  {navItem.children.map((child) => (
-                    <DesktopSubNav key={child.label} {...child} />
-                  ))}
-                </Stack>
-              </PopoverContent>
-            )}
-          </Popover>
-        </Box>
-      ))}
-    </Stack>
-  );
+  // Desktop navigation is handled by the Sidebar component
+  // This is just a placeholder for the navbar
+  return null;
 };
 
-const DesktopSubNav = ({ label, href, subLabel }: NavItem) => {
-  return (
-    <Link
-      href={href}
-      role={'group'}
-      display={'block'}
-      p={2}
-      rounded={'md'}
-      _hover={{ bg: useColorModeValue('blue.50', 'gray.900') }}
-    >
-      <Stack direction={'row'} align={'center'}>
-        <Box>
-          <Text
-            transition={'all .3s ease'}
-            _groupHover={{ color: 'blue.400' }}
-            fontWeight={500}
-          >
-            {label}
-          </Text>
-          <Text fontSize={'sm'}>{subLabel}</Text>
-        </Box>
-        <Flex
-          transition={'all .3s ease'}
-          transform={'translateX(-10px)'}
-          opacity={0}
-          _groupHover={{ opacity: '100%', transform: 'translateX(0)' }}
-          justify={'flex-end'}
-          align={'center'}
-          flex={1}
-        >
-          <Icon color={'blue.400'} w={5} h={5} as={ChevronRightIcon} />
-        </Flex>
-      </Stack>
-    </Link>
-  );
-};
 
 const MobileNav = () => {
+  const { language } = useApp();
+  
   return (
-    <Stack
+    <VStack
       bg={useColorModeValue('white', 'gray.800')}
       p={4}
       display={{ md: 'none' }}
+      spacing={2}
+      align="stretch"
     >
-      {NAV_ITEMS.map((navItem) => (
-        <MobileNavItem key={navItem.label} {...navItem} />
+      {LinkItems.map((link) => (
+        <MobileNavItem 
+          key={link.nameKey} 
+          icon={link.icon} 
+          path={link.path}
+          label={t(link.nameKey as any, language)}
+        />
       ))}
-    </Stack>
+    </VStack>
   );
 };
 
-const MobileNavItem = ({ label, children, href }: NavItem) => {
-  const { isOpen, onToggle } = useDisclosure();
-
+const MobileNavItem = ({ label, icon, path }: { label: string; icon: any; path: string }) => {
   return (
-    <Stack spacing={4} onClick={children ? onToggle : undefined}>
-      <Flex
-        py={2}
-        as={Link}
-        href={href ?? '#'}
-        justify={'space-between'}
-        align={'center'}
-        _hover={{
-          textDecoration: 'none',
-        }}
+    <Flex
+      py={2}
+      as={Link}
+      href={path}
+      justify={'flex-start'}
+      align={'center'}
+      _hover={{
+        textDecoration: 'none',
+        bg: useColorModeValue('gray.100', 'gray.700'),
+      }}
+      px={3}
+      borderRadius="md"
+    >
+      <Icon
+        as={icon}
+        w={5}
+        h={5}
+        mr={3}
+        color={useColorModeValue('gray.600', 'gray.200')}
+      />
+      <Text
+        fontWeight={600}
+        color={useColorModeValue('gray.600', 'gray.200')}
       >
-        <Text
-          fontWeight={600}
-          color={useColorModeValue('gray.600', 'gray.200')}
-        >
-          {label}
-        </Text>
-        {children && (
-          <Icon
-            as={ChevronDownIcon}
-            transition={'all .25s ease-in-out'}
-            transform={isOpen ? 'rotate(180deg)' : ''}
-            w={6}
-            h={6}
-          />
-        )}
-      </Flex>
-
-      <Collapse in={isOpen} animateOpacity style={{ marginTop: '0!important' }}>
-        <Stack
-          mt={2}
-          pl={4}
-          borderLeft={1}
-          borderStyle={'solid'}
-          borderColor={useColorModeValue('gray.200', 'gray.700')}
-          align={'start'}
-        >
-          {children &&
-            children.map((child) => (
-              <Link key={child.label} py={2} href={child.href}>
-                {child.label}
-              </Link>
-            ))}
-        </Stack>
-      </Collapse>
-    </Stack>
+        {label}
+      </Text>
+    </Flex>
   );
 };
-
-interface NavItem {
-  label: string;
-  subLabel?: string;
-  children?: Array<NavItem>;
-  href?: string;
-}
-
-const NAV_ITEMS: Array<NavItem> = [
-  // Removed Dashboard, Analytics, and Goals from top navigation
-  // These are now only available in the sidebar
-]; 
