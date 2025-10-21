@@ -17,6 +17,7 @@ python fix_dependencies.py
 cd backend
 source venv/bin/activate
 pip install supabase==2.3.0
+mkdir -p lib auth ai middleware schemas
 touch lib/__init__.py auth/__init__.py ai/__init__.py middleware/__init__.py schemas/__init__.py
 ```
 

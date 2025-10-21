@@ -27,6 +27,8 @@ def install_missing_dependencies():
     for init_file in init_files:
         if not os.path.exists(init_file):
             try:
+                # Create directory if it doesn't exist
+                os.makedirs(os.path.dirname(init_file), exist_ok=True)
                 with open(init_file, 'w') as f:
                     f.write("# This file makes the directory a Python package\n")
                 print(f"✅ Created {init_file}")
