@@ -264,18 +264,57 @@ def get_my_health_analytics(
             starting_weight = weight_trend[0]  # First weight in trend
             total_to_gain = profile.target_weight - starting_weight
             gained_so_far = profile.weight - starting_weight
-            progress = (gained_so_far / total_to_gain) * 100 if total_to_gain > 0 else 0
+            if total_to_gain > 0:
+                progress = min(100, max(0, (gained_so_far / total_to_gain) * 100))
+            else:
+                progress = 0
         elif profile.fitness_goal == "weight_loss":
             # For weight loss: progress is how much we've lost towards the target
-            starting_weight = weight_trend[0]  # First weight in trend
+            # Use the highest weight in the trend as the true starting point
+            starting_weight = max(weight_trend)  # Highest weight as starting point
             total_to_lose = starting_weight - profile.target_weight
             lost_so_far = starting_weight - profile.weight
-            progress = (lost_so_far / total_to_lose) * 100 if total_to_lose > 0 else 0
+            if total_to_lose > 0:
+                progress = min(100, max(0, (lost_so_far / total_to_lose) * 100))
+            else:
+                progress = 0
         else:
             # For other goals, use simple distance calculation
             weight_diff = abs(profile.target_weight - profile.weight)
             initial_diff = abs(profile.target_weight - weight_trend[0]) if weight_trend else weight_diff
-            progress = (1 - (weight_diff / initial_diff)) * 100 if initial_diff > 0 else 100
+            if initial_diff > 0:
+                progress = min(100, max(0, (1 - (weight_diff / initial_diff)) * 100))
+            else:
+                progress = 100 if weight_diff == 0 else 0
+    elif profile.target_weight and profile.weight:
+        # If we have target and current weight but no trend data, show journey progress
+        if profile.fitness_goal == "weight_loss":
+            # For weight loss: show how much of the journey is left
+            total_to_lose = profile.weight - profile.target_weight
+            if total_to_lose > 0:
+                # Calculate progress as how much of the total journey is completed
+                # Since we're at the starting point, show 0% progress
+                progress = 0
+            else:
+                # If we're at or below target, show 100% progress
+                progress = 100
+        elif profile.fitness_goal == "muscle_gain":
+            # For weight gain: show how much of the journey is left
+            total_to_gain = profile.target_weight - profile.weight
+            if total_to_gain > 0:
+                # Calculate progress as how much of the total journey is completed
+                # Since we're at the starting point, show 0% progress
+                progress = 0
+            else:
+                # If we're at or above target, show 100% progress
+                progress = 100
+        else:
+            # For other goals, use simple distance calculation
+            weight_diff = abs(profile.target_weight - profile.weight)
+            if weight_diff == 0:
+                progress = 100
+            else:
+                progress = 0  # Can't calculate progress without trend data
     else:
         progress = 0
     

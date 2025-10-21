@@ -34,6 +34,7 @@ class Settings(BaseSettings):
     
     # AI settings
     OPENAI_API_KEY: Optional[str] = None
+    USE_OPENAI: bool = False
     
     # Security settings
     PASSWORD_MIN_LENGTH: int = 8
