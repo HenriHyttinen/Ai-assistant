@@ -19,10 +19,42 @@ This directory contains all database-related setup and migration scripts.
 
 ## Usage:
 
-To set up the database from scratch:
+### Quick Setup (Recommended for Reviewers)
+
+**Option 1: Simple Shell Script**
+```bash
+cd /path/to/numbers-dont-lie/backend
+./database_setup/quick_setup.sh
+```
+
+**Option 2: Python Script**
+```bash
+cd /path/to/numbers-dont-lie/backend
+python database_setup/simple_setup.py
+```
+
+**Option 3: Manual Setup**
+```bash
+cd /path/to/numbers-dont-lie/backend
+source venv/bin/activate
+python -c "
+from database import SessionLocal, engine
+from models import Base
+Base.metadata.create_all(bind=engine)
+print('Database setup complete!')
+"
+```
+
+### Advanced Setup
+
+For complete setup with all features:
 ```bash
 cd database_setup
 ./setup.sh
 ```
 
 Or run individual scripts as needed for specific setup tasks.
+
+### Troubleshooting
+
+If you encounter issues, see `REVIEWER_SETUP.md` for detailed troubleshooting steps.
