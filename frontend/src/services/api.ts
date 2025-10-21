@@ -214,6 +214,8 @@ export const consentService = {
 export const exportService = {
   exportHealthData: (format: string) => api.get(`/export/health-data?format=${format}`),
   exportMetricsHistory: (days: number, format: string) => api.get(`/export/metrics-history?days=${days}&format=${format}`),
+  exportWeeklySummary: (format: string = 'json') => api.get(`/export/weekly-summary?format=${format}`, { responseType: 'blob' }),
+  exportMonthlySummary: (format: string = 'json') => api.get(`/export/monthly-summary?format=${format}`, { responseType: 'blob' }),
 };
 
 export default api; 

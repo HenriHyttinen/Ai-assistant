@@ -13,12 +13,16 @@ import { ChevronDownIcon, DownloadIcon } from '@chakra-ui/icons';
 interface UniversalExportButtonProps {
   onExportActivities: (format: string) => void;
   onExportAllData: (format: string) => void;
+  onExportWeeklySummary: (format: string) => void;
+  onExportMonthlySummary: (format: string) => void;
   isLoading: boolean;
 }
 
 const UniversalExportButton: React.FC<UniversalExportButtonProps> = ({
   onExportActivities,
   onExportAllData,
+  onExportWeeklySummary,
+  onExportMonthlySummary,
   isLoading
 }) => {
   const { isOpen, onToggle } = useDisclosure();
@@ -117,6 +121,68 @@ const UniversalExportButton: React.FC<UniversalExportButtonProps> = ({
                 _active={{ bg: "green.100" }}
               >
                 Export All Data (JSON)
+              </Button>
+              
+              <Box borderTop="1px solid" borderColor="gray.200" my={1} />
+              
+              <Button
+                size="sm"
+                variant="ghost"
+                justifyContent="flex-start"
+                borderRadius={0}
+                onClick={() => {
+                  onExportWeeklySummary('csv');
+                  onToggle();
+                }}
+                _hover={{ bg: "purple.50" }}
+                _active={{ bg: "purple.100" }}
+              >
+                Export Weekly Summary (CSV)
+              </Button>
+              
+              <Button
+                size="sm"
+                variant="ghost"
+                justifyContent="flex-start"
+                borderRadius={0}
+                onClick={() => {
+                  onExportWeeklySummary('json');
+                  onToggle();
+                }}
+                _hover={{ bg: "purple.50" }}
+                _active={{ bg: "purple.100" }}
+              >
+                Export Weekly Summary (JSON)
+              </Button>
+              
+              <Button
+                size="sm"
+                variant="ghost"
+                justifyContent="flex-start"
+                borderRadius={0}
+                onClick={() => {
+                  onExportMonthlySummary('csv');
+                  onToggle();
+                }}
+                _hover={{ bg: "orange.50" }}
+                _active={{ bg: "orange.100" }}
+              >
+                Export Monthly Summary (CSV)
+              </Button>
+              
+              <Button
+                size="sm"
+                variant="ghost"
+                justifyContent="flex-start"
+                borderRadius={0}
+                onClick={() => {
+                  onExportMonthlySummary('json');
+                  onToggle();
+                }}
+                _hover={{ bg: "orange.50" }}
+                _active={{ bg: "orange.100" }}
+              >
+                Export Monthly Summary (JSON)
               </Button>
             </VStack>
           </VStack>

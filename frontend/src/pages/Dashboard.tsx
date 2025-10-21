@@ -60,6 +60,9 @@ interface AIInsights {
     bmi_category: string;
     wellness_score: number;
   };
+  is_cached?: boolean;
+  is_fallback?: boolean;
+  cache_timestamp?: number;
 }
 
 const Dashboard = () => {
@@ -363,6 +366,35 @@ const Dashboard = () => {
       <Card mt={6} bg="rgba(255, 255, 255, 0.95)" backdropFilter="blur(10px)" border="1px solid rgba(255, 255, 255, 0.2)" boxShadow="0 8px 32px rgba(0, 0, 0, 0.1)">
               <CardHeader>
           <Heading size="md">{t('personalizedHealthInsights', language)}</Heading>
+          {/* Cache Status Indicator */}
+          {aiInsights && (
+            <Box mt={2}>
+              {aiInsights.is_fallback ? (
+                <Text fontSize="sm" color="orange.600" fontWeight="medium">
+                  🌐 Offline Mode - Using cached insights
+                </Text>
+              ) : aiInsights.is_cached ? (
+                <Text fontSize="sm" color="blue.600" fontWeight="medium">
+                  💾 Cached insights (faster loading)
+                </Text>
+              ) : (
+                <Text fontSize="sm" color="green.600" fontWeight="medium">
+                  ✨ Fresh AI insights
+                </Text>
+              )}
+              {/* Goal-specific indicator */}
+              {aiInsights.insights && aiInsights.insights.some(insight => 
+                insight.toLowerCase().includes('weight loss') || 
+                insight.toLowerCase().includes('muscle gain') ||
+                insight.toLowerCase().includes('endurance') ||
+                insight.toLowerCase().includes('strength')
+              ) && (
+                <Text fontSize="xs" color="purple.600" mt={1}>
+                  🎯 Goal-specific insights
+                </Text>
+              )}
+            </Box>
+          )}
               </CardHeader>
               <CardBody>
           <VStack spacing={4} align="stretch">

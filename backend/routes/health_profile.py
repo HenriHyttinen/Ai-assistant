@@ -99,12 +99,21 @@ async def update_health_profile(
             detail="Health profile not found"
         )
     
+    # Check if fitness goal is changing
+    old_fitness_goal = profile.fitness_goal
+    new_fitness_goal = profile_data.fitness_goal
+    
     # Update profile
     for key, value in profile_data.dict().items():
         setattr(profile, key, value)
     
     db.commit()
     db.refresh(profile)
+    
+    # Clear irrelevant cached insights if fitness goal changed
+    if old_fitness_goal != new_fitness_goal and new_fitness_goal:
+        from services.cache import clear_irrelevant_cache
+        clear_irrelevant_cache(current_user.id, new_fitness_goal)
     
     # Calculate new metrics
     bmi = calculate_bmi(profile.weight, profile.height)

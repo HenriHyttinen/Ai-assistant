@@ -14,6 +14,7 @@ class RecommendationCache:
         self.cache = {}
         self.cache_duration = 300  # 5 minutes for fresh insights
         self.fallback_cache_duration = 3600  # 1 hour for fallback insights
+        self.ai_insights_grace_period = 86400  # 24 hours for AI insights when internet is down
         self.max_cache_size = 1000  # Maximum number of cached items
     
     def _generate_cache_key(self, user_id: int, profile_updated_at: str, language: str, goal_hash: str = "") -> str:
@@ -45,6 +46,61 @@ class RecommendationCache:
         
         return None
     
+    def get_any_cached_ai_insights(self, user_id: int, language: str, current_fitness_goal: str = None) -> Optional[Dict[str, Any]]:
+        """Get any cached AI insights for user, even if expired (for offline resilience)"""
+        best_cached_insights = None
+        best_timestamp = 0
+        
+        for cache_key, (cached_data, timestamp, is_fallback) in self.cache.items():
+            if f"insights_{user_id}_" in cache_key and not is_fallback:
+                # Find the most recent AI insights
+                if timestamp > best_timestamp:
+                    best_cached_insights = cached_data
+                    best_timestamp = timestamp
+        
+        # Only return if the insights are not too old (within grace period)
+        if best_cached_insights and best_timestamp > 0:
+            current_time = time.time()
+            if current_time - best_timestamp < self.ai_insights_grace_period:
+                # Check if the cached insights are still relevant for the current goal
+                if current_fitness_goal and self._is_goal_relevant(best_cached_insights, current_fitness_goal):
+                    return best_cached_insights
+                elif not current_fitness_goal:
+                    # If no current goal specified, return any cached insights
+                    return best_cached_insights
+        
+        return None
+    
+    def _is_goal_relevant(self, cached_insights: Dict[str, Any], current_fitness_goal: str) -> bool:
+        """Check if cached insights are still relevant for the current fitness goal"""
+        # Extract goal from cached insights if available
+        insights_text = ""
+        if isinstance(cached_insights, dict):
+            if 'insights' in cached_insights:
+                insights_text = " ".join(cached_insights['insights'])
+            elif 'status_analysis' in cached_insights:
+                insights_text = cached_insights['status_analysis']
+        
+        # Check if the insights mention the current goal
+        goal_keywords = {
+            'weight_loss': ['lose', 'weight loss', 'losing', 'slim', 'diet'],
+            'muscle_gain': ['muscle', 'gain', 'bulk', 'strength', 'build'],
+            'endurance': ['endurance', 'cardio', 'running', 'cycling'],
+            'strength': ['strength', 'power', 'lift', 'heavy'],
+            'general_fitness': ['fitness', 'health', 'exercise', 'activity']
+        }
+        
+        current_keywords = goal_keywords.get(current_fitness_goal, [])
+        insights_lower = insights_text.lower()
+        
+        # If insights contain keywords for the current goal, they're relevant
+        for keyword in current_keywords:
+            if keyword in insights_lower:
+                return True
+        
+        # If no specific goal keywords found, assume insights are general and relevant
+        return True
+    
     def cache_insights(self, user_id: int, profile_updated_at: str, language: str, 
                       insights: Dict[str, Any], goals: list = None, is_fallback: bool = False):
         """Cache insights with appropriate expiration"""
@@ -59,13 +115,16 @@ class RecommendationCache:
     
     def get_fallback_insights(self, user_id: int, language: str, fitness_goal: str = "general_fitness") -> Dict[str, Any]:
         """Get fallback insights when AI service is unavailable"""
-        # Check if we have any cached insights for this user
-        for cache_key, (cached_data, timestamp, is_fallback) in self.cache.items():
-            if f"insights_{user_id}_" in cache_key and not is_fallback:
-                # Return the most recent non-fallback insights
-                return cached_data
+        # First, try to get any cached AI insights (even if expired, within grace period)
+        # Check if cached insights are still relevant for the current goal
+        cached_ai_insights = self.get_any_cached_ai_insights(user_id, language, fitness_goal)
         
-        # Generate basic fallback insights
+        if cached_ai_insights:
+            print(f"🌐 Internet down - Using cached AI insights for user {user_id} (grace period active)")
+            return cached_ai_insights
+        
+        # If no relevant cached insights, generate mock insights for the current goal
+        print(f"🤖 No relevant cached AI insights found for user {user_id} (goal: {fitness_goal}), generating mock insights")
         from ai.insights import generate_mock_insights
         return generate_mock_insights(language, fitness_goal)
     
@@ -87,6 +146,20 @@ class RecommendationCache:
         keys_to_remove = [key for key in self.cache.keys() if f"insights_{user_id}_" in key]
         for key in keys_to_remove:
             del self.cache[key]
+    
+    def clear_irrelevant_cache(self, user_id: int, new_fitness_goal: str):
+        """Clear cached insights that are no longer relevant for the new fitness goal"""
+        keys_to_remove = []
+        
+        for cache_key, (cached_data, timestamp, is_fallback) in self.cache.items():
+            if f"insights_{user_id}_" in cache_key and not is_fallback:
+                # Check if cached insights are relevant for the new goal
+                if not self._is_goal_relevant(cached_data, new_fitness_goal):
+                    keys_to_remove.append(cache_key)
+        
+        for key in keys_to_remove:
+            del self.cache[key]
+            print(f"🗑️ Cleared irrelevant cached insights for user {user_id} (new goal: {new_fitness_goal})")
     
     def get_cache_stats(self) -> Dict[str, Any]:
         """Get cache statistics for monitoring"""
@@ -130,9 +203,17 @@ def get_fallback_insights(user_id: int, language: str, fitness_goal: str = "gene
     """Get fallback insights when AI service is unavailable"""
     return recommendation_cache.get_fallback_insights(user_id, language, fitness_goal)
 
+def get_any_cached_ai_insights(user_id: int, language: str, current_fitness_goal: str = None) -> Optional[Dict[str, Any]]:
+    """Get any cached AI insights for user, even if expired (for offline resilience)"""
+    return recommendation_cache.get_any_cached_ai_insights(user_id, language, current_fitness_goal)
+
 def clear_user_cache(user_id: int):
     """Clear all cached insights for a specific user"""
     recommendation_cache.clear_user_cache(user_id)
+
+def clear_irrelevant_cache(user_id: int, new_fitness_goal: str):
+    """Clear cached insights that are no longer relevant for the new fitness goal"""
+    recommendation_cache.clear_irrelevant_cache(user_id, new_fitness_goal)
 
 def get_cache_stats() -> Dict[str, Any]:
     """Get cache statistics for monitoring"""

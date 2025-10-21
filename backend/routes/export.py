@@ -303,6 +303,179 @@ def convert_to_csv(data: Dict[str, Any]) -> List[List[str]]:
     
     return csv_rows
 
+def convert_summary_to_csv(data: Dict[str, Any], summary_type: str) -> List[List[str]]:
+    """Convert summary export data to CSV format."""
+    csv_rows = []
+    
+    # Add export info
+    csv_rows.append([f"{summary_type} Summary Export Information"])
+    csv_rows.append(["Exported At", data["export_info"]["exported_at"]])
+    csv_rows.append(["User Email", data["export_info"]["user_email"]])
+    csv_rows.append(["Summary Type", data["export_info"]["summary_type"]])
+    csv_rows.append([])  # Empty row
+    
+    # Get the summary data
+    summary_key = f"{summary_type.lower()}_summary"
+    summary = data[summary_key]
+    
+    # Add period information
+    if "period" in summary:
+        csv_rows.append([f"{summary_type} Period"])
+        csv_rows.append(["Start Date", summary["period"]["start"]])
+        csv_rows.append(["End Date", summary["period"]["end"]])
+        if "type" in summary["period"]:
+            csv_rows.append(["Period Type", summary["period"]["type"]])
+        csv_rows.append([])  # Empty row
+    
+    # Add metrics
+    if "metrics" in summary:
+        csv_rows.append([f"{summary_type} Metrics"])
+        for key, value in summary["metrics"].items():
+            if value is not None:
+                csv_rows.append([key.replace("_", " ").title(), str(value)])
+        csv_rows.append([])  # Empty row
+    
+    # Add activities
+    if "activities" in summary:
+        csv_rows.append([f"{summary_type} Activities"])
+        for key, value in summary["activities"].items():
+            if isinstance(value, list):
+                csv_rows.append([key.replace("_", " ").title(), ", ".join(map(str, value))])
+            else:
+                csv_rows.append([key.replace("_", " ").title(), str(value)])
+        csv_rows.append([])  # Empty row
+    
+    # Add goals progress
+    if "goals_progress" in summary:
+        csv_rows.append([f"{summary_type} Goals Progress"])
+        for goal_type, goal_data in summary["goals_progress"].items():
+            csv_rows.append([f"{goal_type.replace('_', ' ').title()} Goal"])
+            for key, value in goal_data.items():
+                csv_rows.append([f"  {key.replace('_', ' ').title()}", str(value)])
+        csv_rows.append([])  # Empty row
+    
+    return csv_rows
+
+@router.get("/weekly-summary")
+async def export_weekly_summary(
+    format: str = "json",
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Export weekly health summary for the current user."""
+    
+    # Get weekly summary using the existing endpoint logic
+    from services.analytics import calculate_weekly_summary
+    summary = calculate_weekly_summary(current_user.id, db)
+    
+    if not summary:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No health profile found or no data available"
+        )
+    
+    # Prepare export data
+    export_data = {
+        "export_info": {
+            "exported_at": datetime.utcnow().isoformat(),
+            "user_id": current_user.id,
+            "user_email": current_user.email,
+            "export_format": format,
+            "summary_type": "weekly"
+        },
+        "weekly_summary": summary
+    }
+    
+    if format.lower() == "json":
+        return export_data
+    elif format.lower() == "csv":
+        # Convert to CSV format
+        csv_data = convert_summary_to_csv(export_data, "Weekly")
+        
+        # Create CSV file in memory
+        output = io.StringIO()
+        writer = csv.writer(output)
+        
+        for row in csv_data:
+            writer.writerow(row)
+        
+        output.seek(0)
+        return StreamingResponse(
+            io.BytesIO(output.getvalue().encode('utf-8')),
+            media_type="text/csv",
+            headers={
+                "Content-Disposition": f"attachment; filename=weekly_summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+                "Access-Control-Allow-Headers": "Content-Type, Authorization"
+            }
+        )
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid format. Supported formats: json, csv"
+        )
+
+@router.get("/monthly-summary")
+async def export_monthly_summary(
+    format: str = "json",
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Export monthly health summary for the current user."""
+    
+    # Get monthly summary using the existing endpoint logic
+    from services.analytics import calculate_monthly_summary
+    summary = calculate_monthly_summary(current_user.id, db)
+    
+    if not summary:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No health profile found or no data available"
+        )
+    
+    # Prepare export data
+    export_data = {
+        "export_info": {
+            "exported_at": datetime.utcnow().isoformat(),
+            "user_id": current_user.id,
+            "user_email": current_user.email,
+            "export_format": format,
+            "summary_type": "monthly"
+        },
+        "monthly_summary": summary
+    }
+    
+    if format.lower() == "json":
+        return export_data
+    elif format.lower() == "csv":
+        # Convert to CSV format
+        csv_data = convert_summary_to_csv(export_data, "Monthly")
+        
+        # Create CSV file in memory
+        output = io.StringIO()
+        writer = csv.writer(output)
+        
+        for row in csv_data:
+            writer.writerow(row)
+        
+        output.seek(0)
+        return StreamingResponse(
+            io.BytesIO(output.getvalue().encode('utf-8')),
+            media_type="text/csv",
+            headers={
+                "Content-Disposition": f"attachment; filename=monthly_summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+                "Access-Control-Allow-Headers": "Content-Type, Authorization"
+            }
+        )
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid format. Supported formats: json, csv"
+        )
+
 @router.get("/metrics-history")
 async def export_metrics_history(
     days: int = 30,

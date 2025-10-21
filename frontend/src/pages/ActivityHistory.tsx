@@ -9,7 +9,7 @@ import {
 } from '@chakra-ui/react';
 import { ChevronDownIcon, DownloadIcon } from '@chakra-ui/icons';
 import { useApp } from '../contexts/AppContext';
-import { analytics } from '../services/api';
+import { analytics, exportService } from '../services/api';
 import { t } from '../utils/translations';
 import ExportModal from '../components/ExportModal';
 import UniversalExportButton from '../components/UniversalExportButton';
@@ -169,6 +169,62 @@ const ActivityHistory = () => {
     }
   };
 
+  const handleExportWeeklySummary = async (format: string) => {
+    try {
+      setExportLoading(true);
+      const response = await exportService.exportWeeklySummary(format);
+      
+      const filename = `weekly_summary_${new Date().toISOString().split('T')[0]}.${format}`;
+      downloadFile(response.data, filename);
+      
+      toast({
+        title: 'Export Successful',
+        description: `Your weekly summary has been exported as ${format.toUpperCase()}`,
+        status: 'success',
+        duration: 5000,
+        isClosable: true,
+      });
+    } catch (error: any) {
+      toast({
+        title: 'Export Failed',
+        description: error.response?.data?.detail || 'Failed to export weekly summary',
+        status: 'error',
+        duration: 5000,
+        isClosable: true,
+      });
+    } finally {
+      setExportLoading(false);
+    }
+  };
+
+  const handleExportMonthlySummary = async (format: string) => {
+    try {
+      setExportLoading(true);
+      const response = await exportService.exportMonthlySummary(format);
+      
+      const filename = `monthly_summary_${new Date().toISOString().split('T')[0]}.${format}`;
+      downloadFile(response.data, filename);
+      
+      toast({
+        title: 'Export Successful',
+        description: `Your monthly summary has been exported as ${format.toUpperCase()}`,
+        status: 'success',
+        duration: 5000,
+        isClosable: true,
+      });
+    } catch (error: any) {
+      toast({
+        title: 'Export Failed',
+        description: error.response?.data?.detail || 'Failed to export monthly summary',
+        status: 'error',
+        duration: 5000,
+        isClosable: true,
+      });
+    } finally {
+      setExportLoading(false);
+    }
+  };
+
   const formatDate = (iso: string) => new Date(iso).toLocaleString();
   const formatDateShort = (iso: string) => new Date(iso).toLocaleDateString();
 
@@ -294,11 +350,13 @@ const ActivityHistory = () => {
           >
             {t('refresh' as any, language) || 'Refresh'}
           </Button>
-          <UniversalExportButton
-            onExportActivities={handleExportActivities}
-            onExportAllData={handleExportAllData}
-            isLoading={exportLoading}
-          />
+                 <UniversalExportButton
+                   onExportActivities={handleExportActivities}
+                   onExportAllData={handleExportAllData}
+                   onExportWeeklySummary={handleExportWeeklySummary}
+                   onExportMonthlySummary={handleExportMonthlySummary}
+                   isLoading={exportLoading}
+                 />
         </HStack>
       </VStack>
 
