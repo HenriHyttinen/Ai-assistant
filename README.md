@@ -240,7 +240,7 @@ python test_imports.py
 ```bash
 cd backend
 source venv/bin/activate
-python fix_lib_import.py
+python fix_missing_files.py
 ```
 
 **Alternative fix - Replace the problematic import:**
