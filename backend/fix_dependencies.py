@@ -14,6 +14,27 @@ def install_missing_dependencies():
         "supabase==2.3.0",
     ]
     
+    # Create __init__.py files for Python packages
+    print("Creating missing __init__.py files...")
+    init_files = [
+        "lib/__init__.py",
+        "auth/__init__.py",
+        "ai/__init__.py",
+        "middleware/__init__.py",
+        "schemas/__init__.py",
+    ]
+    
+    for init_file in init_files:
+        if not os.path.exists(init_file):
+            try:
+                with open(init_file, 'w') as f:
+                    f.write("# This file makes the directory a Python package\n")
+                print(f"✅ Created {init_file}")
+            except Exception as e:
+                print(f"❌ Failed to create {init_file}: {e}")
+        else:
+            print(f"✅ {init_file} already exists")
+    
     for dep in missing_deps:
         try:
             print(f"Installing {dep}...")

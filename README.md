@@ -5,11 +5,19 @@ A comprehensive wellness platform that leverages AI to provide personalized heal
 ## For Reviewers - Quick Access
 
 ### Quick Fix for Missing Dependencies
-**If you get `ModuleNotFoundError: No module named 'supabase'`:**
+**If you get `ModuleNotFoundError: No module named 'supabase'` or `No module named 'lib'`:**
 ```bash
 cd backend
 source venv/bin/activate
 python fix_dependencies.py
+```
+
+**Manual fix if the script doesn't work:**
+```bash
+cd backend
+source venv/bin/activate
+pip install supabase==2.3.0
+touch lib/__init__.py auth/__init__.py ai/__init__.py middleware/__init__.py schemas/__init__.py
 ```
 
 ### Database Setup (Required First)
@@ -200,11 +208,24 @@ source venv/bin/activate
 pip install supabase==2.3.0
 ```
 
+**If you get `ModuleNotFoundError: No module named 'lib'` or similar:**
+```bash
+cd backend
+touch lib/__init__.py auth/__init__.py ai/__init__.py middleware/__init__.py schemas/__init__.py
+```
+
 **If you get import errors:**
 ```bash
 cd backend
 source venv/bin/activate
 pip install -r requirements.txt
+```
+
+**Complete fix for all common issues:**
+```bash
+cd backend
+source venv/bin/activate
+python fix_dependencies.py
 ```
 
 ## AI Features
