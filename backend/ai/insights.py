@@ -5,14 +5,22 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Initialize OpenAI client only if API key is available
-api_key = os.getenv("OPENAI_API_KEY")
-# For development, disable OpenAI API to improve performance
-if api_key and os.getenv("USE_OPENAI", "false").lower() == "true":
-    from openai import OpenAI
-    client = OpenAI(api_key=api_key)
-else:
-    client = None
+# Initialize OpenAI client lazily to avoid import errors
+client = None
+
+def get_openai_client():
+    """Get OpenAI client, initializing it only when needed."""
+    global client
+    if client is None:
+        api_key = os.getenv("OPENAI_API_KEY")
+        if api_key and os.getenv("USE_OPENAI", "false").lower() == "true":
+            try:
+                from openai import OpenAI
+                client = OpenAI(api_key=api_key)
+            except Exception as e:
+                print(f"Warning: Failed to initialize OpenAI client: {e}")
+                client = None
+    return client
 
 
 def get_fitness_goal_translation(goal: str, language: str) -> str:
@@ -211,6 +219,7 @@ def validate_ai_response(insights: Dict[str, Any], dietary_restrictions: List[st
         "filtered_recommendations_count": len(filtered_recommendations)
     }
 
+# AI DISABLED - This function is not called to prevent API costs
 def generate_health_insights(health_data: Dict[str, Any], user_settings: Dict[str, Any] = None, user_goals: List[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Generate health insights based on user data."""
     
@@ -294,7 +303,11 @@ def generate_health_insights(health_data: Dict[str, Any], user_settings: Dict[st
         return generate_mock_insights(language, fitness_goal)
     
     try:
-        response = client.chat.completions.create(
+        openai_client = get_openai_client()
+        if not openai_client:
+            return generate_mock_insights(language, fitness_goal)
+        
+        response = openai_client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
                 {"role": "system", "content": f"You're a friendly health coach. Give practical, personalized advice that actually helps people. {language_instruction}"},

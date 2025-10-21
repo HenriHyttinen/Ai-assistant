@@ -20,7 +20,7 @@ import {
 import { useFormik } from 'formik';
 import * as Yup from 'yup';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { useAuth } from '../contexts/AuthContext';
+import { useSupabaseAuth } from '../contexts/SupabaseAuthContext';
 
 interface Verify2FAFormValues {
   code: string;
@@ -36,7 +36,7 @@ const Verify2FA = () => {
   const toast = useToast();
   const navigate = useNavigate();
   const location = useLocation();
-  const { verify2FA, error, clearError } = useAuth();
+  const { error } = useSupabaseAuth();
   
   const email = location.state?.email;
 

@@ -2,10 +2,10 @@
 import React from 'react';
 import { ChakraProvider } from '@chakra-ui/react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import { AuthProvider } from './contexts/AuthContext';
+import { SupabaseAuthProvider } from './contexts/SupabaseAuthContext';
 import { AppProvider } from './contexts/AppContext';
 import theme from './theme';
-import Login from './pages/Login';
+import SupabaseLogin from './pages/SupabaseLogin';
 import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
 import Profile from './pages/Profile';
@@ -39,10 +39,10 @@ const App = () => {
   return (
     <ChakraProvider theme={theme}>
       <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-        <AuthProvider>
+        <SupabaseAuthProvider>
           <AppProvider>
             <Routes>
-              <Route path="/login" element={<Login />} />
+              <Route path="/login" element={<SupabaseLogin />} />
               <Route path="/register" element={<Register />} />
               <Route path="/forgot-password" element={<ForgotPassword />} />
               <Route path="/reset-password" element={<ResetPassword />} />
@@ -70,7 +70,7 @@ const App = () => {
               </Route>
             </Routes>
           </AppProvider>
-        </AuthProvider>
+        </SupabaseAuthProvider>
       </Router>
     </ChakraProvider>
   );

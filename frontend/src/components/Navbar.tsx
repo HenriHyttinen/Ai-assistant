@@ -29,7 +29,7 @@ import {
   SettingsIcon,
 } from '@chakra-ui/icons';
 import { FiActivity, FiList } from 'react-icons/fi';
-import { useAuth } from '../contexts/AuthContext';
+import { useSupabaseAuth } from '../contexts/SupabaseAuthContext';
 import { useApp } from '../contexts/AppContext';
 import { t } from '../utils/translations';
 
@@ -46,7 +46,7 @@ const LinkItems = [
 
 export default function Navbar() {
   const { isOpen, onToggle } = useDisclosure();
-  const { user, logout } = useAuth();
+  const { user, signOut } = useSupabaseAuth();
 
   return (
     <Box position="fixed" w="full" zIndex={1000}>
@@ -120,7 +120,7 @@ export default function Navbar() {
                 Settings
               </MenuItem>
               <MenuDivider />
-              <MenuItem onClick={logout}>Logout</MenuItem>
+              <MenuItem onClick={() => signOut()}>Logout</MenuItem>
             </MenuList>
           </Menu>
         </Stack>

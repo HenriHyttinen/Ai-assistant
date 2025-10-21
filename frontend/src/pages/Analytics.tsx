@@ -22,6 +22,7 @@ import {
 import { useState, useEffect } from 'react';
 import { analytics, goals, healthProfile } from '../services/api';
 import { useApp } from '../contexts/AppContext';
+import { getErrorMessage } from '../utils/errorUtils';
 import ActivityLogModal from '../components/ActivityLogModal';
 import { t } from '../utils/translations';
 
@@ -125,7 +126,7 @@ const Analytics = () => {
     return (
         <Alert status="error">
           <AlertIcon />
-          {error}
+          {getErrorMessage(error)}
         </Alert>
     );
   }

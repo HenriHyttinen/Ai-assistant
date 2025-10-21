@@ -82,7 +82,8 @@ app.add_middleware(SecurityMiddleware, force_https=False)  # Set to True in prod
 
 # Add rate limiting middleware
 app.middleware("http")(rate_limit_middleware)
-app.middleware("http")(ai_rate_limit_middleware)
+# AI rate limiting disabled since AI is disabled
+# app.middleware("http")(ai_rate_limit_middleware)
 app.middleware("http")(auth_rate_limit_middleware)
 
 # Add error handling middleware

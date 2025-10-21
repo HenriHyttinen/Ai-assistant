@@ -27,7 +27,7 @@ import {
   AccordionIcon,
 } from '@chakra-ui/react';
 import { useState, useEffect } from 'react';
-import { useAuth } from '../contexts/AuthContext';
+import { useSupabaseAuth } from '../contexts/SupabaseAuthContext';
 import { useApp } from '../contexts/AppContext';
 import { consentService } from '../services/api';
 
@@ -254,7 +254,7 @@ interface ConsentStatus {
 
 const DataConsent = () => {
   const toast = useToast();
-  const { user } = useAuth();
+  const { user } = useSupabaseAuth();
   const { language } = useApp();
   
   const [consentStatus, setConsentStatus] = useState<ConsentStatus | null>(null);

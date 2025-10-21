@@ -23,6 +23,7 @@ import * as Yup from 'yup';
 import { useState, useEffect } from 'react';
 import { healthProfile, analytics, settings } from '../services/api';
 import ConsentModal from '../components/ConsentModal';
+import { getErrorMessage } from '../utils/errorUtils';
 import { 
   convertWeightForDisplay, 
   convertWeightToKg, 
@@ -845,7 +846,7 @@ const Profile = () => {
       <Box p={4}>
         <Alert status="error">
           <AlertIcon />
-          {error}
+          {getErrorMessage(error)}
         </Alert>
       </Box>
     );

@@ -3,7 +3,8 @@ from sqlalchemy.orm import Session
 from typing import Any
 
 from database import get_db
-from services import auth, settings as settings_service
+from services import settings as settings_service
+from auth.supabase_auth import get_current_user_supabase as get_current_user
 from schemas.settings import (
     UserSettingsCreate,
     UserSettingsUpdate,
@@ -16,7 +17,7 @@ router = APIRouter()
 @router.get("/me", response_model=UserSettingsResponse)
 def get_my_settings(
     db: Session = Depends(get_db),
-    current_user: User = Depends(auth.get_current_user)
+    current_user: User = Depends(get_current_user)
 ) -> Any:
     """Get current user's settings."""
     user_settings = settings_service.get_or_create_user_settings(db, current_user.id)
@@ -26,7 +27,7 @@ def get_my_settings(
 def update_my_settings(
     settings_update: UserSettingsUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(auth.get_current_user)
+    current_user: User = Depends(get_current_user)
 ) -> Any:
     """Update current user's settings."""
     # Get or create settings if they don't exist
@@ -47,7 +48,7 @@ def update_my_settings(
 def create_my_settings(
     settings_data: UserSettingsCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(auth.get_current_user)
+    current_user: User = Depends(get_current_user)
 ) -> Any:
     """Create settings for current user (if they don't exist)."""
     # Check if settings already exist

@@ -12,7 +12,7 @@ from schemas.user import (
     ActivityLogResponse,
     MetricsHistoryResponse
 )
-from routes.auth import get_current_user
+from auth.supabase_auth import get_current_user_supabase as get_current_user
 from analytics.health_metrics import (
     calculate_bmi,
     calculate_wellness_score,
@@ -186,6 +186,9 @@ async def get_health_insights(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ) -> Dict[str, Any]:
+    """Get AI-powered health insights based on user data."""
+    
+    # Get user's health profile
     profile = db.query(HealthProfile).filter(
         HealthProfile.user_id == current_user.id
     ).first()
@@ -196,110 +199,122 @@ async def get_health_insights(
             detail="Health profile not found"
         )
     
-    # Get user settings for data normalization first
-    try:
-        from services.settings import get_user_settings
-        user_settings = get_user_settings(db, current_user.id)
-        settings_dict = user_settings.__dict__ if user_settings else {}
-    except Exception as e:
-        # If settings service fails, use default settings
-        print(f"Settings service error: {e}")
-        settings_dict = {"language": "en", "measurement_system": "metric"}
+    # Get user settings for language preferences
+    from models.user import UserSettings
+    user_settings = db.query(UserSettings).filter(
+        UserSettings.user_id == current_user.id
+    ).first()
     
-    # Get user goals for goal-specific recommendations
+    # Get user goals for context
     from models.goal import Goal
-    user_goals = db.query(Goal).filter(Goal.user_id == current_user.id).all()
-    goals_data = [{
-        'title': goal.title,
-        'target': goal.target,
-        'type': goal.type,
-        'status': goal.status,
-        'progress': goal.progress,
-        'deadline': goal.deadline.isoformat() if goal.deadline else None
-    } for goal in user_goals]
+    user_goals = db.query(Goal).filter(
+        Goal.user_id == current_user.id,
+        Goal.status == 'in_progress'
+    ).all()
     
-    # Check enhanced cache first
-    from services.cache import get_cached_insights, cache_insights, get_fallback_insights
-    language = settings_dict.get('language', 'en')
-    cached_insights = get_cached_insights(
-        current_user.id, 
-        str(profile.updated_at), 
-        language, 
-        goals_data
-    )
-    
-    if cached_insights:
-        return cached_insights
-    
-    # Try to generate fresh AI insights
-    try:
-        insights_data = generate_health_insights(profile.__dict__, settings_dict, goals_data)
-        is_fallback = False
-    except Exception as e:
-        print(f"AI service error: {e}")
-        # Use fallback insights when AI service is unavailable
-        fitness_goal = profile.fitness_goal or "general_fitness"
-        insights_data = get_fallback_insights(current_user.id, language, fitness_goal)
-        is_fallback = True
-    
-    # Format insights as an array of strings for frontend
-    insights_array = []
-    if insights_data:
-        # Add status analysis
-        if insights_data.get('status_analysis'):
-            insights_array.append(insights_data['status_analysis'])
-        
-        # Add recommendations
-        if insights_data.get('recommendations'):
-            insights_array.extend(insights_data['recommendations'])
-        
-        # Add strengths
-        if insights_data.get('strengths'):
-            for strength in insights_data['strengths']:
-                insights_array.append(f"✅ {strength}")
-        
-        # Add improvements
-        if insights_data.get('improvements'):
-            for improvement in insights_data['improvements']:
-                insights_array.append(f"💡 {improvement}")
-    else:
-        # Fallback insights when no data is available
-        insights_array = [
-            "Welcome to your health journey! Start by logging your weight and activities.",
-            "Set up your health profile to get personalized insights.",
-            "Track your daily activities to see your progress over time.",
-            "✅ You're taking the first step towards better health!",
-            "💡 Consider setting specific, achievable health goals"
-        ]
-    
-    # Add calculated metrics
-    bmi = calculate_bmi(profile.weight, profile.height)
-    bmi_category = get_bmi_category(bmi)
-    wellness_score = calculate_wellness_score(profile.__dict__)
-    
-    result = {
-        "insights": insights_array,
-        "metrics": {
-            "bmi": bmi,
-            "bmi_category": bmi_category,
-            "wellness_score": wellness_score
-        },
-        "is_cached": False,
-        "is_fallback": is_fallback,
-        "cache_timestamp": time.time()
+    # Prepare data for AI processing
+    health_data = {
+        "weight": profile.weight,
+        "height": profile.height,
+        "age": profile.age,
+        "fitness_goal": profile.fitness_goal,
+        "activity_level": profile.activity_level,
+        "dietary_restrictions": profile.dietary_restrictions or [],
+        "medical_conditions": profile.medical_conditions or [],
+        "target_weight": profile.target_weight,
+        "target_body_fat": profile.target_body_fat
     }
     
-    # Cache the result
-    cache_insights(
-        current_user.id,
-        str(profile.updated_at),
-        language,
-        result,
-        goals_data,
-        is_fallback
-    )
+    # Get user settings for language
+    settings_data = {}
+    if user_settings:
+        settings_data = {
+            "language": user_settings.language,
+            "units": user_settings.units
+        }
     
-    return result
+    # Get goals data
+    goals_data = []
+    if user_goals:
+        goals_data = [
+            {
+                "title": goal.title,
+                "target": goal.target,
+                "progress": goal.progress,
+                "status": goal.status
+            }
+            for goal in user_goals
+        ]
+    
+    # Generate AI insights
+    try:
+        from ai.insights import generate_health_insights
+        ai_insights = generate_health_insights(health_data, settings_data, goals_data)
+        
+        # Calculate basic metrics
+        bmi = calculate_bmi(profile.weight, profile.height)
+        bmi_category = get_bmi_category(bmi)
+        wellness_score = calculate_wellness_score(profile.__dict__)
+        
+        # Format insights for frontend
+        insights_array = []
+        if ai_insights.get("recommendations"):
+            insights_array.extend(ai_insights["recommendations"])
+        if ai_insights.get("strengths"):
+            insights_array.extend([f"✅ {strength}" for strength in ai_insights["strengths"]])
+        if ai_insights.get("improvements"):
+            insights_array.extend([f"💡 {improvement}" for improvement in ai_insights["improvements"]])
+        
+        result = {
+            "insights": insights_array,
+            "status_analysis": ai_insights.get("status_analysis", ""),
+            "metrics": {
+                "bmi": bmi,
+                "bmi_category": bmi_category,
+                "wellness_score": wellness_score
+            },
+            "is_cached": False,
+            "is_fallback": False,
+            "cache_timestamp": time.time(),
+            "ai_enabled": True
+        }
+        
+        return result
+        
+    except Exception as e:
+        # Fallback to basic insights if AI fails
+        print(f"AI insights failed: {e}")
+        
+        # Calculate basic metrics
+        bmi = calculate_bmi(profile.weight, profile.height)
+        bmi_category = get_bmi_category(bmi)
+        wellness_score = calculate_wellness_score(profile.__dict__)
+        
+        # Return fallback insights
+        insights_array = [
+            "📊 Track your daily activities to see progress over time",
+            "🎯 Set specific, achievable health goals",
+            "📈 Monitor your weight and measurements regularly",
+            "✅ You're taking the first step towards better health!",
+            "💡 Consider logging your meals and exercise for better insights"
+        ]
+        
+        result = {
+            "insights": insights_array,
+            "status_analysis": "AI insights are temporarily unavailable. Here are some general health tips to get you started.",
+            "metrics": {
+                "bmi": bmi,
+                "bmi_category": bmi_category,
+                "wellness_score": wellness_score
+            },
+            "is_cached": False,
+            "is_fallback": True,
+            "cache_timestamp": time.time(),
+            "ai_enabled": False,
+            "error": str(e)
+        }
+        
+        return result
 
 @router.get("/insights/cache-stats")
 async def get_cache_stats(

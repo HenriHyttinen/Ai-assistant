@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
 import { settings } from '../services/api';
-import { useAuth } from './AuthContext';
+import { useSupabaseAuth } from './SupabaseAuthContext';
 
 // Inline types to avoid module loading issues
 type Language = 'en' | 'es' | 'fr' | 'de';
@@ -25,7 +25,7 @@ interface AppProviderProps {
 }
 
 export function AppProvider({ children }: AppProviderProps) {
-  const { user } = useAuth();
+  const { user } = useSupabaseAuth();
   const [language, setLanguageState] = useState<Language>('en');
   const [measurementSystem, setMeasurementSystemState] = useState<'metric' | 'imperial'>('metric');
   const [loading, setLoading] = useState(true);

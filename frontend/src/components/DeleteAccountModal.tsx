@@ -16,7 +16,7 @@ import {
   useDisclosure,
 } from '@chakra-ui/react';
 import { authService } from '../services/auth';
-import { useAuth } from '../contexts/AuthContext';
+import { useSupabaseAuth } from '../contexts/SupabaseAuthContext';
 import { useNavigate } from 'react-router-dom';
 
 interface DeleteAccountModalProps {
@@ -27,7 +27,7 @@ interface DeleteAccountModalProps {
 const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({ isOpen, onClose }) => {
   const [confirmationText, setConfirmationText] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
-  const { logout } = useAuth();
+  const { signOut } = useSupabaseAuth();
   const navigate = useNavigate();
   const toast = useToast();
 
@@ -56,7 +56,7 @@ const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({ isOpen, onClose
       });
 
       // Logout and redirect to login
-      logout();
+      signOut();
       navigate('/login');
     } catch (error: any) {
       console.error('Error deleting account:', error);

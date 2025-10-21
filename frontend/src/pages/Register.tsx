@@ -22,9 +22,10 @@ import {
 import { useFormik } from 'formik';
 import * as Yup from 'yup';
 import { Link as RouterLink } from 'react-router-dom';
-import { FaGoogle, FaGithub } from 'react-icons/fa';
-import { useAuth } from '../contexts/AuthContext';
+import { FaGoogle, FaGithub, FaFacebook, FaApple, FaDiscord } from 'react-icons/fa';
+import { useSupabaseAuth } from '../contexts/SupabaseAuthContext';
 import { authService } from '../services/auth';
+import { getErrorMessage } from '../utils/errorUtils';
 
 interface RegisterFormValues {
   email: string;
@@ -46,7 +47,7 @@ const validationSchema = Yup.object({
 
 const Register = () => {
   const toast = useToast();
-  const { register, error, clearError } = useAuth();
+  const { signUp, signInWithGitHub, signInWithGoogle, signInWithFacebook, signInWithApple, signInWithDiscord, error, clearError } = useSupabaseAuth();
 
   const formik = useFormik({
     initialValues: {
@@ -57,16 +58,29 @@ const Register = () => {
     validationSchema,
     onSubmit: async (values: RegisterFormValues) => {
       try {
-        await register(values.email, values.password);
+        const { user, error } = await signUp(values.email, values.password);
+        
+        if (error) {
+          throw new Error(error.message);
+        }
+        
+        if (user) {
+          toast({
+            title: 'Registration Successful',
+            description: 'Please check your email for verification link.',
+            status: 'success',
+            duration: 5000,
+            isClosable: true,
+          });
+        }
+      } catch (err: any) {
         toast({
-          title: 'Registration Successful',
-          description: 'Welcome to Numbers Don\'t Lie!',
-          status: 'success',
+          title: 'Registration Failed',
+          description: err.message || 'An error occurred during registration',
+          status: 'error',
           duration: 5000,
           isClosable: true,
         });
-      } catch (err) {
-        // Error is handled by AuthContext
       }
     },
   });
@@ -114,7 +128,7 @@ const Register = () => {
               {error && (
                 <Alert status="error" onClose={clearError}>
                   <AlertIcon />
-                  {error}
+                  {getErrorMessage(error)}
                 </Alert>
               )}
 

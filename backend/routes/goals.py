@@ -6,7 +6,7 @@ from database import get_db
 from models.user import User
 from models.goal import Goal
 from schemas.goal import GoalCreate, GoalUpdate, GoalResponse
-from routes.auth import get_current_user
+from auth.supabase_auth import get_current_user_supabase as get_current_user
 
 router = APIRouter()
 

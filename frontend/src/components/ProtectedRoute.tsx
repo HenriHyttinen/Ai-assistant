@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { Navigate, useLocation } from 'react-router-dom';
-import { useAuth } from '../contexts/AuthContext';
+import { useSupabaseAuth } from '../contexts/SupabaseAuthContext';
 import { Spinner, Center } from '@chakra-ui/react';
 
 interface ProtectedRouteProps {
@@ -9,7 +9,7 @@ interface ProtectedRouteProps {
 }
 
 const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, require2FA = false }) => {
-  const { user, loading } = useAuth();
+  const { user, loading } = useSupabaseAuth();
   const location = useLocation();
 
   if (loading) {
@@ -31,14 +31,9 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, require2FA = 
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
-  // Check if email is verified
-  if (!user.is_verified) {
+  // Check if email is verified (Supabase handles this automatically)
+  if (!user.email_confirmed_at) {
     return <Navigate to="/verify-email" state={{ from: location }} replace />;
-  }
-
-  if (require2FA && !user.two_factor_enabled) {
-    // Redirect to 2FA setup if required but not enabled
-    return <Navigate to="/settings" state={{ from: location }} replace />;
   }
 
   return <>{children}</>;

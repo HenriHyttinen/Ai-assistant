@@ -30,7 +30,7 @@ import {
 } from '@chakra-ui/react';
 import { FiShield } from 'react-icons/fi';
 import { useState, useEffect } from 'react';
-import { useAuth } from '../contexts/AuthContext';
+import { useSupabaseAuth } from '../contexts/SupabaseAuthContext';
 import { useApp } from '../contexts/AppContext';
 import { authService } from '../services/auth';
 import { settings as settingsApi } from '../services/api';
@@ -170,7 +170,7 @@ import DeleteAccountModal from '../components/DeleteAccountModal';
 const Settings = () => {
   try {
   const toast = useToast();
-  const { user } = useAuth();
+  const { user } = useSupabaseAuth();
   const { language, measurementSystem, setLanguage, setMeasurementSystem } = useApp();
     
     // Error handling

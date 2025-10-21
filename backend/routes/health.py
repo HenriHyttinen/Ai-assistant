@@ -4,7 +4,8 @@ from typing import List, Any
 from datetime import datetime, timedelta
 
 from database import get_db
-from services import auth, health
+from services import health
+from auth.supabase_auth import get_current_user_supabase as get_current_user
 from schemas.health import (
     HealthProfileCreate,
     HealthProfileUpdate,
@@ -22,7 +23,7 @@ router = APIRouter()
 def create_health_profile(
     profile: HealthProfileCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(auth.get_current_user)
+    current_user: User = Depends(get_current_user)
 ) -> Any:
     """Create a new health profile for the current user."""
     # Check if user already has a health profile
@@ -41,7 +42,7 @@ def create_health_profile(
 @router.get("/profiles/me", response_model=HealthProfileResponse)
 def get_my_health_profile(
     db: Session = Depends(get_db),
-    current_user: User = Depends(auth.get_current_user)
+    current_user: User = Depends(get_current_user)
 ) -> Any:
     """Get the current user's health profile."""
     profile = db.query(health.HealthProfile).filter(
@@ -58,7 +59,7 @@ def get_my_health_profile(
 def update_my_health_profile(
     profile_update: HealthProfileUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(auth.get_current_user)
+    current_user: User = Depends(get_current_user)
 ) -> Any:
     """Update the current user's health profile."""
     profile = db.query(health.HealthProfile).filter(
@@ -97,7 +98,7 @@ def update_my_health_profile(
 def get_my_metrics_history(
     days: int = 30,
     db: Session = Depends(get_db),
-    current_user: User = Depends(auth.get_current_user)
+    current_user: User = Depends(get_current_user)
 ) -> Any:
     """Get the current user's metrics history."""
     profile = db.query(health.HealthProfile).filter(
@@ -116,7 +117,7 @@ def get_my_metrics_history(
 def create_activity_log(
     activity: ActivityLogCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(auth.get_current_user)
+    current_user: User = Depends(get_current_user)
 ) -> Any:
     """Create a new activity log entry for the current user."""
     try:
@@ -152,7 +153,7 @@ def get_my_activity_logs(
     days: int = 7,
     sort_order: str = "desc",
     db: Session = Depends(get_db),
-    current_user: User = Depends(auth.get_current_user)
+    current_user: User = Depends(get_current_user)
 ) -> Any:
     """Get the current user's activity logs."""
     logs = health.get_activity_logs(db, current_user.id, days, sort_order)
@@ -161,7 +162,7 @@ def get_my_activity_logs(
 @router.get("/profiles/me/weekly-summary")
 def get_weekly_summary(
     db: Session = Depends(get_db),
-    current_user: User = Depends(auth.get_current_user)
+    current_user: User = Depends(get_current_user)
 ) -> Any:
     """Get weekly health summary for the current user."""
     from services.analytics import calculate_weekly_summary
@@ -176,7 +177,7 @@ def get_weekly_summary(
 @router.get("/profiles/me/monthly-summary")
 def get_monthly_summary(
     db: Session = Depends(get_db),
-    current_user: User = Depends(auth.get_current_user)
+    current_user: User = Depends(get_current_user)
 ) -> Any:
     """Get monthly health summary for the current user."""
     from services.analytics import calculate_monthly_summary
@@ -191,7 +192,7 @@ def get_monthly_summary(
 @router.get("/profiles/me/analytics", response_model=HealthAnalytics)
 def get_my_health_analytics(
     db: Session = Depends(get_db),
-    current_user: User = Depends(auth.get_current_user)
+    current_user: User = Depends(get_current_user)
 ) -> Any:
     """Get comprehensive health analytics for the current user."""
     profile = db.query(health.HealthProfile).filter(

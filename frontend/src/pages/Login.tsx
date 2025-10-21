@@ -23,8 +23,9 @@ import { useFormik } from 'formik';
 import * as Yup from 'yup';
 import { Link as RouterLink } from 'react-router-dom';
 import { FaGoogle, FaGithub } from 'react-icons/fa';
-import { useAuth } from '../contexts/AuthContext';
+import { useSupabaseAuth } from '../contexts/SupabaseAuthContext';
 import { authService } from '../services/auth';
+import { getErrorMessage } from '../utils/errorUtils';
 
 interface LoginFormValues {
   email: string;
@@ -42,7 +43,7 @@ const validationSchema = Yup.object({
 
 const Login = () => {
   const toast = useToast();
-  const { login, error, clearError } = useAuth();
+  const { signIn, error, clearError } = useSupabaseAuth();
 
   const formik = useFormik({
     initialValues: {
@@ -52,16 +53,29 @@ const Login = () => {
     validationSchema,
     onSubmit: async (values: LoginFormValues) => {
       try {
-        await login(values.email, values.password);
+        const { user, error } = await signIn(values.email, values.password);
+        
+        if (error) {
+          throw new Error(error.message);
+        }
+        
+        if (user) {
+          toast({
+            title: 'Login Successful',
+            description: 'Welcome back!',
+            status: 'success',
+            duration: 3000,
+            isClosable: true,
+          });
+        }
+      } catch (err: any) {
         toast({
-          title: 'Login Successful',
-          description: 'Welcome back!',
-          status: 'success',
+          title: 'Login Failed',
+          description: err.message || 'An error occurred during login',
+          status: 'error',
           duration: 5000,
           isClosable: true,
         });
-      } catch (err) {
-        // Error is handled by AuthContext
       }
     },
   });
@@ -113,7 +127,7 @@ const Login = () => {
               {error && (
                 <Alert status="error" onClose={clearError}>
                   <AlertIcon />
-                  {error}
+                  {getErrorMessage(error)}
                 </Alert>
               )}
 

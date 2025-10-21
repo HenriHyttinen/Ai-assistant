@@ -32,9 +32,15 @@ class Settings(BaseSettings):
     GITHUB_CLIENT_ID: Optional[str] = None
     GITHUB_CLIENT_SECRET: Optional[str] = None
     
-    # AI settings
+    # AI settings - ENABLED for production use
     OPENAI_API_KEY: Optional[str] = None
-    USE_OPENAI: bool = False
+    USE_OPENAI: bool = True
+    AI_ENABLED: bool = True  # AI enabled for insights
+    
+    # Supabase settings
+    SUPABASE_URL: Optional[str] = None
+    SUPABASE_ANON_KEY: Optional[str] = None
+    SUPABASE_SERVICE_ROLE_KEY: Optional[str] = None
     
     # Security settings
     PASSWORD_MIN_LENGTH: int = 8

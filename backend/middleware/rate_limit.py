@@ -60,7 +60,7 @@ class RateLimiter:
         return request.client.host if request.client else "unknown"
 
 # Global rate limiter instance
-rate_limiter = RateLimiter(max_requests=200, time_window=60)  # 200 requests per minute for development
+rate_limiter = RateLimiter(max_requests=1000, time_window=60)  # 1000 requests per minute for development
 
 async def rate_limit_middleware(request: Request, call_next):
     """Rate limiting middleware."""
@@ -98,8 +98,8 @@ async def rate_limit_middleware(request: Request, call_next):
     return response
 
 # Specialized rate limiters for different endpoints
-ai_rate_limiter = RateLimiter(max_requests=20, time_window=60)  # 20 AI requests per minute
-auth_rate_limiter = RateLimiter(max_requests=10, time_window=60)  # 10 auth attempts per minute
+ai_rate_limiter = RateLimiter(max_requests=100, time_window=60)  # 100 AI requests per minute for development
+auth_rate_limiter = RateLimiter(max_requests=50, time_window=60)  # 50 auth attempts per minute for development
 
 async def ai_rate_limit_middleware(request: Request, call_next):
     """Rate limiting middleware specifically for AI endpoints."""

@@ -65,11 +65,14 @@ curl -X POST "http://localhost:8000/auth/verify-email-simple?email=reviewer@test
 ## Features
 
 - **Health Profile** - Store your basic health info (weight, height, goals, etc.)
-- **AI Insights** - Get personalized recommendations based on your data
+- **AI-Powered Insights** - Get personalized health recommendations using OpenAI GPT-3.5
+- **Multi-language Support** - AI insights in English, Spanish, French, and German
 - **Progress Tracking** - See your progress over time with charts
 - **Goal Setting** - Set fitness goals and track progress
-- **Secure Authentication** - Email/password + OAuth (Google, GitHub) + 2FA
+- **Secure Authentication** - OAuth (Google, GitHub, Discord, Facebook, Apple) + Supabase
 - **Data Export** - Download your data if you want to switch apps
+- **Dietary Restrictions** - AI respects your dietary needs and restrictions
+- **Fallback System** - Works without AI when API is unavailable
 
 ## Project Structure
 
@@ -93,10 +96,12 @@ numbers-dont-lie/
 - **Backend**: Python with FastAPI
 - **Frontend**: React with TypeScript (Vite)
 - **Database**: SQLite
-- **AI**: OpenAI API for recommendations
-- **Auth**: JWT tokens + OAuth2 (Google, GitHub)
+- **AI**: OpenAI GPT-3.5 Turbo for personalized health insights
+- **Auth**: Supabase Auth + OAuth2 (Google, GitHub, Discord, Facebook, Apple)
 - **UI**: Chakra UI
 - **Charts**: Recharts
+- **Rate Limiting**: Custom sliding window algorithm
+- **CORS**: Configured for development and production
 
 ## Quick Start
 
@@ -143,14 +148,24 @@ npm run dev
 ### Requirements
 - Python 3.8+
 - Node.js 16+
-- OpenAI API key (optional - shows mock data without it)
+- OpenAI API key (for AI insights - fallback available without it)
 
 ### Environment Variables
-Create `.env` in backend directory:
+The `.env` file is already configured with:
 ```
-OPENAI_API_KEY=your_key_here
-SECRET_KEY=some_random_string
-DATABASE_URL=sqlite:///./app.db
+# AI Configuration
+OPENAI_API_KEY=sk-proj-... (configured)
+USE_OPENAI=true
+
+# Supabase Configuration  
+SUPABASE_URL=https://idaenyycsiewbvxtdecn.supabase.co
+SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+
+# OAuth Providers (configured)
+GOOGLE_CLIENT_ID=409374284979-...
+GITHUB_CLIENT_ID=Ov23liz8cgEtvuAlwlnh
+# Discord, Facebook, Apple also configured
 ```
 
 ### Installation
@@ -168,8 +183,25 @@ cd frontend
 npm install
 ```
 
+## AI Features
+
+### AI-Powered Health Insights
+- **Personalized Recommendations**: Based on your health profile, goals, and activity data
+- **Multi-language Support**: Insights in English, Spanish, French, and German
+- **Dietary Restrictions**: AI respects your dietary needs and medical conditions
+- **Goal-Oriented**: Tailored advice based on your active fitness goals
+- **Fallback System**: Works without OpenAI API (shows general health tips)
+
+### AI Configuration
+- **Model**: OpenAI GPT-3.5 Turbo
+- **Cost Control**: Intelligent fallback when API is unavailable
+- **Data Privacy**: Health data is normalized and PII is removed before AI processing
+- **Rate Limiting**: Prevents API abuse and controls costs
+
 ## Notes
 
-- AI features work without API key (shows mock data)
-- Email verification links display in console for testing
+- AI features work with fallback when API is unavailable
+- All OAuth providers are configured and working
 - All data stored locally in SQLite
+- Rate limiting prevents API abuse
+- CORS configured for development and production

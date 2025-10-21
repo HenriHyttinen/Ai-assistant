@@ -27,6 +27,7 @@ import { Link } from 'react-router-dom';
 import { MdPersonAdd, MdPerson } from 'react-icons/md';
 import { analytics, healthProfile } from '../services/api';
 import { useApp } from '../contexts/AppContext';
+import { getErrorMessage } from '../utils/errorUtils';
 import ActivityLogModal from '../components/ActivityLogModal';
 import WeightProgressCard from '../components/WeightProgressCard';
 import { t } from '../utils/translations';
@@ -200,7 +201,7 @@ const Dashboard = () => {
       <Box p={4}>
         <Alert status="error">
           <AlertIcon />
-          {error}
+          {getErrorMessage(error)}
         </Alert>
       </Box>
     );

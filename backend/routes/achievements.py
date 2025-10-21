@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from database import get_db
 from services.achievement_service import AchievementService
-from services import auth
+from auth.supabase_auth import get_current_user_supabase as get_current_user
 from models.user import User
 from typing import List, Dict
 
@@ -10,7 +10,7 @@ router = APIRouter()
 
 @router.get("/")
 async def get_user_achievements(
-    current_user: User = Depends(auth.get_current_user),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Get all achievements for the current user"""
@@ -23,7 +23,7 @@ async def get_user_achievements(
 
 @router.get("/available")
 async def get_available_achievements(
-    current_user: User = Depends(auth.get_current_user),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Get all available achievements with user's progress"""
@@ -36,7 +36,7 @@ async def get_available_achievements(
 
 @router.post("/check")
 async def check_new_achievements(
-    current_user: User = Depends(auth.get_current_user),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Check for new achievements and return any that were just unlocked"""
