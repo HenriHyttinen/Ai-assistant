@@ -229,6 +229,30 @@ source venv/bin/activate
 python fix_dependencies.py
 ```
 
+**Test if everything is working:**
+```bash
+cd backend
+source venv/bin/activate
+python test_imports.py
+```
+
+**If you still get `ModuleNotFoundError: No module named 'lib.supabase'`:**
+```bash
+cd backend
+source venv/bin/activate
+python fix_lib_import.py
+```
+
+**Alternative fix - Replace the problematic import:**
+```bash
+cd backend
+source venv/bin/activate
+# Backup the original file
+cp auth/supabase_auth.py auth/supabase_auth_backup.py
+# Use the alternative version
+cp auth/supabase_auth_alternative.py auth/supabase_auth.py
+```
+
 ## AI Features
 
 ### AI-Powered Health Insights

@@ -6,6 +6,9 @@ import subprocess
 import sys
 import os
 
+# Add current directory to Python path
+sys.path.insert(0, os.getcwd())
+
 def install_missing_dependencies():
     """Install missing dependencies that might not be in requirements.txt"""
     print("Installing missing dependencies...")
@@ -47,6 +50,30 @@ def install_missing_dependencies():
             return False
     
     print("✅ All dependencies installed successfully!")
+    
+    # Test imports
+    print("Testing imports...")
+    try:
+        from lib.supabase import supabase
+        print("✅ lib.supabase import successful")
+    except Exception as e:
+        print(f"❌ lib.supabase import failed: {e}")
+        return False
+    
+    try:
+        from auth.supabase_auth import get_current_user_supabase
+        print("✅ auth.supabase_auth import successful")
+    except Exception as e:
+        print(f"❌ auth.supabase_auth import failed: {e}")
+        return False
+    
+    try:
+        from routes.auth import router
+        print("✅ routes.auth import successful")
+    except Exception as e:
+        print(f"❌ routes.auth import failed: {e}")
+        return False
+    
     return True
 
 if __name__ == "__main__":
