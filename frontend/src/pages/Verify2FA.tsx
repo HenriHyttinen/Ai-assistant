@@ -1,4 +1,5 @@
 // @ts-nocheck
+import React, { useEffect } from 'react';
 import {
   Box,
   Button,
@@ -38,6 +39,21 @@ const Verify2FA = () => {
   const { verify2FA, error, clearError } = useAuth();
   
   const email = location.state?.email;
+
+  // Check if user should be on this page
+  useEffect(() => {
+    const tempToken = localStorage.getItem('temp_token');
+    if (!tempToken || !email) {
+      toast({
+        title: 'Error',
+        description: 'No 2FA verification required. Please login again.',
+        status: 'error',
+        duration: 5000,
+        isClosable: true,
+      });
+      navigate('/login');
+    }
+  }, [email, navigate, toast]);
 
   const formik = useFormik({
     initialValues: {

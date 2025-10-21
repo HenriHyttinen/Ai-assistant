@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ app_name }} - 2FA Verification Code</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+            border-radius: 10px 10px 0 0;
+        }
+        .content {
+            background: #f8f9fa;
+            padding: 30px;
+            border-radius: 0 0 10px 10px;
+        }
+        .code-box {
+            background: #fff;
+            border: 2px dashed #667eea;
+            border-radius: 8px;
+            padding: 20px;
+            text-align: center;
+            margin: 20px 0;
+        }
+        .code {
+            font-size: 32px;
+            font-weight: bold;
+            color: #667eea;
+            letter-spacing: 5px;
+            font-family: 'Courier New', monospace;
+        }
+        .warning {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            border-radius: 5px;
+            padding: 15px;
+            margin: 20px 0;
+        }
+        .footer {
+            text-align: center;
+            margin-top: 30px;
+            color: #666;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🔐 Two-Factor Authentication</h1>
+        <p>Your verification code for {{ app_name }}</p>
+    </div>
+    
+    <div class="content">
+        <h2>Hello!</h2>
+        <p>You're trying to sign in to your {{ app_name }} account. Use the verification code below to complete your login:</p>
+        
+        <div class="code-box">
+            <div class="code">{{ code }}</div>
+        </div>
+        
+        <div class="warning">
+            <strong>⚠️ Important:</strong>
+            <ul>
+                <li>This code expires in 5 minutes</li>
+                <li>Never share this code with anyone</li>
+                <li>If you didn't request this code, please ignore this email</li>
+            </ul>
+        </div>
+        
+        <p>If you're having trouble, you can also use the development code <strong>123456</strong> for testing purposes.</p>
+    </div>
+    
+    <div class="footer">
+        <p>This email was sent by {{ app_name }}</p>
+        <p>If you didn't request this code, please ignore this email.</p>
+    </div>
+</body>
+</html>

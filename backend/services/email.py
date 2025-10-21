@@ -132,6 +132,18 @@ async def send_2fa_setup_email(email: str, qr_code: str) -> None:
         }
     )
 
+async def send_2fa_code_email(email: str, code: str) -> None:
+    """Send 2FA verification code via email."""
+    await send_email(
+        email_to=email,
+        subject="Your 2FA Verification Code",
+        template_name="2fa_code_email",
+        template_data={
+            "code": code,
+            "app_name": "Numbers Don't Lie"
+        }
+    )
+
 async def send_health_report_email(email: str, report_data: dict) -> None:
     """Send health report email."""
     await send_email(

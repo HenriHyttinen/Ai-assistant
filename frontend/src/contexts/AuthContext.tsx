@@ -124,6 +124,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUser(userData);
       navigate('/');
     } catch (err: any) {
+      // Handle case where 2FA is disabled but user is still on verification page
+      if (err.response?.data?.detail?.includes('2FA is not enabled')) {
+        // Clean up temporary token and redirect to login
+        localStorage.removeItem('temp_token');
+        localStorage.removeItem('token');
+        setError('2FA is not enabled. Please login again.');
+        navigate('/login');
+        return;
+      }
+      
       // Restore original token if verification failed
       const originalToken = localStorage.getItem('token');
       if (originalToken) {

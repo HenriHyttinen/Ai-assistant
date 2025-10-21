@@ -67,6 +67,44 @@ def generate_backup_codes(count: int = 8) -> List[str]:
     """Generate backup codes for 2FA recovery."""
     return [secrets.token_hex(4).upper() for _ in range(count)]
 
+def generate_email_2fa_code() -> str:
+    """Generate a 6-digit 2FA code for email verification."""
+    return f"{secrets.randbelow(1000000):06d}"
+
+def send_2fa_email(email: str, code: str) -> None:
+    """Send 2FA code via email using SendGrid."""
+    from services.email import send_2fa_code_email
+    import asyncio
+    import threading
+    
+    def run_async_email():
+        """Run the async email function in a new event loop."""
+        try:
+            # Create a new event loop for this thread
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(send_2fa_code_email(email, code))
+            loop.close()
+            print(f"✅ 2FA email sent successfully to {email}")
+        except Exception as e:
+            print(f"❌ Failed to send 2FA email: {e}")
+            print(f"📧 2FA Code for {email}: {code}")
+    
+    try:
+        # Check if we're in an async context
+        try:
+            loop = asyncio.get_running_loop()
+            # We're in an async context, run in a separate thread
+            thread = threading.Thread(target=run_async_email)
+            thread.start()
+            thread.join(timeout=5)  # Wait max 5 seconds
+        except RuntimeError:
+            # No running loop, we can run directly
+            run_async_email()
+    except Exception as e:
+        print(f"❌ Failed to send 2FA email: {e}")
+        print(f"📧 2FA Code for {email}: {code}")
+
 def verify_2fa_login(user: User, token: str) -> bool:
     """Verify 2FA token during login (supports both TOTP and backup codes)."""
     if not user.two_factor_enabled:
