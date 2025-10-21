@@ -3,10 +3,15 @@ from typing import Optional
 
 class Token(BaseModel):
     access_token: str
+    refresh_token: Optional[str] = None
     token_type: str
+    requires_2fa: Optional[bool] = False
 
 class TokenData(BaseModel):
     email: Optional[str] = None
+
+class RefreshToken(BaseModel):
+    refresh_token: str
 
 class UserBase(BaseModel):
     email: EmailStr

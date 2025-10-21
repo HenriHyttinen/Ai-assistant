@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>OAuth Test - Final</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; }
+        .status { padding: 10px; margin: 10px 0; border-radius: 5px; }
+        .success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .error { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .info { background-color: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
+        button { padding: 10px 20px; margin: 10px; font-size: 16px; cursor: pointer; }
+        .google-btn { background-color: #4285f4; color: white; border: none; }
+        .github-btn { background-color: #333; color: white; border: none; }
+        pre { background-color: #f8f9fa; padding: 10px; border-radius: 5px; overflow-x: auto; }
+    </style>
+</head>
+<body>
+    <h1>OAuth Test - Final</h1>
+    
+    <div id="status" class="status info">Testing backend connection...</div>
+    
+    <h2>Test OAuth Flows</h2>
+    <button class="google-btn" onclick="testGoogleOAuth()">Test Google OAuth</button>
+    <button class="github-btn" onclick="testGitHubOAuth()">Test GitHub OAuth</button>
+    
+    <h2>Direct OAuth URLs</h2>
+    <button class="google-btn" onclick="window.open('https://accounts.google.com/oauth/authorize?client_id=648667093069-fm40k77lpjutqfuie2ar5lhm11g0toag.apps.googleusercontent.com&redirect_uri=http://127.0.0.1:8000/auth/oauth/google/callback&scope=openid email profile&response_type=code', '_blank')">Direct Google OAuth</button>
+    <button class="github-btn" onclick="window.open('https://github.com/login/oauth/authorize?client_id=Ov23li6L4ovj5bTEGGQg&redirect_uri=http://127.0.0.1:8000/auth/oauth/github/callback&scope=user:email', '_blank')">Direct GitHub OAuth</button>
+    
+    <div id="results"></div>
+
+    <script>
+        let backendStatus = false;
+        
+        async function checkBackendStatus() {
+            try {
+                const response = await fetch('https://dcffc4808b2c.ngrok-free.app/auth/oauth/google');
+                if (response.ok) {
+                    backendStatus = true;
+                    document.getElementById('status').className = 'status success';
+                    document.getElementById('status').textContent = '✅ Backend connection successful!';
+                } else {
+                    throw new Error('Backend not responding');
+                }
+            } catch (error) {
+                document.getElementById('status').className = 'status error';
+                document.getElementById('status').textContent = '❌ Backend connection failed: ' + error.message;
+            }
+        }
+        
+        async function testGoogleOAuth() {
+            if (!backendStatus) {
+                alert('Backend not connected. Please wait for connection check.');
+                return;
+            }
+            
+            try {
+                const response = await fetch('https://dcffc4808b2c.ngrok-free.app/auth/oauth/google');
+                const data = await response.json();
+                
+                if (response.ok && data.url) {
+                    document.getElementById('results').innerHTML += '<div class="status success">✅ Google OAuth URL generated successfully</div>';
+                    document.getElementById('results').innerHTML += '<pre>' + JSON.stringify(data, null, 2) + '</pre>';
+                    
+                    // Open the OAuth URL
+                    window.open(data.url, '_blank');
+                } else {
+                    throw new Error('Failed to get OAuth URL');
+                }
+            } catch (error) {
+                document.getElementById('results').innerHTML += '<div class="status error">❌ Google OAuth failed: ' + error.message + '</div>';
+            }
+        }
+        
+        async function testGitHubOAuth() {
+            if (!backendStatus) {
+                alert('Backend not connected. Please wait for connection check.');
+                return;
+            }
+            
+            try {
+                const response = await fetch('https://dcffc4808b2c.ngrok-free.app/auth/oauth/github');
+                const data = await response.json();
+                
+                if (response.ok && data.url) {
+                    document.getElementById('results').innerHTML += '<div class="status success">✅ GitHub OAuth URL generated successfully</div>';
+                    document.getElementById('results').innerHTML += '<pre>' + JSON.stringify(data, null, 2) + '</pre>';
+                    
+                    // Open the OAuth URL
+                    window.open(data.url, '_blank');
+                } else {
+                    throw new Error('Failed to get OAuth URL');
+                }
+            } catch (error) {
+                document.getElementById('results').innerHTML += '<div class="status error">❌ GitHub OAuth failed: ' + error.message + '</div>';
+            }
+        }
+        
+        // Check backend status on page load
+        checkBackendStatus();
+    </script>
+</body>
+</html>

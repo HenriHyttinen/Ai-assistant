@@ -9,25 +9,25 @@ A comprehensive wellness platform that leverages AI to provide personalized heal
 
 **For Quick Setup (Recommended for Reviewers):**
 ```bash
-cd backend
-source venv/bin/activate
+cd backend/database_setup
+source ../venv/bin/activate
 python3 setup_reviewer.py
 ```
 
 **For Full Setup:**
 ```bash
-cd backend
-source venv/bin/activate
+cd backend/database_setup
+source ../venv/bin/activate
 python3 setup_database.py
 ```
 
-**Having Issues?** See [REVIEWER_TROUBLESHOOTING.md](REVIEWER_TROUBLESHOOTING.md) for common problems and solutions.
+**Having Issues?** See [docs/REVIEWER_TROUBLESHOOTING.md](docs/REVIEWER_TROUBLESHOOTING.md) for common problems and solutions.
 
 ### Option 1: Use Pre-configured Test Account (Recommended)
 **Setup the test account:**
 ```bash
-cd backend
-source venv/bin/activate
+cd backend/database_setup
+source ../venv/bin/activate
 python3 setup_reviewer_account.py
 ```
 
@@ -70,6 +70,23 @@ curl -X POST "http://localhost:8000/auth/verify-email-simple?email=reviewer@test
 - **Goal Setting** - Set fitness goals and track progress
 - **Secure Authentication** - Email/password + OAuth (Google, GitHub) + 2FA
 - **Data Export** - Download your data if you want to switch apps
+
+## Project Structure
+
+```
+numbers-dont-lie/
+├── backend/                 # FastAPI backend
+│   ├── database_setup/     # Database scripts and migrations
+│   ├── models/            # Database models
+│   ├── routes/            # API endpoints
+│   ├── services/          # Business logic
+│   └── static/            # Static files
+├── frontend/              # React frontend
+├── docs/                  # Documentation
+├── tests/                 # Test HTML files
+├── oauth-pages/           # OAuth consent pages
+└── README.md
+```
 
 ## Tech Stack
 
@@ -143,6 +160,7 @@ cd backend
 python -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
+cd database_setup
 python init_db.py
 
 # Frontend

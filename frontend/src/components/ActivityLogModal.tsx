@@ -49,24 +49,24 @@ const ActivityLogModal = ({ isOpen, onClose, onActivityLogged }: ActivityLogModa
     notes: Yup.string().max(500, t('notesMaxLength' as any, language)),
   });
 
-  const formik = useFormik<ActivityFormValues>({
+  const formik = useFormik({
     initialValues: {
       activity_type: '',
       duration: 30,
       intensity: 'moderate',
       notes: '',
       performed_at: new Date().toISOString().slice(0,16),
-    },
+    } as ActivityFormValues,
     validationSchema: getValidationSchema(language),
-    onSubmit: async (values, { setSubmitting, resetForm }) => {
+    onSubmit: async (values: ActivityFormValues, { setSubmitting, resetForm }: { setSubmitting: (isSubmitting: boolean) => void; resetForm: () => void }) => {
       try {
         await analytics.createActivity({
           activity_type: values.activity_type,
           duration: values.duration,
-          intensity: values.intensity,
+          intensity: values.intensity as 'low' | 'moderate' | 'high',
           notes: values.notes,
           performed_at: values.performed_at ? values.performed_at + ':00' : undefined,
-        });
+        } as any);
 
         toast({
           title: t('activityLoggedSuccess' as any, language),

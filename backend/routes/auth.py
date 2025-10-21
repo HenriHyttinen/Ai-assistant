@@ -24,7 +24,8 @@ from auth.email import send_verification_email, send_password_reset_email
 from schemas.auth import (
     Token, UserCreate, UserResponse, OAuthResponse,
     TwoFactorSetup, TwoFactorVerify, OAuthLogin,
-    PasswordReset, PasswordResetConfirm, LoginData, ChangePassword
+    PasswordReset, PasswordResetConfirm, LoginData, ChangePassword,
+    RefreshToken
 )
 from services import auth
 from services.auth import get_current_user
@@ -56,7 +57,7 @@ async def register_user(
     
     # Send verification email
     try:
-        verification_token = auth.create_access_token(
+        verification_token = create_access_token(
             data={"sub": created_user.email, "type": "email_verification"},
             expires_delta=timedelta(minutes=EMAIL_TOKEN_EXPIRE_MINUTES)
         )
@@ -101,17 +102,18 @@ def login(
         )
     
     if user.two_factor_enabled:
-        access_token = auth.create_access_token(
+        access_token = create_access_token(
             data={"sub": user.email, "temp": True},
             expires_delta=timedelta(minutes=30)  # Extended from 5 to 30 minutes for 2FA
         )
         return Token(access_token=access_token, token_type="bearer", requires_2fa=True)
     
-    access_token = auth.create_access_token(
+    access_token = create_access_token(
         data={"sub": user.email},
-        expires_delta=timedelta(minutes=auth.ACCESS_TOKEN_EXPIRE_MINUTES)
+        expires_delta=timedelta(minutes=30)
     )
-    return Token(access_token=access_token, token_type="bearer", requires_2fa=False)
+    refresh_token = create_refresh_token(data={"sub": user.email})
+    return Token(access_token=access_token, refresh_token=refresh_token, token_type="bearer", requires_2fa=False)
 
 @router.post("/verify-2fa", response_model=Token)
 def verify_2fa(
@@ -126,20 +128,69 @@ def verify_2fa(
             detail="2FA is not enabled for this user"
         )
     
-    # Development mode: accept 123456, otherwise verify with TOTP
-    if verification.code.strip() != "123456":
-        # In production, you would verify with actual TOTP
-        # For now, we'll accept 123456 for development
+    # Verify the 2FA code using the two_factor module
+    from auth.two_factor import verify_2fa_login
+    
+    if not verify_2fa_login(current_user, verification.code):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid 2FA code. Use 123456 for development mode."
+            detail="Invalid 2FA code"
         )
     
-    access_token = auth.create_access_token(
+    # Create permanent access token and refresh token
+    access_token = create_access_token(
         data={"sub": current_user.email},
-        expires_delta=timedelta(minutes=auth.ACCESS_TOKEN_EXPIRE_MINUTES)
+        expires_delta=timedelta(minutes=30)
     )
-    return Token(access_token=access_token, token_type="bearer", requires_2fa=False)
+    refresh_token = create_refresh_token(data={"sub": current_user.email})
+    return Token(access_token=access_token, refresh_token=refresh_token, token_type="bearer", requires_2fa=False)
+
+@router.post("/refresh", response_model=Token)
+def refresh_token(
+    refresh_data: RefreshToken,
+    db: DB
+):
+    """Refresh access token using refresh token."""
+    try:
+        # Verify the refresh token
+        payload = verify_token(refresh_data.refresh_token)
+        email = payload.get("sub")
+        
+        if not email:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid refresh token"
+            )
+        
+        # Get user from database
+        user = db.query(User).filter(User.email == email).first()
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User not found"
+            )
+        
+        # Create new access token
+        access_token = create_access_token(
+            data={"sub": user.email},
+            expires_delta=timedelta(minutes=auth.ACCESS_TOKEN_EXPIRE_MINUTES)
+        )
+        
+        # Create new refresh token
+        new_refresh_token = create_refresh_token(data={"sub": user.email})
+        
+        return Token(
+            access_token=access_token, 
+            refresh_token=new_refresh_token, 
+            token_type="bearer", 
+            requires_2fa=False
+        )
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid refresh token"
+        )
 
 @router.post("/setup-2fa", response_model=TwoFactorSetup)
 def setup_2fa(
@@ -214,7 +265,7 @@ def request_password_reset(
     """Request a password reset."""
     user = db.query(User).filter(User.email == reset_data.email).first()
     if user:
-        token = auth.create_access_token(
+        token = create_access_token(
             data={"sub": user.email, "type": "password_reset"},
             expires_delta=timedelta(hours=1)
         )
@@ -266,13 +317,13 @@ async def oauth_login(
     
     try:
         # Create redirect URI for the specific provider
-        base_url = str(request.base_url).replace("localhost", "127.0.0.1").replace(":8000", ":8001")
+        # Use ngrok URL for Google OAuth to make it accessible from Google's servers
         if provider == "google":
-            redirect_uri = f"{base_url}oauth/callback"
+            redirect_uri = "https://dcffc4808b2c.ngrok-free.app/auth/oauth/google/callback"
             client_id = os.getenv('GOOGLE_CLIENT_ID')
             scope = "openid email profile"
         elif provider == "github":
-            redirect_uri = f"{base_url}auth/callback"
+            redirect_uri = "http://127.0.0.1:8000/auth/oauth/github/callback"
             client_id = os.getenv('GITHUB_CLIENT_ID')
             scope = "user:email"
         
@@ -313,7 +364,7 @@ async def oauth_callback_google(
             'client_secret': os.getenv('GOOGLE_CLIENT_SECRET'),
             'code': code,
             'grant_type': 'authorization_code',
-            'redirect_uri': f"{request.base_url}auth/oauth/google/callback"
+            'redirect_uri': "https://dcffc4808b2c.ngrok-free.app/auth/oauth/google/callback"
         }
         
         async with httpx.AsyncClient() as client:
@@ -354,7 +405,7 @@ async def oauth_callback_google(
             db.commit()
             db.refresh(user)
         
-        access_token = auth.create_access_token(data={"sub": user.email})
+        access_token = create_access_token(data={"sub": user.email})
         
         # Redirect to frontend with token
         from fastapi.responses import RedirectResponse
@@ -398,7 +449,7 @@ async def oauth_callback_github(
             db.commit()
             db.refresh(user)
         
-        access_token = auth.create_access_token(data={"sub": user.email})
+        access_token = create_access_token(data={"sub": user.email})
         
         # Redirect to frontend with token
         from fastapi.responses import RedirectResponse
@@ -603,7 +654,7 @@ async def resend_verification_email(
         )
     
     try:
-        verification_token = auth.create_access_token(
+        verification_token = create_access_token(
             data={"sub": current_user.email, "type": "email_verification"},
             expires_delta=timedelta(minutes=EMAIL_TOKEN_EXPIRE_MINUTES)
         )

@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 import time
 from typing import Callable
 from dotenv import load_dotenv
@@ -28,6 +29,7 @@ from services.tasks import start_background_tasks
 from config import get_settings
 from logging_config import setup_logging
 from middleware.rate_limit import rate_limit_middleware, ai_rate_limit_middleware, auth_rate_limit_middleware
+from middleware.security import SecurityMiddleware
 
 # Load env vars
 load_dotenv()
@@ -65,12 +67,18 @@ app.add_middleware(
         "http://127.0.0.1:5177",
         "http://localhost:5178",
         "http://127.0.0.1:5178",
+        "http://localhost:8080",
+        "http://127.0.0.1:8080",
+        "https://dcffc4808b2c.ngrok-free.app",
     ],
-    allow_origin_regex=r"^http://(localhost|127\\.0\\.0\\.1):(5173|5174|5175|5176|5177|5178)$",
+    allow_origin_regex=r"^https://.*\\.ngrok-free\\.app$|^http://(localhost|127\\.0\\.0\\.1):(5173|5174|5175|5176|5177|5178|8080)$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Add security middleware
+app.add_middleware(SecurityMiddleware, force_https=False)  # Set to True in production
 
 # Add rate limiting middleware
 app.middleware("http")(rate_limit_middleware)
@@ -89,6 +97,9 @@ async def error_handling_middleware(request: Request, call_next: Callable):
             content={"detail": "Internal server error"}
         )
 
+# Mount static files
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
 # Include routers
 app.include_router(auth_router, prefix="/auth", tags=["Authentication"])
 app.include_router(health_router, prefix="/health", tags=["Health"])
@@ -106,6 +117,12 @@ async def root():
         "docs_url": "/docs",
         "redoc_url": "/redoc"
     }
+
+@app.get("/oauth_test_final.html")
+async def oauth_test():
+    """Serve the OAuth test page."""
+    from fastapi.responses import FileResponse
+    return FileResponse("static/oauth_test_final.html")
 
 # Start background tasks
 @app.on_event("startup")

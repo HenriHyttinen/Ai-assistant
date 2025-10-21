@@ -18,8 +18,8 @@ import {
 } from '@chakra-ui/react';
 import { useFormik } from 'formik';
 import * as Yup from 'yup';
-import { useNavigate } from 'react-router-dom';
-import { authService } from '../services/auth';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
 
 interface Verify2FAFormValues {
   code: string;
@@ -34,6 +34,10 @@ const validationSchema = Yup.object({
 const Verify2FA = () => {
   const toast = useToast();
   const navigate = useNavigate();
+  const location = useLocation();
+  const { verify2FA, error, clearError } = useAuth();
+  
+  const email = location.state?.email;
 
   const formik = useFormik({
     initialValues: {
@@ -42,17 +46,28 @@ const Verify2FA = () => {
     validationSchema,
     onSubmit: async (values: Verify2FAFormValues) => {
       try {
-        const response = await authService.verify2FA({ code: values.code });
-        localStorage.setItem('token', response.access_token);
-        navigate('/dashboard');
-      } catch (err) {
+        if (!email) {
+          toast({
+            title: 'Error',
+            description: 'Email not found. Please login again.',
+            status: 'error',
+            duration: 5000,
+            isClosable: true,
+          });
+          navigate('/login');
+          return;
+        }
+        
+        await verify2FA(email, values.code);
         toast({
-          title: 'Verification Failed',
-          description: 'Invalid verification code. Please try again.',
-          status: 'error',
+          title: 'Verification Successful',
+          description: 'Welcome back!',
+          status: 'success',
           duration: 5000,
           isClosable: true,
         });
+      } catch (err) {
+        // Error is handled by AuthContext
       }
     },
   });
@@ -84,6 +99,13 @@ const Verify2FA = () => {
                   </Box>
                 </Alert>
               </Stack>
+
+              {error && (
+                <Alert status="error" onClose={clearError}>
+                  <AlertIcon />
+                  {error}
+                </Alert>
+              )}
 
               <Stack spacing="6">
                 <form onSubmit={formik.handleSubmit}>

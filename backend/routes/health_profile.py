@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List, Dict, Any
+import time
 
 from database import get_db
 from models.user import User, HealthProfile, ActivityLog, MetricsHistory
@@ -171,9 +172,6 @@ async def get_metrics_history(
     
     return metrics
 
-# Simple in-memory cache for insights (expires after 5 minutes)
-_insights_cache = {}
-
 @router.get("/insights")
 async def get_health_insights(
     current_user: User = Depends(get_current_user),
@@ -199,18 +197,41 @@ async def get_health_insights(
         print(f"Settings service error: {e}")
         settings_dict = {"language": "en", "measurement_system": "metric"}
     
-    # Check cache first (include language in cache key)
-    cache_key = f"insights_{current_user.id}_{profile.updated_at}_{settings_dict.get('language', 'en')}"
-    if cache_key in _insights_cache:
-        import time
-        cached_data, timestamp = _insights_cache[cache_key]
-        # Cache expires after 5 minutes
-        if time.time() - timestamp < 300:
-            return cached_data
+    # Get user goals for goal-specific recommendations
+    from models.goal import Goal
+    user_goals = db.query(Goal).filter(Goal.user_id == current_user.id).all()
+    goals_data = [{
+        'title': goal.title,
+        'target': goal.target,
+        'type': goal.type,
+        'status': goal.status,
+        'progress': goal.progress,
+        'deadline': goal.deadline.isoformat() if goal.deadline else None
+    } for goal in user_goals]
     
+    # Check enhanced cache first
+    from services.cache import get_cached_insights, cache_insights, get_fallback_insights
+    language = settings_dict.get('language', 'en')
+    cached_insights = get_cached_insights(
+        current_user.id, 
+        str(profile.updated_at), 
+        language, 
+        goals_data
+    )
     
-    # Generate AI insights with normalized data
-    insights_data = generate_health_insights(profile.__dict__, settings_dict)
+    if cached_insights:
+        return cached_insights
+    
+    # Try to generate fresh AI insights
+    try:
+        insights_data = generate_health_insights(profile.__dict__, settings_dict, goals_data)
+        is_fallback = False
+    except Exception as e:
+        print(f"AI service error: {e}")
+        # Use fallback insights when AI service is unavailable
+        fitness_goal = profile.fitness_goal or "general_fitness"
+        insights_data = get_fallback_insights(current_user.id, language, fitness_goal)
+        is_fallback = True
     
     # Format insights as an array of strings for frontend
     insights_array = []
@@ -253,14 +274,40 @@ async def get_health_insights(
             "bmi": bmi,
             "bmi_category": bmi_category,
             "wellness_score": wellness_score
-        }
+        },
+        "is_cached": False,
+        "is_fallback": is_fallback,
+        "cache_timestamp": time.time()
     }
     
     # Cache the result
-    import time
-    _insights_cache[cache_key] = (result, time.time())
+    cache_insights(
+        current_user.id,
+        str(profile.updated_at),
+        language,
+        result,
+        goals_data,
+        is_fallback
+    )
     
     return result
+
+@router.get("/insights/cache-stats")
+async def get_cache_stats(
+    current_user: User = Depends(get_current_user)
+) -> Dict[str, Any]:
+    """Get cache statistics for monitoring"""
+    from services.cache import get_cache_stats
+    return get_cache_stats()
+
+@router.delete("/insights/cache")
+async def clear_user_cache(
+    current_user: User = Depends(get_current_user)
+) -> Dict[str, Any]:
+    """Clear cached insights for the current user"""
+    from services.cache import clear_user_cache
+    clear_user_cache(current_user.id)
+    return {"message": "User cache cleared successfully"}
 
 @router.get("/weekly-summary")
 async def get_weekly_summary(

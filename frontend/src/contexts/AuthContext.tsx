@@ -61,11 +61,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const response = await authService.login({ email, password });
       
       if (response.requires_2fa) {
+        // Store temporary token for 2FA verification
+        localStorage.setItem('temp_token', response.access_token);
         navigate('/verify-2fa', { state: { email } });
         return;
       }
 
       localStorage.setItem('token', response.access_token);
+      if (response.refresh_token) {
+        localStorage.setItem('refresh_token', response.refresh_token);
+      }
       const userData = await authService.getProfile();
       setUser(userData);
       navigate('/');
@@ -97,11 +102,33 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const verify2FA = async (email: string, code: string) => {
     try {
       setError(null);
+      // Use temporary token for 2FA verification
+      const tempToken = localStorage.getItem('temp_token');
+      if (!tempToken) {
+        throw new Error('No temporary token found. Please login again.');
+      }
+      
+      // Temporarily set the temp token for the API call
+      localStorage.setItem('token', tempToken);
+      
       const response = await authService.verify2FA({ email, code });
+      
+      // Clean up temporary token
+      localStorage.removeItem('temp_token');
       localStorage.setItem('token', response.access_token);
-      setUser(response.user);
+      if (response.refresh_token) {
+        localStorage.setItem('refresh_token', response.refresh_token);
+      }
+      
+      const userData = await authService.getProfile();
+      setUser(userData);
       navigate('/');
     } catch (err: any) {
+      // Restore original token if verification failed
+      const originalToken = localStorage.getItem('token');
+      if (originalToken) {
+        localStorage.setItem('token', originalToken);
+      }
       setError(err.response?.data?.detail || '2FA verification failed');
       throw err;
     }

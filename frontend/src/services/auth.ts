@@ -99,6 +99,15 @@ export const authService = {
     return response.data;
   },
 
+  refreshToken: async () => {
+    const refreshToken = localStorage.getItem('refresh_token');
+    if (!refreshToken) {
+      throw new Error('No refresh token available');
+    }
+    const response = await api.post('/auth/refresh', { refresh_token: refreshToken });
+    return response.data;
+  },
+
   getProfile: async () => {
     const response = await api.get('/auth/profile');
     return response.data;

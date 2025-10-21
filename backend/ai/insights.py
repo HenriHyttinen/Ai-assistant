@@ -211,7 +211,7 @@ def validate_ai_response(insights: Dict[str, Any], dietary_restrictions: List[st
         "filtered_recommendations_count": len(filtered_recommendations)
     }
 
-def generate_health_insights(health_data: Dict[str, Any], user_settings: Dict[str, Any] = None) -> Dict[str, Any]:
+def generate_health_insights(health_data: Dict[str, Any], user_settings: Dict[str, Any] = None, user_goals: List[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Generate health insights based on user data."""
     
     # Import normalization utilities
@@ -241,7 +241,17 @@ def generate_health_insights(health_data: Dict[str, Any], user_settings: Dict[st
     activity_metrics = normalized_data["user_metrics"]["activity_metrics"]
     fitness_assessment = normalized_data["user_metrics"]["fitness_assessment"]
     
-    # Build the prompt with normalized user info
+    # Build goal-specific context
+    goal_context = ""
+    if user_goals:
+        active_goals = [goal for goal in user_goals if goal.get('status') == 'in_progress']
+        if active_goals:
+            goal_context = f"""
+    Active Goals:
+    {chr(10).join([f"- {goal.get('title', 'Unknown')}: {goal.get('target', 'No target')} (Progress: {goal.get('progress', 0)}%)" for goal in active_goals])}
+    """
+    
+    # Build the prompt with normalized user info and goal context
     prompt = f"""
     User Health Profile:
     Current State: {current_state}
@@ -250,10 +260,12 @@ def generate_health_insights(health_data: Dict[str, Any], user_settings: Dict[st
     Restrictions: {restrictions}
     Activity Metrics: {activity_metrics}
     Fitness Assessment: {fitness_assessment}
+    {goal_context}
     
     Please provide personalized health insights for this user. Consider their:
     - Current health metrics and fitness level
     - Goals and target state
+    - Active goals and progress
     - Dietary preferences and restrictions
     - Activity patterns and exercise preferences
     - Fitness assessment results
@@ -264,6 +276,7 @@ def generate_health_insights(health_data: Dict[str, Any], user_settings: Dict[st
     - Respect their dietary restrictions
     - Consider their fitness level and goals
     - Tailor all advice to help them achieve their primary fitness goal
+    - Reference their specific active goals when relevant
     - Keep it practical and doable
     - All measurements are normalized (kg, cm) for consistent analysis
     
