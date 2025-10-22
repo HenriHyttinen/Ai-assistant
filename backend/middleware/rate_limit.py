@@ -60,14 +60,14 @@ class RateLimiter:
         return request.client.host if request.client else "unknown"
 
 # Global rate limiter instance
-rate_limiter = RateLimiter(max_requests=1000, time_window=60)  # 1000 requests per minute for development
+rate_limiter = RateLimiter(max_requests=100, time_window=60)  # 100 requests per minute for normal usage
 
 async def rate_limit_middleware(request: Request, call_next):
     """Rate limiting middleware."""
     
-    # Skip rate limiting for certain endpoints
+    # Skip rate limiting for certain endpoints and CORS preflight requests
     skip_paths = ["/docs", "/openapi.json", "/health"]
-    if request.url.path in skip_paths:
+    if request.url.path in skip_paths or request.method == "OPTIONS":
         return await call_next(request)
     
     client_ip = rate_limiter.get_client_ip(request)
