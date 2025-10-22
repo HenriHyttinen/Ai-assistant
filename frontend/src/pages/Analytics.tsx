@@ -59,8 +59,8 @@ interface Goal {
   id: number;
   title: string;
   description: string;
-  target: number;
-  current_progress: number;
+  target: string;
+  progress: number;
   deadline: string;
   status: string;
 }
@@ -338,12 +338,12 @@ const Analytics = () => {
                       <HStack justify="space-between">
                         <Text fontSize="sm">{t('progress' as any, language)}</Text>
                         <Text fontSize="sm" fontWeight="bold">
-                          {Math.round((goal.current_progress / goal.target) * 100)}% / {goal.target}
+                          {goal.progress}% / {goal.target}
                         </Text>
                       </HStack>
                       <Progress 
-                        value={(goal.current_progress / goal.target) * 100} 
-                        colorScheme={(goal.current_progress / goal.target) * 100 >= 100 ? 'green' : 'blue'}
+                        value={goal.progress} 
+                        colorScheme={goal.progress >= 100 ? 'green' : 'blue'}
                         size="lg"
                         borderRadius="md"
                       />
