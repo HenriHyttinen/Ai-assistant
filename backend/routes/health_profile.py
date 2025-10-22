@@ -223,9 +223,9 @@ async def get_health_insights(
         "fitness_goal": profile.fitness_goal,
         "activity_level": profile.activity_level,
         "dietary_restrictions": profile.dietary_restrictions or [],
-        "medical_conditions": profile.medical_conditions or [],
+        "medical_conditions": [],  # Field not available in current model
         "target_weight": profile.target_weight,
-        "target_body_fat": profile.target_body_fat
+        "target_body_fat": None  # Field not available in current model
     }
     
     # Get user settings for language
@@ -233,7 +233,7 @@ async def get_health_insights(
     if user_settings:
         settings_data = {
             "language": user_settings.language,
-            "units": user_settings.units
+            "units": user_settings.measurement_system
         }
     
     # Get goals data

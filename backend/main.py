@@ -4,6 +4,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 import time
 from typing import Callable
+from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 import logging
 
@@ -44,11 +45,22 @@ settings = get_settings()
 # Create all the database tables
 Base.metadata.create_all(bind=engine)
 
+# Lifespan handler for startup and shutdown events
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    start_background_tasks()
+    logger.info("Application started")
+    yield
+    # Shutdown
+    logger.info("Application shutting down")
+
 # Create the FastAPI app
 app = FastAPI(
     title="Numbers Don't Lie API",
     description="My wellness tracking app API",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 
 # Add CORS middleware
@@ -125,11 +137,7 @@ async def oauth_test():
     from fastapi.responses import FileResponse
     return FileResponse("static/oauth_test_final.html")
 
-# Start background tasks
-@app.on_event("startup")
-async def startup_event():
-    start_background_tasks()
-    logger.info("Application started")
+# Background tasks are now handled in the lifespan handler
 
 if __name__ == "__main__":
     import uvicorn

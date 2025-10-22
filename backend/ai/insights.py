@@ -219,7 +219,6 @@ def validate_ai_response(insights: Dict[str, Any], dietary_restrictions: List[st
         "filtered_recommendations_count": len(filtered_recommendations)
     }
 
-# AI DISABLED - This function is not called to prevent API costs
 def generate_health_insights(health_data: Dict[str, Any], user_settings: Dict[str, Any] = None, user_goals: List[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Generate health insights based on user data."""
     
@@ -297,15 +296,13 @@ def generate_health_insights(health_data: Dict[str, Any], user_settings: Dict[st
     """
     
     # Check if OpenAI client is available
-    if not client:
+    openai_client = get_openai_client()
+    if not openai_client:
         print("OpenAI API key not available, using mock insights")
         fitness_goal = current_state.get('fitness_goal', 'general_fitness')
         return generate_mock_insights(language, fitness_goal)
     
     try:
-        openai_client = get_openai_client()
-        if not openai_client:
-            return generate_mock_insights(language, fitness_goal)
         
         response = openai_client.chat.completions.create(
             model="gpt-3.5-turbo",

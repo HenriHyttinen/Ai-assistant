@@ -51,3 +51,4 @@ async def get_current_user_supabase(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+
