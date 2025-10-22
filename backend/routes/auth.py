@@ -777,8 +777,31 @@ def delete_account(
         # Get user ID before deletion
         user_id = current_user.id
         
-        # Use raw SQL to delete user and avoid relationship issues
+        # Delete all related data in the correct order to avoid foreign key constraints
+        # 1. Delete metrics history (references health_profiles)
+        db.execute(text("DELETE FROM metrics_history WHERE health_profile_id IN (SELECT id FROM health_profiles WHERE user_id = :user_id)"), {"user_id": user_id})
+        
+        # 2. Delete health profiles
+        db.execute(text("DELETE FROM health_profiles WHERE user_id = :user_id"), {"user_id": user_id})
+        
+        # 3. Delete activity logs
+        db.execute(text("DELETE FROM activity_logs WHERE user_id = :user_id"), {"user_id": user_id})
+        
+        # 4. Delete goals
+        db.execute(text("DELETE FROM goals WHERE user_id = :user_id"), {"user_id": user_id})
+        
+        # 5. Delete user settings
+        db.execute(text("DELETE FROM user_settings WHERE user_id = :user_id"), {"user_id": user_id})
+        
+        # 6. Delete data consent
+        db.execute(text("DELETE FROM data_consent WHERE user_id = :user_id"), {"user_id": user_id})
+        
+        # 7. Delete user achievements
+        db.execute(text("DELETE FROM user_achievements WHERE user_id = :user_id"), {"user_id": user_id})
+        
+        # 8. Finally delete the user
         db.execute(text("DELETE FROM users WHERE id = :user_id"), {"user_id": user_id})
+        
         db.commit()
         
         return {"message": "Account and all associated data have been permanently deleted"}
