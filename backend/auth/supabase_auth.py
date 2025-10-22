@@ -17,6 +17,14 @@ async def get_current_user_supabase(
     """Get current user from Supabase JWT token."""
     token = credentials.credentials
     
+    # Check if Supabase client is available
+    if supabase is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Authentication service temporarily unavailable",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
     try:
         # Verify the JWT token with Supabase
         user_data = supabase.auth.get_user(token)
