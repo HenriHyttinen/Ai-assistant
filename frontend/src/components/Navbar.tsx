@@ -84,7 +84,7 @@ export default function Navbar() {
             fontWeight="bold"
             fontSize="xl"
           >
-            Numbers Don't Lie
+            Counting Calories
           </Text>
 
           <Flex display={{ base: 'none', md: 'flex' }} ml={10}>

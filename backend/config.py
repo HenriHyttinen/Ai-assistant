@@ -4,7 +4,7 @@ from functools import lru_cache
 
 class Settings(BaseSettings):
     # Database settings
-    DATABASE_URL: str = "postgresql://postgres:postgres@localhost/numbers_dont_lie"
+    DATABASE_URL: str = "postgresql://postgres:postgres@localhost/counting_calories"
     
     # JWT settings
     JWT_SECRET_KEY: str = "your-secret-key"
@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     MAIL_FROM: str = "your-email@example.com"
     MAIL_PORT: int = 587
     MAIL_SERVER: str = "smtp.gmail.com"
-    MAIL_FROM_NAME: str = "Numbers Don't Lie"
+    MAIL_FROM_NAME: str = "Counting Calories"
     MAIL_STARTTLS: bool = True
     MAIL_SSL_TLS: bool = False
     USE_CREDENTIALS: bool = True

@@ -1,4 +1,4 @@
-# Numbers Don't Lie - Health Tracking App
+# Counting Calories - Health Tracking App
 
 A comprehensive wellness platform that leverages AI to provide personalized health insights, track wellness metrics, and guide users toward their health goals.
 
@@ -94,7 +94,7 @@ curl -X POST "http://localhost:8000/auth/verify-email-simple?email=reviewer@test
 ## Project Structure
 
 ```
-numbers-dont-lie/
+counting-calories/
 ├── backend/                 # FastAPI backend
 │   ├── database_setup/     # Database scripts and migrations
 │   ├── models/            # Database models

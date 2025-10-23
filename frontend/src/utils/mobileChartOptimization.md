@@ -1,7 +1,7 @@
 # Mobile Chart Optimization Guide
 
 ## Overview
-This guide explains how to ensure charts resize without data loss on mobile devices in the Numbers Don't Lie health tracking app.
+This guide explains how to ensure charts resize without data loss on mobile devices in the Counting Calories health tracking app.
 
 ## Current Implementation
 - **Chart Library**: Recharts (excellent for responsive charts)
