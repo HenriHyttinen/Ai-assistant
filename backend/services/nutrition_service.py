@@ -4,15 +4,16 @@ from datetime import datetime, date, timedelta
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_, func, desc
 
+from models.recipe import Recipe, Ingredient
 from models.nutrition import (
-    MealPlan, MealPlanMeal, MealPlanRecipe, Recipe, Ingredient,
+    MealPlan, MealPlanMeal, MealPlanRecipe,
     NutritionalLog, ShoppingList, ShoppingListItem, UserNutritionPreferences
 )
 from schemas.nutrition import (
     MealPlanRequest, RecipeSearchRequest, ShoppingListCreate,
     NutritionalAnalysisRequest
 )
-from ai.nutrition_ai import NutritionAI
+from ai.simple_nutrition_ai import SimpleNutritionAI as NutritionAI
 
 logger = logging.getLogger(__name__)
 

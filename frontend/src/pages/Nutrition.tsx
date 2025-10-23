@@ -26,6 +26,9 @@ import {
   AlertTitle,
   AlertDescription,
 } from '@chakra-ui/react';
+import NutritionDashboard from './Nutrition/NutritionDashboard';
+import MealPlanning from './Nutrition/MealPlanning';
+import RecipeSearch from './Nutrition/RecipeSearch';
 import {
   FiUtensils,
   FiBookOpen,
@@ -255,38 +258,27 @@ const Nutrition: React.FC = () => {
 
               <TabPanels>
                 <TabPanel px={0} py={6}>
-                  <NutritionPreferences 
-                    preferences={nutritionData?.preferences}
-                    onUpdate={handleDataUpdate}
-                  />
+                  <NutritionDashboard user={user} />
                 </TabPanel>
 
                 <TabPanel px={0} py={6}>
-                  <MealPlanning 
-                    mealPlans={nutritionData?.mealPlans || []}
-                    onUpdate={handleDataUpdate}
-                  />
+                  <MealPlanning user={user} />
                 </TabPanel>
 
                 <TabPanel px={0} py={6}>
-                  <RecipeSearch 
-                    recipes={nutritionData?.recipes || []}
-                    onUpdate={handleDataUpdate}
-                  />
+                  <RecipeSearch user={user} />
                 </TabPanel>
 
                 <TabPanel px={0} py={6}>
-                  <ShoppingList 
-                    shoppingLists={nutritionData?.shoppingLists || []}
-                    onUpdate={handleDataUpdate}
-                  />
+                  <Box p={6}>
+                    <Text>Shopping List functionality coming soon...</Text>
+                  </Box>
                 </TabPanel>
 
                 <TabPanel px={0} py={6}>
-                  <NutritionalAnalysis 
-                    nutritionalLogs={nutritionData?.nutritionalLogs || []}
-                    onUpdate={handleDataUpdate}
-                  />
+                  <Box p={6}>
+                    <Text>Nutritional Analysis functionality coming soon...</Text>
+                  </Box>
                 </TabPanel>
               </TabPanels>
             </Tabs>

@@ -19,9 +19,9 @@ from models.user_settings import UserSettings
 from models.consent import DataConsent
 from models.achievement import Achievement, UserAchievement
 # Import nutrition models
+from models.recipe import Recipe, Ingredient, RecipeIngredient, RecipeInstruction
 from models.nutrition import (
     UserNutritionPreferences, MealPlan, MealPlanMeal, MealPlanRecipe,
-    Recipe, Ingredient, RecipeIngredient, RecipeInstruction,
     NutritionalLog, ShoppingList, ShoppingListItem
 )
 from routes.auth import router as auth_router

@@ -6,9 +6,10 @@ from datetime import datetime, date, timedelta
 from database import get_db
 from auth.supabase_auth import get_current_user_supabase as get_current_user
 from models.user import User
+from models.recipe import Recipe, Ingredient
 from models.nutrition import (
     UserNutritionPreferences, MealPlan, NutritionalLog, 
-    Recipe, Ingredient, ShoppingList
+    ShoppingList
 )
 from schemas.nutrition import (
     UserNutritionPreferencesCreate, UserNutritionPreferencesUpdate,
@@ -17,7 +18,7 @@ from schemas.nutrition import (
     RecipeResponse, ShoppingListCreate, ShoppingListResponse,
     NutritionalAnalysisRequest
 )
-from ai.nutrition_ai import NutritionAI
+from ai.simple_nutrition_ai import SimpleNutritionAI as NutritionAI
 from services.nutrition_service import NutritionService
 
 router = APIRouter()
