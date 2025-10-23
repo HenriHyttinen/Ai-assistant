@@ -25,4 +25,10 @@ class User(Base, TimestampMixin):
     goals = relationship("Goal", back_populates="user")
     settings = relationship("UserSettings", back_populates="user", uselist=False)
     consent = relationship("DataConsent", back_populates="user", uselist=False)
-    achievements = relationship("UserAchievement", back_populates="user") 
+    achievements = relationship("UserAchievement", back_populates="user")
+    
+    # Nutrition-related relationships
+    nutrition_preferences = relationship("UserNutritionPreferences", back_populates="user", uselist=False)
+    meal_plans = relationship("MealPlan", back_populates="user")
+    nutritional_logs = relationship("NutritionalLog", back_populates="user")
+    shopping_lists = relationship("ShoppingList", back_populates="user") 

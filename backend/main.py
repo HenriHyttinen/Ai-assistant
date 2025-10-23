@@ -18,6 +18,12 @@ from models.goal import Goal
 from models.user_settings import UserSettings
 from models.consent import DataConsent
 from models.achievement import Achievement, UserAchievement
+# Import nutrition models
+from models.nutrition import (
+    UserNutritionPreferences, MealPlan, MealPlanMeal, MealPlanRecipe,
+    Recipe, Ingredient, RecipeIngredient, RecipeInstruction,
+    NutritionalLog, ShoppingList, ShoppingListItem
+)
 from routes.auth import router as auth_router
 from routes.health import router as health_router
 from routes.health_profile import router as health_profile_router
@@ -26,6 +32,7 @@ from routes.goals import router as goals_router
 from routes.settings import router as settings_router
 from routes.consent import router as consent_router
 from routes.achievements import router as achievements_router
+from routes.nutrition import router as nutrition_router
 from services.tasks import start_background_tasks
 from config import get_settings
 from logging_config import setup_logging
@@ -120,6 +127,7 @@ app.include_router(health_profile_router, prefix="/health", tags=["Health Profil
 app.include_router(export_router, tags=["Export"])
 app.include_router(goals_router, prefix="/goals", tags=["Goals"])
 app.include_router(settings_router, prefix="/settings", tags=["Settings"])
+app.include_router(nutrition_router, prefix="/nutrition", tags=["Nutrition"])
 app.include_router(consent_router, tags=["Data Consent"])
 app.include_router(achievements_router, prefix="/achievements", tags=["Achievements"])
 

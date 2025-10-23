@@ -28,7 +28,7 @@ import {
   TriangleUpIcon,
   SettingsIcon,
 } from '@chakra-ui/icons';
-import { FiActivity, FiList } from 'react-icons/fi';
+import { FiActivity, FiList, FiUtensils } from 'react-icons/fi';
 import { useSupabaseAuth } from '../contexts/SupabaseAuthContext';
 import { useApp } from '../contexts/AppContext';
 import { t } from '../utils/translations';
@@ -39,6 +39,7 @@ const LinkItems = [
   { nameKey: 'healthProfile', icon: ArrowUpIcon, path: '/profile' },
   { nameKey: 'analytics', icon: FiActivity, path: '/analytics' },
   { nameKey: 'activityHistory', icon: FiList, path: '/activities' },
+  { nameKey: 'nutrition', icon: FiUtensils, path: '/nutrition' },
   { nameKey: 'goals', icon: StarIcon, path: '/goals' },
   { nameKey: 'achievements', icon: TriangleUpIcon, path: '/achievements' },
   { nameKey: 'settings', icon: SettingsIcon, path: '/settings' },
