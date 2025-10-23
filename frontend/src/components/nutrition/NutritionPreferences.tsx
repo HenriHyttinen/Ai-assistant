@@ -128,7 +128,7 @@ const NutritionPreferences: React.FC<NutritionPreferencesProps> = ({
     try {
       setSaving(true);
       
-      const response = await fetch('/api/nutrition/preferences', {
+      const response = await fetch('http://localhost:8000/nutrition/preferences', {
         method: preferences ? 'PUT' : 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -174,7 +174,7 @@ const NutritionPreferences: React.FC<NutritionPreferencesProps> = ({
     <VStack spacing={6} align="stretch">
       <Box>
         <Heading size="lg" mb={2}>
-          {t('nutritionPreferences')}
+          {t('nutritionPreferences', 'en')}
         </Heading>
         <Text color="gray.600">
           Set up your dietary preferences, restrictions, and nutritional goals
@@ -185,7 +185,7 @@ const NutritionPreferences: React.FC<NutritionPreferencesProps> = ({
         {/* Dietary Preferences */}
         <Card>
           <CardHeader>
-            <Heading size="md">{t('dietaryPreferences')}</Heading>
+            <Heading size="md">{t('dietaryPreferences', 'en')}</Heading>
           </CardHeader>
           <CardBody>
             <FormControl>
@@ -209,7 +209,7 @@ const NutritionPreferences: React.FC<NutritionPreferencesProps> = ({
         {/* Allergies & Restrictions */}
         <Card>
           <CardHeader>
-            <Heading size="md">{t('allergies')} & Restrictions</Heading>
+            <Heading size="md">{t('allergies', 'en')} & Restrictions</Heading>
           </CardHeader>
           <CardBody>
             <FormControl mb={4}>
@@ -234,7 +234,7 @@ const NutritionPreferences: React.FC<NutritionPreferencesProps> = ({
                 placeholder="Enter ingredients you dislike (comma-separated)"
                 value={formData.disliked_ingredients.join(', ')}
                 onChange={(e) => {
-                  const ingredients = e.target.value.split(',').map(i => i.trim()).filter(i => i);
+                  const ingredients = e.target.value.split(',', 'en').map(i => i.trim()).filter(i => i);
                   handleArrayChange('disliked_ingredients', ingredients);
                 }}
               />
@@ -245,7 +245,7 @@ const NutritionPreferences: React.FC<NutritionPreferencesProps> = ({
         {/* Cuisine Preferences */}
         <Card>
           <CardHeader>
-            <Heading size="md">{t('cuisinePreferences')}</Heading>
+            <Heading size="md">{t('cuisinePreferences', 'en')}</Heading>
           </CardHeader>
           <CardBody>
             <FormControl>
@@ -274,7 +274,7 @@ const NutritionPreferences: React.FC<NutritionPreferencesProps> = ({
           <CardBody>
             <VStack spacing={4}>
               <FormControl>
-                <FormLabel>{t('calorieTarget')}</FormLabel>
+                <FormLabel>{t('calorieTarget', 'en')}</FormLabel>
                 <NumberInput
                   value={formData.daily_calorie_target}
                   onChange={(value) => handleInputChange('daily_calorie_target', parseInt(value) || 0)}
@@ -290,7 +290,7 @@ const NutritionPreferences: React.FC<NutritionPreferencesProps> = ({
               </FormControl>
 
               <FormControl>
-                <FormLabel>{t('proteinTarget')}</FormLabel>
+                <FormLabel>{t('proteinTarget', 'en')}</FormLabel>
                 <NumberInput
                   value={formData.protein_target}
                   onChange={(value) => handleInputChange('protein_target', parseInt(value) || 0)}
@@ -306,7 +306,7 @@ const NutritionPreferences: React.FC<NutritionPreferencesProps> = ({
               </FormControl>
 
               <FormControl>
-                <FormLabel>{t('carbsTarget')}</FormLabel>
+                <FormLabel>{t('carbsTarget', 'en')}</FormLabel>
                 <NumberInput
                   value={formData.carbs_target}
                   onChange={(value) => handleInputChange('carbs_target', parseInt(value) || 0)}
@@ -322,7 +322,7 @@ const NutritionPreferences: React.FC<NutritionPreferencesProps> = ({
               </FormControl>
 
               <FormControl>
-                <FormLabel>{t('fatsTarget')}</FormLabel>
+                <FormLabel>{t('fatsTarget', 'en')}</FormLabel>
                 <NumberInput
                   value={formData.fats_target}
                   onChange={(value) => handleInputChange('fats_target', parseInt(value) || 0)}
@@ -348,7 +348,7 @@ const NutritionPreferences: React.FC<NutritionPreferencesProps> = ({
           <CardBody>
             <VStack spacing={4}>
               <FormControl>
-                <FormLabel>{t('mealsPerDay')}</FormLabel>
+                <FormLabel>{t('mealsPerDay', 'en')}</FormLabel>
                 <Select
                   value={formData.meals_per_day}
                   onChange={(e) => handleInputChange('meals_per_day', parseInt(e.target.value))}
@@ -363,10 +363,10 @@ const NutritionPreferences: React.FC<NutritionPreferencesProps> = ({
 
               <Divider />
 
-              <Text fontWeight="semibold">{t('preferredMealTimes')}</Text>
+              <Text fontWeight="semibold">{t('preferredMealTimes', 'en')}</Text>
               
               <FormControl>
-                <FormLabel>{t('breakfast')}</FormLabel>
+                <FormLabel>{t('breakfast', 'en')}</FormLabel>
                 <Input
                   type="time"
                   value={formData.preferred_meal_times.breakfast}
@@ -375,7 +375,7 @@ const NutritionPreferences: React.FC<NutritionPreferencesProps> = ({
               </FormControl>
 
               <FormControl>
-                <FormLabel>{t('lunch')}</FormLabel>
+                <FormLabel>{t('lunch', 'en')}</FormLabel>
                 <Input
                   type="time"
                   value={formData.preferred_meal_times.lunch}
@@ -384,7 +384,7 @@ const NutritionPreferences: React.FC<NutritionPreferencesProps> = ({
               </FormControl>
 
               <FormControl>
-                <FormLabel>{t('dinner')}</FormLabel>
+                <FormLabel>{t('dinner', 'en')}</FormLabel>
                 <Input
                   type="time"
                   value={formData.preferred_meal_times.dinner}
@@ -398,7 +398,7 @@ const NutritionPreferences: React.FC<NutritionPreferencesProps> = ({
         {/* Timezone */}
         <Card>
           <CardHeader>
-            <Heading size="md">{t('timezone')}</Heading>
+            <Heading size="md">{t('timezone', 'en')}</Heading>
           </CardHeader>
           <CardBody>
             <FormControl>

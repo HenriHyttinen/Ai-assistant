@@ -31,7 +31,6 @@ export const translations = {
     timezone: 'Timezone',
     
     // Meal Planning
-    generateMealPlan: 'Generate Meal Plan',
     dailyPlan: 'Daily Plan',
     weeklyPlan: 'Weekly Plan',
     mealPlan: 'Meal Plan',
@@ -75,7 +74,6 @@ export const translations = {
     progressTowardsGoal: 'Progress Towards Goal',
     macroBreakdown: 'Macro Breakdown',
     nutritionalInsights: 'Nutritional Insights',
-    achievements: 'Achievements',
     concerns: 'Concerns',
     suggestions: 'Suggestions',
     trendAnalysis: 'Trend Analysis',
@@ -105,6 +103,72 @@ export const translations = {
     easy: 'Easy',
     medium: 'Medium',
     hard: 'Hard',
+    
+    // Nutrition Dashboard
+    'nutrition.dashboard.title': 'Nutrition Dashboard',
+    'nutrition.dashboard.subtitle': 'Track your daily nutrition and meal planning',
+    'nutrition.loading': 'Loading...',
+    'nutrition.calories': 'Calories',
+    'nutrition.protein': 'Protein',
+    'nutrition.carbs': 'Carbs',
+    'nutrition.fats': 'Fats',
+    'nutrition.todaysMeals': 'Today\'s Meals',
+    'nutrition.total': 'Total',
+    'nutrition.noMealPlan': 'No meal plan available for today',
+    'nutrition.setGoals': 'Set Goals',
+    'nutrition.setGoalsDescription': 'Set your daily nutrition targets',
+    'nutrition.shoppingList': 'Shopping List',
+    'nutrition.shoppingListDescription': 'Generate shopping list from meal plans',
+    'nutrition.generateShoppingList': 'Generate Shopping List',
+    'nutrition.analysis': 'Analysis',
+    'nutrition.analysisDescription': 'View detailed nutritional analysis',
+    'nutrition.viewAnalysis': 'View Analysis',
+    'nutrition.recentActivity': 'Recent Activity',
+    'nutrition.mealLogged': 'Meal logged',
+    'nutrition.goalUpdated': 'Goal updated',
+    'nutrition.mealPlanGenerated': 'Meal plan generated',
+    
+    // Recipe Search
+    'nutrition.recipeSearch.title': 'Recipe Search',
+    'nutrition.recipeSearch.subtitle': 'Find and discover new recipes',
+    'nutrition.searchRecipes': 'Search recipes...',
+    'nutrition.cuisine': 'Cuisine',
+    'nutrition.allCuisines': 'All Cuisines',
+    'nutrition.allMealTypes': 'All Meal Types',
+    'nutrition.breakfast': 'Breakfast',
+    'nutrition.lunch': 'Lunch',
+    'nutrition.dinner': 'Dinner',
+    'nutrition.snack': 'Snack',
+    'nutrition.difficulty': 'Difficulty',
+    'nutrition.allDifficulties': 'All Difficulties',
+    'nutrition.easy': 'Easy',
+    'nutrition.medium': 'Medium',
+    'nutrition.hard': 'Hard',
+    'nutrition.maxCalories': 'Max Calories',
+    'nutrition.maxPrepTime': 'Max Prep Time (min)',
+    'nutrition.dietaryTags': 'Dietary Tags',
+    'nutrition.search': 'Search',
+    'nutrition.viewRecipe': 'View Recipe',
+    'nutrition.addToMealPlan': 'Add to Meal Plan',
+    'nutrition.saveRecipe': 'Save Recipe',
+    'nutrition.noRecipesFound': 'No recipes found',
+    'nutrition.loadAllRecipes': 'Load All Recipes',
+    'nutrition.ingredients': 'Ingredients',
+    'nutrition.instructions': 'Instructions',
+    
+    // Meal Planning
+    'nutrition.mealPlanning.title': 'Meal Planning',
+    'nutrition.mealPlanning.subtitle': 'Plan your meals for the week',
+    'nutrition.generateMealPlan': 'Generate Meal Plan',
+    'nutrition.selectDate': 'Select Date',
+    'nutrition.calorieTarget': 'Calorie Target',
+    'nutrition.mealPlanSummary': 'Meal Plan Summary',
+    'nutrition.editMeal': 'Edit Meal',
+    'nutrition.deleteMeal': 'Delete Meal',
+    'nutrition.swapMeal': 'Swap Meal',
+    'nutrition.addMeal': 'Add Meal',
+    'nutrition.mealName': 'Meal Name',
+    'nutrition.mealType': 'Meal Type',
     welcomeToHealthTracking: 'Welcome to Your Health Journey!',
     createHealthProfileMessage: 'To get started with personalized health insights and tracking, please create your health profile first.',
     createHealthProfile: 'Create Health Profile',
@@ -835,8 +899,10 @@ const achievementDescMap: { [key: string]: string } = {
 };
 
 // Translation helper function
-export const t = (key: string, language: string): string => {
-  return (translations as any)[language]?.[key] || translations.en[key as keyof typeof translations.en] || key;
+export const t = (key: string, language: string = 'en'): string => {
+  const lang = language || 'en';
+  const translation = (translations as any)[lang]?.[key] || translations.en[key as keyof typeof translations.en];
+  return translation || key;
 };
 
 // Translate achievement name

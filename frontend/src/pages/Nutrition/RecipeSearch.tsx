@@ -40,13 +40,13 @@ import {
   ModalCloseButton,
   useDisclosure
 } from '@chakra-ui/react';
-import { useTranslation } from 'react-i18next';
+import { t } from '../../utils/translations';
 import { 
   FiSearch, 
   FiFilter, 
   FiClock, 
   FiTarget,
-  FiChefHat,
+  FiCoffee,
   FiStar,
   FiHeart,
   FiMoreVertical,
@@ -77,8 +77,7 @@ interface RecipeSearchProps {
   user?: any;
 }
 
-const RecipeSearch: React.FC<RecipeSearchProps> = ({ user }) => {
-  const { t } = useTranslation();
+const RecipeSearch: React.FC<RecipeSearchProps> = ({ user = null }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [recipes, setRecipes] = useState<Recipe[]>([]);
@@ -286,7 +285,7 @@ const RecipeSearch: React.FC<RecipeSearchProps> = ({ user }) => {
       <Center h="400px">
         <VStack spacing={4}>
           <Spinner size="xl" />
-          <Text>{t('nutrition.loading')}</Text>
+          <Text>{t('nutrition.loading', 'en')}</Text>
         </VStack>
       </Center>
     );
@@ -298,10 +297,10 @@ const RecipeSearch: React.FC<RecipeSearchProps> = ({ user }) => {
         {/* Header */}
         <Box>
           <Heading size="lg" mb={2}>
-            {t('nutrition.recipeSearch.title')}
+            {t('nutrition.recipeSearch.title', 'en')}
           </Heading>
           <Text color="gray.600">
-            {t('nutrition.recipeSearch.subtitle')}
+            {t('nutrition.recipeSearch.subtitle', 'en')}
           </Text>
         </Box>
 
@@ -315,7 +314,7 @@ const RecipeSearch: React.FC<RecipeSearchProps> = ({ user }) => {
                   <FiSearch />
                 </InputLeftElement>
                 <Input
-                  placeholder={t('nutrition.searchRecipes')}
+                  placeholder={t('nutrition.searchRecipes', 'en')}
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
@@ -325,12 +324,12 @@ const RecipeSearch: React.FC<RecipeSearchProps> = ({ user }) => {
               {/* Filters */}
               <Grid templateColumns={{ base: '1fr', md: 'repeat(3, 1fr)' }} gap={4}>
                 <FormControl>
-                  <FormLabel>{t('nutrition.cuisine')}</FormLabel>
+                  <FormLabel>{t('nutrition.cuisine', 'en')}</FormLabel>
                   <Select
                     value={filters.cuisine}
                     onChange={(e) => setFilters({...filters, cuisine: e.target.value})}
                   >
-                    <option value="">{t('nutrition.allCuisines')}</option>
+                    <option value="">{t('nutrition.allCuisines', 'en')}</option>
                     <option value="Mediterranean">Mediterranean</option>
                     <option value="Asian">Asian</option>
                     <option value="International">International</option>
@@ -340,34 +339,34 @@ const RecipeSearch: React.FC<RecipeSearchProps> = ({ user }) => {
                 </FormControl>
 
                 <FormControl>
-                  <FormLabel>{t('nutrition.mealType')}</FormLabel>
+                  <FormLabel>{t('nutrition.mealType', 'en')}</FormLabel>
                   <Select
                     value={filters.mealType}
                     onChange={(e) => setFilters({...filters, mealType: e.target.value})}
                   >
-                    <option value="">{t('nutrition.allMealTypes')}</option>
-                    <option value="breakfast">{t('nutrition.breakfast')}</option>
-                    <option value="lunch">{t('nutrition.lunch')}</option>
-                    <option value="dinner">{t('nutrition.dinner')}</option>
-                    <option value="snack">{t('nutrition.snack')}</option>
+                    <option value="">{t('nutrition.allMealTypes', 'en')}</option>
+                    <option value="breakfast">{t('nutrition.breakfast', 'en')}</option>
+                    <option value="lunch">{t('nutrition.lunch', 'en')}</option>
+                    <option value="dinner">{t('nutrition.dinner', 'en')}</option>
+                    <option value="snack">{t('nutrition.snack', 'en')}</option>
                   </Select>
                 </FormControl>
 
                 <FormControl>
-                  <FormLabel>{t('nutrition.difficulty')}</FormLabel>
+                  <FormLabel>{t('nutrition.difficulty', 'en')}</FormLabel>
                   <Select
                     value={filters.difficulty}
                     onChange={(e) => setFilters({...filters, difficulty: e.target.value})}
                   >
-                    <option value="">{t('nutrition.allDifficulties')}</option>
-                    <option value="easy">{t('nutrition.easy')}</option>
-                    <option value="medium">{t('nutrition.medium')}</option>
-                    <option value="hard">{t('nutrition.hard')}</option>
+                    <option value="">{t('nutrition.allDifficulties', 'en')}</option>
+                    <option value="easy">{t('nutrition.easy', 'en')}</option>
+                    <option value="medium">{t('nutrition.medium', 'en')}</option>
+                    <option value="hard">{t('nutrition.hard', 'en')}</option>
                   </Select>
                 </FormControl>
 
                 <FormControl>
-                  <FormLabel>{t('nutrition.maxCalories')}</FormLabel>
+                  <FormLabel>{t('nutrition.maxCalories', 'en')}</FormLabel>
                   <Input
                     type="number"
                     placeholder="e.g. 500"
@@ -377,7 +376,7 @@ const RecipeSearch: React.FC<RecipeSearchProps> = ({ user }) => {
                 </FormControl>
 
                 <FormControl>
-                  <FormLabel>{t('nutrition.maxPrepTime')}</FormLabel>
+                  <FormLabel>{t('nutrition.maxPrepTime', 'en')}</FormLabel>
                   <Input
                     type="number"
                     placeholder="e.g. 30"
@@ -387,7 +386,7 @@ const RecipeSearch: React.FC<RecipeSearchProps> = ({ user }) => {
                 </FormControl>
 
                 <FormControl>
-                  <FormLabel>{t('nutrition.dietaryTags')}</FormLabel>
+                  <FormLabel>{t('nutrition.dietaryTags', 'en')}</FormLabel>
                   <CheckboxGroup
                     value={filters.dietaryTags}
                     onChange={(values) => setFilters({...filters, dietaryTags: values as string[]})}
@@ -404,7 +403,7 @@ const RecipeSearch: React.FC<RecipeSearchProps> = ({ user }) => {
 
               <Button colorScheme="blue" onClick={handleSearch} isLoading={loading}>
                 <FiSearch />
-                {t('nutrition.search')}
+                {t('nutrition.search', 'en')}
               </Button>
             </VStack>
           </CardBody>
@@ -434,13 +433,13 @@ const RecipeSearch: React.FC<RecipeSearchProps> = ({ user }) => {
                     <MenuButton as={IconButton} icon={<FiMoreVertical />} size="sm" variant="ghost" />
                     <MenuList>
                       <MenuItem icon={<FiEye />} onClick={() => handleRecipeView(recipe)}>
-                        {t('nutrition.viewRecipe')}
+                        {t('nutrition.viewRecipe', 'en')}
                       </MenuItem>
                       <MenuItem icon={<FiPlus />}>
-                        {t('nutrition.addToMealPlan')}
+                        {t('nutrition.addToMealPlan', 'en')}
                       </MenuItem>
                       <MenuItem icon={<FiHeart />}>
-                        {t('nutrition.saveRecipe')}
+                        {t('nutrition.saveRecipe', 'en')}
                       </MenuItem>
                     </MenuList>
                   </Menu>
@@ -450,12 +449,12 @@ const RecipeSearch: React.FC<RecipeSearchProps> = ({ user }) => {
                 <VStack spacing={3} align="stretch">
                   {/* Nutritional Info */}
                   <HStack justify="space-between" fontSize="sm">
-                    <Text>{recipe.calories} {t('nutrition.calories')}</Text>
-                    <Text>{recipe.protein}g {t('nutrition.protein')}</Text>
+                    <Text>{recipe.calories} {t('nutrition.calories', 'en')}</Text>
+                    <Text>{recipe.protein}g {t('nutrition.protein', 'en')}</Text>
                   </HStack>
                   <HStack justify="space-between" fontSize="sm">
-                    <Text>{recipe.carbs}g {t('nutrition.carbs')}</Text>
-                    <Text>{recipe.fats}g {t('nutrition.fats')}</Text>
+                    <Text>{recipe.carbs}g {t('nutrition.carbs', 'en')}</Text>
+                    <Text>{recipe.fats}g {t('nutrition.fats', 'en')}</Text>
                   </HStack>
 
                   <Divider />
@@ -487,10 +486,10 @@ const RecipeSearch: React.FC<RecipeSearchProps> = ({ user }) => {
                   {/* Actions */}
                   <HStack spacing={2}>
                     <Button size="sm" colorScheme="blue" flex={1} onClick={() => handleRecipeView(recipe)}>
-                      {t('nutrition.viewRecipe')}
+                      {t('nutrition.viewRecipe', 'en')}
                     </Button>
                     <Button size="sm" variant="outline" flex={1}>
-                      {t('nutrition.addToMealPlan')}
+                      {t('nutrition.addToMealPlan', 'en')}
                     </Button>
                   </HStack>
                 </VStack>
@@ -502,10 +501,10 @@ const RecipeSearch: React.FC<RecipeSearchProps> = ({ user }) => {
         {recipes.length === 0 && !loading && (
           <Center h="200px">
             <VStack spacing={4}>
-              <FiChefHat size={48} color="gray" />
-              <Text color="gray.600">{t('nutrition.noRecipesFound')}</Text>
+              <FiCoffee size={48} color="gray" />
+              <Text color="gray.600">{t('nutrition.noRecipesFound', 'en')}</Text>
               <Button colorScheme="blue" onClick={loadRecipes}>
-                {t('nutrition.loadAllRecipes')}
+                {t('nutrition.loadAllRecipes', 'en')}
               </Button>
             </VStack>
           </Center>
@@ -523,10 +522,10 @@ const RecipeSearch: React.FC<RecipeSearchProps> = ({ user }) => {
                   {/* Recipe Info */}
                   <HStack justify="space-between">
                     <HStack spacing={4}>
-                      <Text fontSize="sm">{selectedRecipe.calories} {t('nutrition.calories')}</Text>
-                      <Text fontSize="sm">{selectedRecipe.protein}g {t('nutrition.protein')}</Text>
-                      <Text fontSize="sm">{selectedRecipe.carbs}g {t('nutrition.carbs')}</Text>
-                      <Text fontSize="sm">{selectedRecipe.fats}g {t('nutrition.fats')}</Text>
+                      <Text fontSize="sm">{selectedRecipe.calories} {t('nutrition.calories', 'en')}</Text>
+                      <Text fontSize="sm">{selectedRecipe.protein}g {t('nutrition.protein', 'en')}</Text>
+                      <Text fontSize="sm">{selectedRecipe.carbs}g {t('nutrition.carbs', 'en')}</Text>
+                      <Text fontSize="sm">{selectedRecipe.fats}g {t('nutrition.fats', 'en')}</Text>
                     </HStack>
                     <HStack spacing={2}>
                       <FiClock />
@@ -549,13 +548,13 @@ const RecipeSearch: React.FC<RecipeSearchProps> = ({ user }) => {
 
                   {/* Ingredients */}
                   <Box>
-                    <Heading size="sm" mb={2}>{t('nutrition.ingredients')}</Heading>
+                    <Heading size="sm" mb={2}>{t('nutrition.ingredients', 'en')}</Heading>
                     <Text fontSize="sm">{selectedRecipe.ingredients.join(', ')}</Text>
                   </Box>
 
                   {/* Instructions */}
                   <Box>
-                    <Heading size="sm" mb={2}>{t('nutrition.instructions')}</Heading>
+                    <Heading size="sm" mb={2}>{t('nutrition.instructions', 'en')}</Heading>
                     <VStack spacing={2} align="stretch">
                       {selectedRecipe.instructions.map((instruction, index) => (
                         <HStack key={index} align="start">
@@ -573,7 +572,7 @@ const RecipeSearch: React.FC<RecipeSearchProps> = ({ user }) => {
                 {t('common.close')}
               </Button>
               <Button colorScheme="blue">
-                {t('nutrition.addToMealPlan')}
+                {t('nutrition.addToMealPlan', 'en')}
               </Button>
             </ModalFooter>
           </ModalContent>

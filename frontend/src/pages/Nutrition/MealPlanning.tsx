@@ -36,13 +36,13 @@ import {
   MenuList,
   MenuItem
 } from '@chakra-ui/react';
-import { useTranslation } from 'react-i18next';
+import { t } from '../../utils/translations';
 import { 
   FiPlus, 
   FiEdit, 
   FiTrash2, 
   FiRefreshCw,
-  FiChefHat,
+  FiCoffee,
   FiClock,
   FiTarget,
   FiMoreVertical
@@ -77,8 +77,7 @@ interface MealPlanningProps {
   user?: any;
 }
 
-const MealPlanning: React.FC<MealPlanningProps> = ({ user }) => {
-  const { t } = useTranslation();
+const MealPlanning: React.FC<MealPlanningProps> = ({ user = null }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mealPlan, setMealPlan] = useState<MealPlan | null>(null);
@@ -237,7 +236,7 @@ const MealPlanning: React.FC<MealPlanningProps> = ({ user }) => {
       <Center h="400px">
         <VStack spacing={4}>
           <Spinner size="xl" />
-          <Text>{t('nutrition.loading')}</Text>
+          <Text>{t('nutrition.loading', 'en')}</Text>
         </VStack>
       </Center>
     );
@@ -250,8 +249,8 @@ const MealPlanning: React.FC<MealPlanningProps> = ({ user }) => {
         <Box>
           <HStack justify="space-between" mb={4}>
             <VStack align="start" spacing={1}>
-              <Heading size="lg">{t('nutrition.mealPlanning.title')}</Heading>
-              <Text color="gray.600">{t('nutrition.mealPlanning.subtitle')}</Text>
+              <Heading size="lg">{t('nutrition.mealPlanning.title', 'en')}</Heading>
+              <Text color="gray.600">{t('nutrition.mealPlanning.subtitle', 'en')}</Text>
             </VStack>
             <Button 
               colorScheme="blue" 
@@ -259,14 +258,14 @@ const MealPlanning: React.FC<MealPlanningProps> = ({ user }) => {
               onClick={generateMealPlan}
               isLoading={loading}
             >
-              {t('nutrition.generateMealPlan')}
+              {t('nutrition.generateMealPlan', 'en')}
             </Button>
           </HStack>
 
           {/* Date Selector */}
           <HStack spacing={4}>
             <FormControl>
-              <FormLabel>{t('nutrition.selectDate')}</FormLabel>
+              <FormLabel>{t('nutrition.selectDate', 'en')}</FormLabel>
               <Input
                 type="date"
                 value={selectedDate}
@@ -275,7 +274,7 @@ const MealPlanning: React.FC<MealPlanningProps> = ({ user }) => {
               />
             </FormControl>
             <FormControl>
-              <FormLabel>{t('nutrition.calorieTarget')}</FormLabel>
+              <FormLabel>{t('nutrition.calorieTarget', 'en')}</FormLabel>
               <Input
                 type="number"
                 value={preferences.calorieTarget}
@@ -298,19 +297,19 @@ const MealPlanning: React.FC<MealPlanningProps> = ({ user }) => {
           <Card bg={cardBg} borderColor={borderColor}>
             <CardHeader>
               <HStack justify="space-between">
-                <Heading size="md">{t('nutrition.mealPlanSummary')}</Heading>
+                <Heading size="md">{t('nutrition.mealPlanSummary', 'en')}</Heading>
                 <HStack spacing={4}>
                   <Text fontSize="sm" color="gray.600">
-                    {mealPlan.totalCalories} {t('nutrition.calories')}
+                    {mealPlan.totalCalories} {t('nutrition.calories', 'en')}
                   </Text>
                   <Text fontSize="sm" color="gray.600">
-                    {mealPlan.totalProtein}g {t('nutrition.protein')}
+                    {mealPlan.totalProtein}g {t('nutrition.protein', 'en')}
                   </Text>
                   <Text fontSize="sm" color="gray.600">
-                    {mealPlan.totalCarbs}g {t('nutrition.carbs')}
+                    {mealPlan.totalCarbs}g {t('nutrition.carbs', 'en')}
                   </Text>
                   <Text fontSize="sm" color="gray.600">
-                    {mealPlan.totalFats}g {t('nutrition.fats')}
+                    {mealPlan.totalFats}g {t('nutrition.fats', 'en')}
                   </Text>
                 </HStack>
               </HStack>
@@ -333,10 +332,10 @@ const MealPlanning: React.FC<MealPlanningProps> = ({ user }) => {
                       <MenuButton as={IconButton} icon={<FiMoreVertical />} size="sm" variant="ghost" />
                       <MenuList>
                         <MenuItem icon={<FiEdit />} onClick={() => handleMealEdit(meal)}>
-                          {t('nutrition.editMeal')}
+                          {t('nutrition.editMeal', 'en')}
                         </MenuItem>
                         <MenuItem icon={<FiTrash2 />} onClick={() => handleMealDelete(meal.id)} color="red.500">
-                          {t('nutrition.deleteMeal')}
+                          {t('nutrition.deleteMeal', 'en')}
                         </MenuItem>
                       </MenuList>
                     </Menu>
@@ -346,12 +345,12 @@ const MealPlanning: React.FC<MealPlanningProps> = ({ user }) => {
                   <VStack spacing={3} align="stretch">
                     {/* Nutritional Info */}
                     <HStack justify="space-between" fontSize="sm">
-                      <Text>{meal.calories} {t('nutrition.calories')}</Text>
-                      <Text>{meal.protein}g {t('nutrition.protein')}</Text>
+                      <Text>{meal.calories} {t('nutrition.calories', 'en')}</Text>
+                      <Text>{meal.protein}g {t('nutrition.protein', 'en')}</Text>
                     </HStack>
                     <HStack justify="space-between" fontSize="sm">
-                      <Text>{meal.carbs}g {t('nutrition.carbs')}</Text>
-                      <Text>{meal.fats}g {t('nutrition.fats')}</Text>
+                      <Text>{meal.carbs}g {t('nutrition.carbs', 'en')}</Text>
+                      <Text>{meal.fats}g {t('nutrition.fats', 'en')}</Text>
                     </HStack>
 
                     <Divider />
@@ -379,10 +378,10 @@ const MealPlanning: React.FC<MealPlanningProps> = ({ user }) => {
                     {/* Actions */}
                     <HStack spacing={2}>
                       <Button size="sm" colorScheme="blue" flex={1}>
-                        {t('nutrition.viewRecipe')}
+                        {t('nutrition.viewRecipe', 'en')}
                       </Button>
                       <Button size="sm" variant="outline" flex={1}>
-                        {t('nutrition.swapMeal')}
+                        {t('nutrition.swapMeal', 'en')}
                       </Button>
                     </HStack>
                   </VStack>
@@ -398,9 +397,9 @@ const MealPlanning: React.FC<MealPlanningProps> = ({ user }) => {
             <Center h="200px">
               <VStack spacing={4}>
                 <FiPlus size={48} color="gray" />
-                <Text color="gray.600">{t('nutrition.addMeal')}</Text>
-                <Button colorScheme="blue" leftIcon={<FiChefHat />}>
-                  {t('nutrition.addMeal')}
+                <Text color="gray.600">{t('nutrition.addMeal', 'en')}</Text>
+                <Button colorScheme="blue" leftIcon={<FiCoffee />}>
+                  {t('nutrition.addMeal', 'en')}
                 </Button>
               </VStack>
             </Center>
@@ -411,30 +410,30 @@ const MealPlanning: React.FC<MealPlanningProps> = ({ user }) => {
         <Modal isOpen={isOpen} onClose={onClose} size="lg">
           <ModalOverlay />
           <ModalContent>
-            <ModalHeader>{t('nutrition.editMeal')}</ModalHeader>
+            <ModalHeader>{t('nutrition.editMeal', 'en')}</ModalHeader>
             <ModalCloseButton />
             <ModalBody>
               {selectedMeal && (
                 <VStack spacing={4} align="stretch">
                   <FormControl>
-                    <FormLabel>{t('nutrition.mealName')}</FormLabel>
+                    <FormLabel>{t('nutrition.mealName', 'en')}</FormLabel>
                     <Input value={selectedMeal.name} />
                   </FormControl>
                   <FormControl>
-                    <FormLabel>{t('nutrition.mealType')}</FormLabel>
+                    <FormLabel>{t('nutrition.mealType', 'en')}</FormLabel>
                     <Select value={selectedMeal.type}>
-                      <option value="breakfast">{t('nutrition.breakfast')}</option>
-                      <option value="lunch">{t('nutrition.lunch')}</option>
-                      <option value="dinner">{t('nutrition.dinner')}</option>
-                      <option value="snack">{t('nutrition.snack')}</option>
+                      <option value="breakfast">{t('nutrition.breakfast', 'en')}</option>
+                      <option value="lunch">{t('nutrition.lunch', 'en')}</option>
+                      <option value="dinner">{t('nutrition.dinner', 'en')}</option>
+                      <option value="snack">{t('nutrition.snack', 'en')}</option>
                     </Select>
                   </FormControl>
                   <FormControl>
-                    <FormLabel>{t('nutrition.ingredients')}</FormLabel>
+                    <FormLabel>{t('nutrition.ingredients', 'en')}</FormLabel>
                     <Textarea value={selectedMeal.ingredients.join(', ')} />
                   </FormControl>
                   <FormControl>
-                    <FormLabel>{t('nutrition.instructions')}</FormLabel>
+                    <FormLabel>{t('nutrition.instructions', 'en')}</FormLabel>
                     <Textarea value={selectedMeal.instructions.join('\n')} rows={4} />
                   </FormControl>
                 </VStack>

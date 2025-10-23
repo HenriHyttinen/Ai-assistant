@@ -357,6 +357,12 @@ class NutritionService:
             insights["concerns"].append("Low protein intake")
             insights["suggestions"].append("Include lean proteins like chicken, fish, or legumes in each meal")
         
+        # Analyze carbs intake
+        carbs_percentage = (carbs / targets["carbs"]) * 100 if targets["carbs"] > 0 else 0
+        
+        # Analyze fats intake
+        fats_percentage = (fats / targets["fats"]) * 100 if targets["fats"] > 0 else 0
+        
         # Analyze macro balance
         if protein_percentage > 120 and carbs_percentage < 80:
             insights["suggestions"].append("Consider adding more complex carbohydrates for energy")

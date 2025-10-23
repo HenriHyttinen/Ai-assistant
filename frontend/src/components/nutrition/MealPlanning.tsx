@@ -35,7 +35,7 @@ const MealPlanning: React.FC<MealPlanningProps> = ({
 }) => {
   const [generating, setGenerating] = useState(false);
   const [planType, setPlanType] = useState<'daily' | 'weekly'>('daily');
-  const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
+  const [startDate, setStartDate] = useState(new Date().toISOString().split('T', 'en')[0]);
   const [endDate, setEndDate] = useState('');
   const toast = useToast();
 
@@ -49,7 +49,7 @@ const MealPlanning: React.FC<MealPlanningProps> = ({
         end_date: planType === 'weekly' ? endDate : null,
       };
 
-      const response = await fetch('/api/nutrition/meal-plans/generate', {
+      const response = await fetch('http://localhost:8000/nutrition/meal-plans/generate', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -95,7 +95,7 @@ const MealPlanning: React.FC<MealPlanningProps> = ({
     <VStack spacing={6} align="stretch">
       <Box>
         <Heading size="lg" mb={2}>
-          {t('mealPlanning')}
+          {t('mealPlanning', 'en')}
         </Heading>
         <Text color="gray.600">
           Generate AI-powered meal plans tailored to your preferences
@@ -116,8 +116,8 @@ const MealPlanning: React.FC<MealPlanningProps> = ({
                   value={planType}
                   onChange={(e) => setPlanType(e.target.value as 'daily' | 'weekly')}
                 >
-                  <option value="daily">{t('dailyPlan')}</option>
-                  <option value="weekly">{t('weeklyPlan')}</option>
+                  <option value="daily">{t('dailyPlan', 'en')}</option>
+                  <option value="weekly">{t('weeklyPlan', 'en')}</option>
                 </Select>
               </Box>
 
@@ -151,7 +151,7 @@ const MealPlanning: React.FC<MealPlanningProps> = ({
               loadingText="Generating..."
               leftIcon={<Icon as={FiPlus} />}
             >
-              {t('generateMealPlan')}
+              {t('generateMealPlan', 'en')}
             </Button>
           </VStack>
         </CardBody>
@@ -185,7 +185,7 @@ const MealPlanning: React.FC<MealPlanningProps> = ({
               <Card key={plan.id} variant="outline">
                 <CardHeader>
                   <HStack justify="space-between">
-                    <Heading size="sm">{t('mealPlan')}</Heading>
+                    <Heading size="sm">{t('mealPlan', 'en')}</Heading>
                     <Badge colorScheme="blue" variant="subtle">
                       {plan.plan_type}
                     </Badge>

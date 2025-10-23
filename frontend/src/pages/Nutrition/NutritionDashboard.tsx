@@ -23,7 +23,7 @@ import {
   Spinner,
   Center
 } from '@chakra-ui/react';
-import { useTranslation } from 'react-i18next';
+import { t } from '../../utils/translations';
 import { 
   FiTrendingUp, 
   FiTarget, 
@@ -31,7 +31,7 @@ import {
   FiShoppingCart,
   FiHeart,
   FiActivity,
-  FiChefHat,
+  FiCoffee,
   FiPieChart
 } from 'react-icons/fi';
 
@@ -67,8 +67,7 @@ interface NutritionDashboardProps {
   user?: any;
 }
 
-const NutritionDashboard: React.FC<NutritionDashboardProps> = ({ user }) => {
-  const { t } = useTranslation();
+const NutritionDashboard: React.FC<NutritionDashboardProps> = ({ user = null }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [nutritionalData, setNutritionalData] = useState<NutritionalData | null>(null);
@@ -170,7 +169,7 @@ const NutritionDashboard: React.FC<NutritionDashboardProps> = ({ user }) => {
       <Center h="400px">
         <VStack spacing={4}>
           <Spinner size="xl" />
-          <Text>{t('nutrition.loading')}</Text>
+          <Text>{t('nutrition.loading', 'en')}</Text>
         </VStack>
       </Center>
     );
@@ -191,10 +190,10 @@ const NutritionDashboard: React.FC<NutritionDashboardProps> = ({ user }) => {
         {/* Header */}
         <Box>
           <Heading size="lg" mb={2}>
-            {t('nutrition.dashboard.title')}
+            {t('nutrition.dashboard.title', 'en')}
           </Heading>
           <Text color="gray.600">
-            {t('nutrition.dashboard.subtitle')}
+            {t('nutrition.dashboard.subtitle', 'en')}
           </Text>
         </Box>
 
@@ -203,7 +202,7 @@ const NutritionDashboard: React.FC<NutritionDashboardProps> = ({ user }) => {
           <Card bg={cardBg} borderColor={borderColor}>
             <CardBody>
               <Stat>
-                <StatLabel>{t('nutrition.calories')}</StatLabel>
+                <StatLabel>{t('nutrition.calories', 'en')}</StatLabel>
                 <StatNumber>{nutritionalData?.calories || 0}</StatNumber>
                 <StatHelpText>
                   <Progress 
@@ -220,7 +219,7 @@ const NutritionDashboard: React.FC<NutritionDashboardProps> = ({ user }) => {
           <Card bg={cardBg} borderColor={borderColor}>
             <CardBody>
               <Stat>
-                <StatLabel>{t('nutrition.protein')}</StatLabel>
+                <StatLabel>{t('nutrition.protein', 'en')}</StatLabel>
                 <StatNumber>{nutritionalData?.protein || 0}g</StatNumber>
                 <StatHelpText>
                   <Progress 
@@ -237,7 +236,7 @@ const NutritionDashboard: React.FC<NutritionDashboardProps> = ({ user }) => {
           <Card bg={cardBg} borderColor={borderColor}>
             <CardBody>
               <Stat>
-                <StatLabel>{t('nutrition.carbs')}</StatLabel>
+                <StatLabel>{t('nutrition.carbs', 'en')}</StatLabel>
                 <StatNumber>{nutritionalData?.carbs || 0}g</StatNumber>
                 <StatHelpText>
                   <Progress 
@@ -254,7 +253,7 @@ const NutritionDashboard: React.FC<NutritionDashboardProps> = ({ user }) => {
           <Card bg={cardBg} borderColor={borderColor}>
             <CardBody>
               <Stat>
-                <StatLabel>{t('nutrition.fats')}</StatLabel>
+                <StatLabel>{t('nutrition.fats', 'en')}</StatLabel>
                 <StatNumber>{nutritionalData?.fats || 0}g</StatNumber>
                 <StatHelpText>
                   <Progress 
@@ -273,10 +272,10 @@ const NutritionDashboard: React.FC<NutritionDashboardProps> = ({ user }) => {
         <Card bg={cardBg} borderColor={borderColor}>
           <CardHeader>
             <HStack justify="space-between">
-              <Heading size="md">{t('nutrition.todaysMeals')}</Heading>
-              <Button size="sm" colorScheme="blue" leftIcon={<FiChefHat />}>
-                {t('nutrition.generateMealPlan')}
-              </Button>
+              <Heading size="md">{t('nutrition.todaysMeals', 'en')}</Heading>
+                <Button size="sm" colorScheme="blue" leftIcon={<FiCoffee />}>
+                  {t('nutrition.generateMealPlan', 'en')}
+                </Button>
             </HStack>
           </CardHeader>
           <CardBody>
@@ -290,24 +289,24 @@ const NutritionDashboard: React.FC<NutritionDashboardProps> = ({ user }) => {
                         <Badge colorScheme="blue" size="sm">{meal.type}</Badge>
                       </VStack>
                       <Text fontSize="sm" color="gray.600">
-                        {meal.calories} {t('nutrition.calories')}
+                        {meal.calories} {t('nutrition.calories', 'en')}
                       </Text>
                     </HStack>
                     <HStack spacing={4} fontSize="sm" color="gray.600">
-                      <Text>{meal.protein}g {t('nutrition.protein')}</Text>
-                      <Text>{meal.carbs}g {t('nutrition.carbs')}</Text>
-                      <Text>{meal.fats}g {t('nutrition.fats')}</Text>
+                      <Text>{meal.protein}g {t('nutrition.protein', 'en')}</Text>
+                      <Text>{meal.carbs}g {t('nutrition.carbs', 'en')}</Text>
+                      <Text>{meal.fats}g {t('nutrition.fats', 'en')}</Text>
                     </HStack>
                   </Box>
                 ))}
                 <Divider />
                 <HStack justify="space-between" fontWeight="bold">
-                  <Text>{t('nutrition.total')}</Text>
-                  <Text>{mealPlan.totalCalories} {t('nutrition.calories')}</Text>
+                  <Text>{t('nutrition.total', 'en')}</Text>
+                  <Text>{mealPlan.totalCalories} {t('nutrition.calories', 'en')}</Text>
                 </HStack>
               </VStack>
             ) : (
-              <Text color="gray.500">{t('nutrition.noMealPlan')}</Text>
+              <Text color="gray.500">{t('nutrition.noMealPlan', 'en')}</Text>
             )}
           </CardBody>
         </Card>
@@ -318,12 +317,12 @@ const NutritionDashboard: React.FC<NutritionDashboardProps> = ({ user }) => {
             <CardBody>
               <VStack spacing={3}>
                 <FiTarget size={24} />
-                <Text fontWeight="bold">{t('nutrition.setGoals')}</Text>
+                <Text fontWeight="bold">{t('nutrition.setGoals', 'en')}</Text>
                 <Text fontSize="sm" color="gray.600" textAlign="center">
-                  {t('nutrition.setGoalsDescription')}
+                  {t('nutrition.setGoalsDescription', 'en')}
                 </Text>
                 <Button size="sm" colorScheme="green" width="full">
-                  {t('nutrition.setGoals')}
+                  {t('nutrition.setGoals', 'en')}
                 </Button>
               </VStack>
             </CardBody>
@@ -333,12 +332,12 @@ const NutritionDashboard: React.FC<NutritionDashboardProps> = ({ user }) => {
             <CardBody>
               <VStack spacing={3}>
                 <FiShoppingCart size={24} />
-                <Text fontWeight="bold">{t('nutrition.shoppingList')}</Text>
+                <Text fontWeight="bold">{t('nutrition.shoppingList', 'en')}</Text>
                 <Text fontSize="sm" color="gray.600" textAlign="center">
-                  {t('nutrition.shoppingListDescription')}
+                  {t('nutrition.shoppingListDescription', 'en')}
                 </Text>
                 <Button size="sm" colorScheme="orange" width="full">
-                  {t('nutrition.generateShoppingList')}
+                  {t('nutrition.generateShoppingList', 'en')}
                 </Button>
               </VStack>
             </CardBody>
@@ -348,12 +347,12 @@ const NutritionDashboard: React.FC<NutritionDashboardProps> = ({ user }) => {
             <CardBody>
               <VStack spacing={3}>
                 <FiPieChart size={24} />
-                <Text fontWeight="bold">{t('nutrition.analysis')}</Text>
+                <Text fontWeight="bold">{t('nutrition.analysis', 'en')}</Text>
                 <Text fontSize="sm" color="gray.600" textAlign="center">
-                  {t('nutrition.analysisDescription')}
+                  {t('nutrition.analysisDescription', 'en')}
                 </Text>
                 <Button size="sm" colorScheme="purple" width="full">
-                  {t('nutrition.viewAnalysis')}
+                  {t('nutrition.viewAnalysis', 'en')}
                 </Button>
               </VStack>
             </CardBody>
@@ -363,28 +362,28 @@ const NutritionDashboard: React.FC<NutritionDashboardProps> = ({ user }) => {
         {/* Recent Activity */}
         <Card bg={cardBg} borderColor={borderColor}>
           <CardHeader>
-            <Heading size="md">{t('nutrition.recentActivity')}</Heading>
+            <Heading size="md">{t('nutrition.recentActivity', 'en')}</Heading>
           </CardHeader>
           <CardBody>
             <VStack spacing={3} align="stretch">
               <HStack justify="space-between">
                 <HStack>
                   <FiActivity />
-                  <Text>{t('nutrition.mealLogged')}</Text>
+                  <Text>{t('nutrition.mealLogged', 'en')}</Text>
                 </HStack>
                 <Text fontSize="sm" color="gray.600">2 hours ago</Text>
               </HStack>
               <HStack justify="space-between">
                 <HStack>
                   <FiTarget />
-                  <Text>{t('nutrition.goalUpdated')}</Text>
+                  <Text>{t('nutrition.goalUpdated', 'en')}</Text>
                 </HStack>
                 <Text fontSize="sm" color="gray.600">1 day ago</Text>
               </HStack>
               <HStack justify="space-between">
                 <HStack>
-                  <FiChefHat />
-                  <Text>{t('nutrition.mealPlanGenerated')}</Text>
+                  <FiCoffee />
+                  <Text>{t('nutrition.mealPlanGenerated', 'en')}</Text>
                 </HStack>
                 <Text fontSize="sm" color="gray.600">2 days ago</Text>
               </HStack>

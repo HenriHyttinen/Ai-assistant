@@ -50,7 +50,7 @@ const RecipeSearch: React.FC<RecipeSearchProps> = ({
       if (mealType) searchParams.append('meal_type', mealType);
       if (difficulty) searchParams.append('difficulty_level', difficulty);
       
-      const response = await fetch(`/api/nutrition/recipes/search?${searchParams}`);
+      const response = await fetch(`http://localhost:8000/nutrition/recipes/search?${searchParams}`);
       
       if (response.ok) {
         const results = await response.json();
@@ -82,7 +82,7 @@ const RecipeSearch: React.FC<RecipeSearchProps> = ({
     try {
       setGenerating(true);
       
-      const response = await fetch('/api/nutrition/recipes/generate', {
+      const response = await fetch('http://localhost:8000/nutrition/recipes/generate', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -119,7 +119,7 @@ const RecipeSearch: React.FC<RecipeSearchProps> = ({
     <VStack spacing={6} align="stretch">
       <Box>
         <Heading size="lg" mb={2}>
-          {t('recipes')}
+          {t('recipes', 'en')}
         </Heading>
         <Text color="gray.600">
           Search existing recipes or generate new ones with AI
