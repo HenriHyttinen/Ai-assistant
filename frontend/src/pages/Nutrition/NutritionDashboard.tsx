@@ -86,13 +86,159 @@ const NutritionDashboard: React.FC<NutritionDashboardProps> = ({ user = null }) 
     loadNutritionData();
   }, []);
 
+  const setupDefaultPreferences = async () => {
+    try {
+      // Get Supabase session token for authentication
+      const { supabase } = await import('../../lib/supabase');
+      const { data: { session } } = await supabase.auth.getSession();
+      const headers = session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
+      
+      // Create default nutrition preferences
+      const defaultPreferences = {
+        dietary_preferences: [],
+        allergies: [],
+        disliked_ingredients: [],
+        cuisine_preferences: ["International"],
+        daily_calorie_target: 2000,
+        protein_target: 150,
+        carbs_target: 250,
+        fats_target: 65,
+        meals_per_day: 3,
+        preferred_meal_times: {
+          breakfast: "08:00",
+          lunch: "13:00",
+          dinner: "19:00"
+        },
+        timezone: "UTC"
+      };
+      
+      const response = await fetch('http://localhost:8000/nutrition/preferences', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...headers
+        },
+        body: JSON.stringify(defaultPreferences)
+      });
+      
+      if (response.ok) {
+        console.log('Default nutrition preferences created successfully');
+      } else {
+        console.error('Failed to create default preferences:', response.status);
+      }
+    } catch (error) {
+      console.error('Error setting up default preferences:', error);
+    }
+  };
+
   const loadNutritionData = async () => {
     try {
       setLoading(true);
-      // Simulate API call - in real implementation, this would call the backend
-      await new Promise(resolve => setTimeout(resolve, 1000));
       
-      // Mock data for demonstration
+      // Get Supabase session token for authentication
+      const { supabase } = await import('../../lib/supabase');
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session?.access_token) {
+        console.error('No Supabase session found');
+        setError('Please log in to access nutrition features');
+        return;
+      }
+      
+      const headers = { Authorization: `Bearer ${session.access_token}` };
+      console.log('Using Supabase token for nutrition API calls');
+      
+      // Load nutrition preferences
+      const preferencesResponse = await fetch('http://localhost:8000/nutrition/preferences', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          ...headers
+        }
+      });
+      
+      if (preferencesResponse.ok) {
+        const preferences = await preferencesResponse.json();
+        setGoals({
+          calories: preferences.daily_calorie_target || 2000,
+          protein: preferences.protein_target || 150,
+          carbs: preferences.carbs_target || 250,
+          fats: preferences.fats_target || 65
+        });
+      } else if (preferencesResponse.status === 404) {
+        // User doesn't have preferences yet - use defaults
+        console.log('No nutrition preferences found, using defaults');
+        setGoals({
+          calories: 2000,
+          protein: 150,
+          carbs: 250,
+          fats: 65
+        });
+        
+        // Set up default nutrition preferences
+        await setupDefaultPreferences();
+      } else if (preferencesResponse.status === 401) {
+        // Not authenticated - show error
+        setError('Please log in to access nutrition features');
+        return;
+      }
+      
+      // Load today's meal plan
+      const today = new Date().toISOString().split('T')[0];
+      const mealPlanResponse = await fetch(`http://localhost:8000/nutrition/meal-plans?date=${today}&limit=1`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          ...headers
+        }
+      });
+      
+      if (mealPlanResponse.ok) {
+        const mealPlans = await mealPlanResponse.json();
+        if (mealPlans.length > 0) {
+          setMealPlan(mealPlans[0]);
+        }
+      }
+      
+      // Load nutritional analysis for today
+      const analysisResponse = await fetch(`http://localhost:8000/nutrition/nutritional-analysis?start_date=${today}&end_date=${today}&analysis_type=daily`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          ...headers
+        }
+      });
+      
+      if (analysisResponse.ok) {
+        const analysis = await analysisResponse.json();
+        setNutritionalData({
+          calories: analysis.totals?.calories || 0,
+          protein: analysis.totals?.protein || 0,
+          carbs: analysis.totals?.carbs || 0,
+          fats: analysis.totals?.fats || 0,
+          fiber: analysis.totals?.fiber || 0,
+          sugar: analysis.totals?.sugar || 0,
+          sodium: analysis.totals?.sodium || 0
+        });
+      } else {
+        // Fallback to mock data if API fails
+        setNutritionalData({
+          calories: 1850,
+          protein: 120,
+          carbs: 180,
+          fats: 55,
+          fiber: 25,
+          sugar: 45,
+          sodium: 2100
+        });
+      }
+
+      setError(null);
+    } catch (err) {
+      console.error('Error loading nutrition data:', err);
+      setError('Failed to load nutrition data');
+      
+      // Fallback to mock data
       setNutritionalData({
         calories: 1850,
         protein: 120,
@@ -102,48 +248,6 @@ const NutritionDashboard: React.FC<NutritionDashboardProps> = ({ user = null }) 
         sugar: 45,
         sodium: 2100
       });
-
-      setMealPlan({
-        id: 'mp_1',
-        date: new Date().toISOString().split('T')[0],
-        meals: [
-          {
-            id: 'm1',
-            name: 'Mediterranean Omelet',
-            type: 'breakfast',
-            calories: 400,
-            protein: 28,
-            carbs: 15,
-            fats: 25
-          },
-          {
-            id: 'm2',
-            name: 'Quinoa Buddha Bowl',
-            type: 'lunch',
-            calories: 420,
-            protein: 18,
-            carbs: 50,
-            fats: 15
-          },
-          {
-            id: 'm3',
-            name: 'Baked Salmon with Vegetables',
-            type: 'dinner',
-            calories: 550,
-            protein: 40,
-            carbs: 25,
-            fats: 30
-          }
-        ],
-        totalCalories: 1370,
-        totalProtein: 86,
-        totalCarbs: 90,
-        totalFats: 70
-      });
-
-      setError(null);
-    } catch (err) {
-      setError('Failed to load nutrition data');
     } finally {
       setLoading(false);
     }

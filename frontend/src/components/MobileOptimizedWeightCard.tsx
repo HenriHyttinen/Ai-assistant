@@ -47,7 +47,7 @@ interface WeightProgressCardProps {
   fitnessGoal?: string;
 }
 
-const MobileOptimizedWeightCard = ({ 
+const MobileWeightCard = ({ 
   currentWeight, 
   targetWeight, 
   weightTrend,
@@ -231,7 +231,7 @@ const MobileOptimizedWeightCard = ({
             />
           </Box>
 
-          {/* Weight Trend Chart - Mobile Optimized */}
+          {/* Weight Trend Chart - Mobile */}
           {weightTrend.length > 0 && (
             <Box>
               <Text fontSize={textSize} fontWeight="bold" mb={2}>
@@ -306,4 +306,4 @@ const MobileOptimizedWeightCard = ({
   );
 };
 
-export default MobileOptimizedWeightCard;
+export default MobileWeightCard;

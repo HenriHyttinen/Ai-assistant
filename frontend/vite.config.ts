@@ -7,4 +7,7 @@ export default defineConfig({
   resolve: {
     dedupe: ['react', 'react-dom', '@emotion/react', '@emotion/styled'],
   },
+  define: {
+    'import.meta.env.VITE_API_URL': JSON.stringify('http://localhost:8000'),
+  },
 })

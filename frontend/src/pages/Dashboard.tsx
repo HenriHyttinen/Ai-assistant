@@ -92,11 +92,29 @@ const Dashboard = () => {
   const [needsHealthProfile, setNeedsHealthProfile] = useState(false);
 
   const fetchData = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      setNeedsHealthProfile(false);
+      
+      console.log('Health profile API call re-enabled');
+      
+      // First, try to fetch health profile
+      let profileResponse;
       try {
-        setLoading(true);
-        setError(null);
-        setNeedsHealthProfile(false);
+        profileResponse = await healthProfile.getProfile();
+        setProfileData(profileResponse.data);
+      } catch (profileError: any) {
+        if (profileError?.response?.status === 404) {
+          // User doesn't have a health profile yet
+          setNeedsHealthProfile(true);
+          setLoading(false);
+          return;
+        }
+        throw profileError;
+      }
         
+        /*
         // First, try to fetch health profile
         let profileResponse;
         try {
@@ -111,6 +129,9 @@ const Dashboard = () => {
           }
           throw profileError;
         }
+        */
+        
+        console.log('Analytics API call re-enabled');
         
         // If we have a profile, fetch analytics data
         try {
@@ -126,36 +147,38 @@ const Dashboard = () => {
           throw analyticsError;
         }
         
-      // Fetch AI insights
+        console.log('AI insights API call re-enabled');
+        
+        // Fetch AI insights
         try {
           const insightsResponse = await healthProfile.getInsights();
-        if (insightsResponse && insightsResponse.data && insightsResponse.data.insights) {
-          setAiInsights(insightsResponse.data);
+          if (insightsResponse && insightsResponse.data && insightsResponse.data.insights) {
+            setAiInsights(insightsResponse.data);
           }
         } catch (insightsError) {
-        console.error('Failed to refresh insights:', insightsError);
-        // Set fallback insights for development
-        setAiInsights({
-          insights: [
-            "Welcome to your health journey! Start by logging your weight and activities.",
-            "Set up your health profile to get personalized insights.",
-            "Track your daily activities to see your progress over time.",
-            "✅ You're taking the first step towards better health!",
-            "💡 Consider setting specific, achievable health goals"
-          ],
-          metrics: {
-            bmi: 0,
-            bmi_category: "Unknown",
-            wellness_score: 0
-          }
-        });
-      }
+          console.error('Failed to refresh insights:', insightsError);
+          // Set fallback insights for development
+          setAiInsights({
+            insights: [
+              "Welcome to your health journey! Start by logging your weight and activities.",
+              "Set up your health profile to get personalized insights.",
+              "Track your daily activities to see your progress over time.",
+              "✅ You're taking the first step towards better health!",
+              "💡 Consider setting specific, achievable health goals"
+            ],
+            metrics: {
+              bmi: 0,
+              bmi_category: "Unknown",
+              wellness_score: 0
+            }
+          });
+        }
     } catch (err) {
       console.error('Error fetching dashboard data:', err);
       setError('Failed to load dashboard data');
-      } finally {
-        setLoading(false);
-      }
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => {

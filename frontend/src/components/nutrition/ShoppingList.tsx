@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   VStack,
@@ -19,8 +19,15 @@ import {
   Alert,
   AlertIcon,
   Divider,
+  useDisclosure,
+  Modal,
+  ModalOverlay,
+  ModalContent,
+  ModalHeader,
+  ModalBody,
+  ModalCloseButton,
 } from '@chakra-ui/react';
-import { FiShoppingCart, FiPlus, FiTrash2, FiCheck } from 'react-icons/fi';
+import { FiShoppingCart, FiPlus, FiTrash2, FiCheck, FiEye } from 'react-icons/fi';
 import { t } from '../../utils/translations';
 
 interface ShoppingListProps {
@@ -34,7 +41,44 @@ const ShoppingList: React.FC<ShoppingListProps> = ({
 }) => {
   const [generating, setGenerating] = useState(false);
   const [selectedList, setSelectedList] = useState<any>(null);
+  const [lists, setLists] = useState<any[]>(shoppingLists);
+  const [loading, setLoading] = useState(false);
+  const { isOpen, onOpen, onClose } = useDisclosure();
   const toast = useToast();
+
+  // Load shopping lists on component mount
+  useEffect(() => {
+    loadShoppingLists();
+  }, []);
+
+  const loadShoppingLists = async () => {
+    try {
+      setLoading(true);
+      
+      // Get Supabase session token
+      const { supabase } = await import('../../lib/supabase');
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      const response = await fetch('http://localhost:8000/nutrition/shopping-lists', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token || ''}`,
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setLists(data);
+      } else {
+        console.error('Failed to load shopping lists:', response.status);
+      }
+    } catch (error) {
+      console.error('Error loading shopping lists:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleGenerateShoppingList = async () => {
     try {
@@ -63,6 +107,8 @@ const ShoppingList: React.FC<ShoppingListProps> = ({
           duration: 3000,
           isClosable: true,
         });
+        // Reload the shopping lists to show the new one
+        await loadShoppingLists();
         onUpdate();
       } else {
         const errorText = await response.text();
@@ -80,6 +126,7 @@ const ShoppingList: React.FC<ShoppingListProps> = ({
           { id: '1', name: 'Chicken Breast', quantity: '500g', category: 'Meat', purchased: false },
           { id: '2', name: 'Brown Rice', quantity: '1kg', category: 'Grains', purchased: false },
           { id: '3', name: 'Broccoli', quantity: '500g', category: 'Vegetables', purchased: false },
+          { id: '4', name: 'Olive Oil', quantity: '30ml', category: 'Fats', purchased: false },
         ],
         created_at: new Date().toISOString(),
       };
@@ -97,6 +144,46 @@ const ShoppingList: React.FC<ShoppingListProps> = ({
     }
   };
 
+  const handleViewDetails = (list: any) => {
+    setSelectedList(list);
+    onOpen();
+  };
+
+  const handleDeleteList = async (listId: string) => {
+    try {
+      // Get Supabase session token
+      const { supabase } = await import('../../lib/supabase');
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      const response = await fetch(`http://localhost:8000/nutrition/shopping-lists/${listId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${session?.access_token || ''}`,
+        },
+      });
+
+      if (response.ok) {
+        setLists(prev => prev.filter(list => list.id !== listId));
+        toast({
+          title: 'Shopping list deleted!',
+          status: 'success',
+          duration: 3000,
+        });
+        onUpdate();
+      } else {
+        throw new Error('Failed to delete shopping list');
+      }
+    } catch (error) {
+      console.error('Error deleting shopping list:', error);
+      toast({
+        title: 'Error deleting shopping list',
+        description: 'Please try again later.',
+        status: 'error',
+        duration: 5000,
+      });
+    }
+  };
+
   const toggleItemPurchased = (itemId: string) => {
     // This would update the item's purchased status
     console.log('Toggle purchased for item:', itemId);
@@ -111,17 +198,17 @@ const ShoppingList: React.FC<ShoppingListProps> = ({
     <VStack spacing={6} align="stretch">
       <Box>
         <Heading size="lg" mb={2}>
-          {t('shoppingList', 'en')}
+          {t('shoppingList.title')}
         </Heading>
         <Text color="gray.600">
-          Generate and manage your shopping lists from meal plans
+          {t('shoppingList.subtitle')}
         </Text>
       </Box>
 
       {/* Generate Shopping List */}
       <Card>
         <CardHeader>
-          <Heading size="md">Generate Shopping List</Heading>
+          <Heading size="md">{t('shoppingList.generateNew')}</Heading>
         </CardHeader>
         <CardBody>
           <VStack spacing={4}>
@@ -137,7 +224,7 @@ const ShoppingList: React.FC<ShoppingListProps> = ({
               loadingText="Generating..."
               leftIcon={<Icon as={FiPlus} />}
             >
-              {t('generateShoppingList', 'en')}
+              {t('shoppingList.generateNew')}
             </Button>
           </VStack>
         </CardBody>
@@ -146,11 +233,15 @@ const ShoppingList: React.FC<ShoppingListProps> = ({
       {/* Shopping Lists */}
       <Box>
         <HStack justify="space-between" mb={4}>
-          <Heading size="md">Your Shopping Lists</Heading>
-          <Text color="gray.600">{shoppingLists.length} lists</Text>
+          <Heading size="md">{t('shoppingList.title')}</Heading>
+          <Text color="gray.600">{lists.length} lists</Text>
         </HStack>
 
-        {shoppingLists.length === 0 ? (
+        {loading ? (
+          <Flex justify="center" py={8}>
+            <Spinner size="lg" />
+          </Flex>
+        ) : lists.length === 0 ? (
           <Alert status="info" borderRadius="lg">
             <AlertIcon />
             <Box>
@@ -160,7 +251,7 @@ const ShoppingList: React.FC<ShoppingListProps> = ({
           </Alert>
         ) : (
           <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
-            {shoppingLists.map((list) => (
+            {lists.map((list) => (
               <Card key={list.id} variant="outline">
                 <CardHeader>
                   <HStack justify="space-between">
@@ -197,19 +288,28 @@ const ShoppingList: React.FC<ShoppingListProps> = ({
                         <Badge size="sm" colorScheme="green">Grains</Badge>
                       </HStack>
                       <HStack>
-                        <Checkbox size="sm" defaultChecked />
-                        <Text fontSize="sm" textDecoration="line-through" color="gray.500">
-                          Olive oil (250ml)
-                        </Text>
+                        <Checkbox size="sm" />
+                        <Text fontSize="sm">Olive oil (30ml)</Text>
                         <Badge size="sm" colorScheme="orange">Fats</Badge>
                       </HStack>
                     </VStack>
 
                     <HStack justify="space-between">
-                      <Button size="sm" variant="outline">
+                      <Button 
+                        size="sm" 
+                        variant="outline" 
+                        leftIcon={<FiEye />}
+                        onClick={() => handleViewDetails(list)}
+                      >
                         View Details
                       </Button>
-                      <Button size="sm" colorScheme="red" variant="outline">
+                      <Button 
+                        size="sm" 
+                        colorScheme="red" 
+                        variant="outline"
+                        leftIcon={<FiTrash2 />}
+                        onClick={() => handleDeleteList(list.id)}
+                      >
                         Delete
                       </Button>
                     </HStack>
@@ -220,6 +320,51 @@ const ShoppingList: React.FC<ShoppingListProps> = ({
           </SimpleGrid>
         )}
       </Box>
+
+      {/* Shopping List Details Modal */}
+      <Modal isOpen={isOpen} onClose={onClose} size="xl">
+        <ModalOverlay />
+        <ModalContent>
+          <ModalHeader>
+            <HStack>
+              <FiShoppingCart />
+              <Text>{selectedList?.name || 'Shopping List Details'}</Text>
+            </HStack>
+          </ModalHeader>
+          <ModalCloseButton />
+          <ModalBody pb={6}>
+            {selectedList && (
+              <VStack spacing={4} align="stretch">
+                <HStack justify="space-between">
+                  <Text fontWeight="semibold">Total Items: {selectedList.total_items || 0}</Text>
+                  <Text fontWeight="semibold">Purchased: {selectedList.purchased_items || 0}</Text>
+                </HStack>
+                
+                <Divider />
+                
+                <VStack spacing={3} align="stretch">
+                  <Text fontWeight="semibold">Items:</Text>
+                  {selectedList.items?.map((item: any) => (
+                    <HStack key={item.id} justify="space-between" p={2} bg="gray.50" borderRadius="md">
+                      <HStack>
+                        <Checkbox 
+                          isChecked={item.purchased} 
+                          onChange={() => toggleItemPurchased(item.id)}
+                        />
+                        <Text>{item.name}</Text>
+                        <Badge size="sm" colorScheme="blue">{item.category}</Badge>
+                      </HStack>
+                      <Text fontSize="sm" color="gray.600">{item.quantity}</Text>
+                    </HStack>
+                  )) || (
+                    <Text color="gray.500" fontStyle="italic">No items in this list</Text>
+                  )}
+                </VStack>
+              </VStack>
+            )}
+          </ModalBody>
+        </ModalContent>
+      </Modal>
     </VStack>
   );
 };

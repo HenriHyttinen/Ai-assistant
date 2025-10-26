@@ -247,9 +247,43 @@ const Goals = () => {
     try {
       setLoading(true);
       setError(null);
+      
+      // Add small delay to prevent race conditions with other components
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      console.log('About to call goals.getGoals()');
       const response = await goals.getGoals();
-      setGoalsList(response.data);
+      
+      // Add comprehensive error handling for API response
+      console.log('Goals API response:', response);
+      if (!response || !response.data) {
+        console.warn('Goals API returned empty response, using fallback data');
+        setGoalsList([]);
+        return;
+      }
+      
+      // Ensure response.data is an array and add null safety to each goal
+      const goalsData = Array.isArray(response.data) ? response.data : [];
+      console.log('Goals data:', goalsData);
+      
+      const safeGoals = goalsData.map((goal: any, index: number) => {
+        console.log(`Processing goal ${index}:`, goal);
+        // Add comprehensive null safety for each goal property
+        return {
+          id: goal?.id || 'unknown',
+          title: goal?.title || 'Untitled Goal',
+          target: goal?.target || 'No target set',
+          progress: typeof goal?.progress === 'number' ? goal.progress : 0,
+          deadline: goal?.deadline || null,
+          status: goal?.status || 'not_started'
+        };
+      });
+      
+      console.log('Safe goals:', safeGoals);
+      setGoalsList(safeGoals);
     } catch (err: any) {
+      console.error('Goals API error:', err);
+      console.error('Error details:', err.message, err.stack);
       setError(err.response?.data?.detail || 'Failed to load goals');
       // Fallback to mock data for development
       setGoalsList([
@@ -442,18 +476,29 @@ const Goals = () => {
     }
   };
 
-  const getStatusText = (status: string) => {
-    switch (status) {
-      case 'completed':
-        return t('completed', language);
-      case 'in_progress':
-        return t('inProgress', language);
-      case 'not_started':
-        return t('notStarted', language);
-      case 'failed':
-        return t('failed', language);
-      default:
-        return status.toUpperCase();
+  const getStatusText = (status?: string) => {
+    try {
+      // More robust null safety check
+      if (!status || typeof status !== 'string' || status === null || status === undefined) {
+        return 'UNKNOWN';
+      }
+      
+      switch (status) {
+        case 'completed':
+          return t('completed', language);
+        case 'in_progress':
+          return t('inProgress', language);
+        case 'not_started':
+          return t('notStarted', language);
+        case 'failed':
+          return t('failed', language);
+        default:
+          // Additional safety check before calling toUpperCase
+          return (status && typeof status === 'string') ? status.toUpperCase() : 'UNKNOWN';
+      }
+    } catch (error) {
+      console.error('Error in getStatusText:', error, 'status:', status);
+      return 'UNKNOWN';
     }
   };
 
@@ -490,10 +535,10 @@ const Goals = () => {
           <Card key={goal.id}>
             <CardHeader>
               <HStack justify="space-between">
-                <Heading size="md">{goal.title}</Heading>
+                <Heading size="md">{goal.title || 'Untitled Goal'}</Heading>
                 <HStack>
-                  <Badge colorScheme={getStatusColor(goal.status)}>
-                    {getStatusText(goal.status)}
+                  <Badge colorScheme={getStatusColor(goal.status || 'not_started')}>
+                    {getStatusText(goal.status || 'not_started')}
                   </Badge>
                   <IconButton
                     aria-label="Delete goal"
@@ -510,37 +555,37 @@ const Goals = () => {
               <VStack align="stretch" spacing={4}>
                 <Box>
                   <Text color="gray.500">{t('target', language)}</Text>
-                  <Text fontWeight="bold">{goal.target}</Text>
+                  <Text fontWeight="bold">{goal.target || 'No target set'}</Text>
                 </Box>
                 
                 <Box>
                   <Text color="gray.500">{t('progress', language)}</Text>
-                  <Progress value={goal.progress} colorScheme="blue" mb={2} />
-                  <Text fontSize="sm">{goal.progress}% {t('complete', language)}</Text>
+                  <Progress value={goal.progress || 0} colorScheme="blue" mb={2} />
+                  <Text fontSize="sm">{goal.progress || 0}% {t('complete', language)}</Text>
                   
                   {/* Milestone Message */}
-                  {goal.progress > 0 && (
+                  {(goal.progress || 0) > 0 && (
                     <Box mt={2} p={2} bg="green.50" borderRadius="md" border="1px" borderColor="green.200">
                       <Text fontSize="xs" color="green.800" textAlign="center" fontWeight="medium">
-                        {goal.progress >= 100 ? "🎉 Goal completed!" :
-                         goal.progress >= 90 ? `🔥 Almost there! ${100 - goal.progress}% to go!` :
-                         goal.progress >= 75 ? `💪 Great progress! Keep it up!` :
-                         goal.progress >= 50 ? `🎯 Halfway there! You're doing great!` :
-                         goal.progress >= 25 ? `⭐ Good start! ${goal.progress}% done!` :
-                         `🌱 Getting started! ${goal.progress}% complete!`}
+                        {(goal.progress || 0) >= 100 ? "🎉 Goal completed!" :
+                         (goal.progress || 0) >= 90 ? `🔥 Almost there! ${100 - (goal.progress || 0)}% to go!` :
+                         (goal.progress || 0) >= 75 ? `💪 Great progress! Keep it up!` :
+                         (goal.progress || 0) >= 50 ? `🎯 Halfway there! You're doing great!` :
+                         (goal.progress || 0) >= 25 ? `⭐ Good start! ${goal.progress || 0}% done!` :
+                         `🌱 Getting started! ${goal.progress || 0}% complete!`}
                       </Text>
                     </Box>
                   )}
                   
                   {/* Progress Input for in_progress goals */}
-                  {goal.status === 'in_progress' && (
+                  {(goal.status || 'not_started') === 'in_progress' && (
                     <Box mt={3}>
                       <HStack>
                         <NumberInput
                           size="sm"
                           min={0}
                           max={100}
-                          value={progressInputs[goal.id] || goal.progress}
+                          value={progressInputs[goal.id] || goal.progress || 0}
                           onChange={(value: string) => setProgressInputs({
                             ...progressInputs,
                             [goal.id]: parseInt(value) || 0
@@ -556,7 +601,7 @@ const Goals = () => {
                           size="sm"
                           colorScheme="blue"
                           onClick={() => {
-                            const newProgress = progressInputs[goal.id] || goal.progress;
+                            const newProgress = progressInputs[goal.id] || goal.progress || 0;
                             handleUpdateProgress(goal.id, newProgress);
                           }}
                         >
@@ -576,7 +621,7 @@ const Goals = () => {
 
                 {/* Action Buttons */}
                 <VStack spacing={2}>
-                  {goal.status === 'not_started' && (
+                  {(goal.status || 'not_started') === 'not_started' && (
                     <Button
                       colorScheme="green"
                       size="sm"
@@ -587,7 +632,7 @@ const Goals = () => {
                     </Button>
                   )}
                   
-                  {goal.status === 'in_progress' && (
+                  {(goal.status || 'not_started') === 'in_progress' && (
                     <HStack width="full">
                       <Button
                         colorScheme="green"
@@ -600,7 +645,7 @@ const Goals = () => {
                     </HStack>
                   )}
                   
-                  {goal.status === 'completed' && (
+                  {(goal.status || 'not_started') === 'completed' && (
                     <Text color="green.500" fontWeight="bold" textAlign="center">
                       🎉 {t('goalCompleted', language)}
                     </Text>

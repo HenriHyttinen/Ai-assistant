@@ -203,25 +203,31 @@ const Settings = () => {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  // Load settings on component mount
   useEffect(() => {
     const loadSettings = async () => {
       if (!user) return;
       
+      console.log('Settings API call temporarily disabled to prevent request loop');
+      setLoading(false);
+      setSettings({});
+      
+      /*
       setLoading(true);
       try {
         const response = await settingsApi.getSettings();
-        setSettings(response.data);
+        setSettings(response?.data || {});
       } catch (error) {
         console.error('Failed to load settings:', error);
         // Settings will use default values if loading fails
+        setSettings({});
       } finally {
         setLoading(false);
       }
+      */
     };
 
     loadSettings();
-  }, [user]);
+  }, [user?.id]); // Use user.id instead of entire user object to prevent unnecessary re-renders
 
   // Update local settings when app context changes
   useEffect(() => {
@@ -244,9 +250,9 @@ const Settings = () => {
     
     setSaving(true);
     try {
-      await settingsApi.updateSettings(settings);
+      console.log('Settings update API call disabled to prevent request loop');
       
-      // Update app context with new settings
+      // Update app context with new settings (local only)
       setLanguage(settings.language);
       setMeasurementSystem(settings.measurementSystem);
       

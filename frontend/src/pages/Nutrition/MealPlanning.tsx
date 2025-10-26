@@ -45,22 +45,28 @@ import {
   FiCoffee,
   FiClock,
   FiTarget,
-  FiMoreVertical
+  FiMoreVertical,
+  FiLogIn
 } from 'react-icons/fi';
 
 interface Meal {
   id: string;
-  name: string;
-  type: 'breakfast' | 'lunch' | 'dinner' | 'snack';
+  name?: string;
+  meal_name?: string;
+  type?: 'breakfast' | 'lunch' | 'dinner' | 'snack';
+  meal_type?: 'breakfast' | 'lunch' | 'dinner' | 'snack';
   calories: number;
   protein: number;
   carbs: number;
   fats: number;
-  prepTime: number;
-  difficulty: 'easy' | 'medium' | 'hard';
-  dietaryTags: string[];
-  ingredients: string[];
-  instructions: string[];
+  prepTime?: number;
+  prep_time?: number;
+  difficulty?: 'easy' | 'medium' | 'hard';
+  difficulty_level?: 'easy' | 'medium' | 'hard';
+  dietaryTags?: string[];
+  dietary_tags?: string[];
+  ingredients?: string[];
+  instructions?: string[];
 }
 
 interface MealPlan {
@@ -105,82 +111,37 @@ const MealPlanning: React.FC<MealPlanningProps> = ({ user = null }) => {
       setLoading(true);
       setError(null);
       
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Get Supabase session token for authentication
+      const { supabase } = await import('../../lib/supabase');
+      const { data: { session } } = await supabase.auth.getSession();
+      const headers = session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
       
-      // Mock data
-      setMealPlan({
-        id: 'mp_1',
-        date: selectedDate,
-        meals: [
-          {
-            id: 'm1',
-            name: 'Mediterranean Omelet',
-            type: 'breakfast',
-            calories: 400,
-            protein: 28,
-            carbs: 15,
-            fats: 25,
-            prepTime: 15,
-            difficulty: 'easy',
-            dietaryTags: ['vegetarian', 'high-protein'],
-            ingredients: ['eggs', 'tomatoes', 'spinach', 'olive oil', 'cheese'],
-            instructions: [
-              'Heat olive oil in a non-stick pan over medium heat.',
-              'Beat eggs in a bowl and season with salt and pepper.',
-              'Add tomatoes and spinach to the pan, cook for 2 minutes.',
-              'Pour beaten eggs over vegetables and cook until set.',
-              'Sprinkle cheese on top and fold omelet in half.'
-            ]
-          },
-          {
-            id: 'm2',
-            name: 'Quinoa Buddha Bowl',
-            type: 'lunch',
-            calories: 420,
-            protein: 18,
-            carbs: 50,
-            fats: 15,
-            prepTime: 20,
-            difficulty: 'medium',
-            dietaryTags: ['vegetarian', 'vegan', 'gluten-free'],
-            ingredients: ['quinoa', 'broccoli', 'avocado', 'olive oil'],
-            instructions: [
-              'Cook quinoa according to package instructions.',
-              'Steam broccoli until tender.',
-              'Slice avocado and prepare vegetables.',
-              'Arrange all ingredients in a bowl.',
-              'Drizzle with olive oil and season to taste.'
-            ]
-          },
-          {
-            id: 'm3',
-            name: 'Baked Salmon with Vegetables',
-            type: 'dinner',
-            calories: 550,
-            protein: 40,
-            carbs: 25,
-            fats: 30,
-            prepTime: 25,
-            difficulty: 'medium',
-            dietaryTags: ['gluten-free', 'high-protein', 'omega-3'],
-            ingredients: ['salmon fillet', 'broccoli', 'olive oil'],
-            instructions: [
-              'Preheat oven to 400°F (200°C).',
-              'Season salmon with salt, pepper, and olive oil.',
-              'Toss broccoli with olive oil and seasonings.',
-              'Place salmon and vegetables on a baking sheet.',
-              'Bake for 20-25 minutes until salmon is flaky.'
-            ]
-          }
-        ],
-        totalCalories: 1370,
-        totalProtein: 86,
-        totalCarbs: 90,
-        totalFats: 70
+      // Try to load existing meal plan for the selected date
+      const response = await fetch(`http://localhost:8000/nutrition/meal-plans?date=${selectedDate}&limit=1`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          ...headers
+        }
       });
+      
+      if (response.ok) {
+        const mealPlans = await response.json();
+        console.log('Meal plans from API:', mealPlans);
+        if (mealPlans.length > 0) {
+          console.log('Setting meal plan:', mealPlans[0]);
+          setMealPlan(mealPlans[0]);
+          return;
+        }
+      }
+      
+      // If no meal plan exists, show empty state
+      setMealPlan(null);
+      
     } catch (err) {
+      console.error('Error loading meal plan:', err);
       setError('Failed to load meal plan');
+      setMealPlan(null);
     } finally {
       setLoading(false);
     }
@@ -191,12 +152,57 @@ const MealPlanning: React.FC<MealPlanningProps> = ({ user = null }) => {
       setLoading(true);
       setError(null);
       
-      // Simulate API call to generate new meal plan
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      // Get Supabase session token for authentication
+      const { supabase } = await import('../../lib/supabase');
+      const { data: { session } } = await supabase.auth.getSession();
       
-      // Reload meal plan
-      await loadMealPlan();
+      if (!session?.access_token) {
+        setError('Please log in to generate meal plans');
+        return;
+      }
+      
+      const headers = { Authorization: `Bearer ${session.access_token}` };
+      console.log('Generating meal plan with authentication');
+      console.log('Calorie target:', preferences.calorieTarget);
+      
+      // Generate new meal plan using AI
+      const response = await fetch('http://localhost:8000/nutrition/meal-plans/generate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...headers
+        },
+        body: JSON.stringify({
+          plan_type: 'daily',
+          start_date: selectedDate,
+          end_date: selectedDate,
+          generation_strategy: 'balanced',
+          preferences_override: {
+            daily_calorie_target: preferences.calorieTarget,
+            meals_per_day: preferences.mealsPerDay,
+            dietary_preferences: preferences.dietaryRestrictions,
+            allergies: preferences.allergies,
+            cuisine_preferences: preferences.cuisinePreferences
+          }
+        })
+      });
+      
+          if (response.ok) {
+            const newMealPlan = await response.json();
+            console.log('Generated meal plan:', newMealPlan);
+            setMealPlan(newMealPlan);
+          } else if (response.status === 400) {
+            const errorData = await response.json();
+            if (errorData.detail && errorData.detail.includes('nutrition preferences')) {
+              setError('Please set up your nutrition preferences first. Go to the Nutrition Dashboard to configure your preferences.');
+            } else {
+              throw new Error('Failed to generate meal plan');
+            }
+          } else {
+            throw new Error('Failed to generate meal plan');
+          }
     } catch (err) {
+      console.error('Error generating meal plan:', err);
       setError('Failed to generate meal plan');
     } finally {
       setLoading(false);
@@ -219,6 +225,47 @@ const MealPlanning: React.FC<MealPlanningProps> = ({ user = null }) => {
         totalCarbs: updatedMeals.reduce((sum, meal) => sum + meal.carbs, 0),
         totalFats: updatedMeals.reduce((sum, meal) => sum + meal.fats, 0)
       });
+    }
+  };
+
+  const handleLogToDailyIntake = async () => {
+    if (!mealPlan) return;
+    
+    try {
+      setLoading(true);
+      
+      const { supabase } = await import('../../lib/supabase');
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session?.access_token) {
+        alert('Please log in');
+        return;
+      }
+      
+      const today = new Date().toISOString().split('T')[0];
+      
+      const response = await fetch(
+        `http://localhost:8000/daily-logging/log-from-meal-plan?log_date=${today}&meal_plan_id=${mealPlan.id}`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+      
+      if (response.ok) {
+        const result = await response.json();
+        alert(`Successfully logged ${result.logged_meals} meals to daily intake!`);
+      } else {
+        throw new Error('Failed to log meal plan');
+      }
+    } catch (error) {
+      console.error('Error logging meal plan:', error);
+      alert('Error logging meal plan to daily intake');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -314,19 +361,35 @@ const MealPlanning: React.FC<MealPlanningProps> = ({ user = null }) => {
                 </HStack>
               </HStack>
             </CardHeader>
+            <CardBody pt={0}>
+              <HStack justify="space-between">
+                <Text fontSize="sm" color="gray.600">
+                  Log this meal plan to your daily intake
+                </Text>
+                <Button
+                  leftIcon={<FiLogIn />}
+                  colorScheme="green"
+                  size="sm"
+                  onClick={handleLogToDailyIntake}
+                  isLoading={loading}
+                >
+                  Log to Daily Intake
+                </Button>
+              </HStack>
+            </CardBody>
           </Card>
         )}
 
         {/* Meals */}
         {mealPlan && (
           <Grid templateColumns={{ base: '1fr', md: 'repeat(2, 1fr)', lg: 'repeat(3, 1fr)' }} gap={4}>
-            {mealPlan.meals.map((meal) => (
+            {(mealPlan.meals || []).map((meal) => (
               <Card key={meal.id} bg={cardBg} borderColor={borderColor}>
                 <CardHeader>
                   <HStack justify="space-between">
                     <VStack align="start" spacing={1}>
-                      <Heading size="sm">{meal.name}</Heading>
-                      <Badge colorScheme="blue" size="sm">{meal.type}</Badge>
+                      <Heading size="sm">{meal.meal_name || meal.name || 'Untitled Meal'}</Heading>
+                      <Badge colorScheme="blue" size="sm">{meal.meal_type || meal.type || 'meal'}</Badge>
                     </VStack>
                     <Menu>
                       <MenuButton as={IconButton} icon={<FiMoreVertical />} size="sm" variant="ghost" />
@@ -345,12 +408,12 @@ const MealPlanning: React.FC<MealPlanningProps> = ({ user = null }) => {
                   <VStack spacing={3} align="stretch">
                     {/* Nutritional Info */}
                     <HStack justify="space-between" fontSize="sm">
-                      <Text>{meal.calories} {t('nutrition.calories', 'en')}</Text>
-                      <Text>{meal.protein}g {t('nutrition.protein', 'en')}</Text>
+                      <Text>{meal.calories || 0} {t('nutrition.calories', 'en')}</Text>
+                      <Text>{meal.protein || 0}g {t('nutrition.protein', 'en')}</Text>
                     </HStack>
                     <HStack justify="space-between" fontSize="sm">
-                      <Text>{meal.carbs}g {t('nutrition.carbs', 'en')}</Text>
-                      <Text>{meal.fats}g {t('nutrition.fats', 'en')}</Text>
+                      <Text>{meal.carbs || 0}g {t('nutrition.carbs', 'en')}</Text>
+                      <Text>{meal.fats || 0}g {t('nutrition.fats', 'en')}</Text>
                     </HStack>
 
                     <Divider />
@@ -359,16 +422,16 @@ const MealPlanning: React.FC<MealPlanningProps> = ({ user = null }) => {
                     <HStack justify="space-between" fontSize="sm">
                       <HStack>
                         <FiClock />
-                        <Text>{meal.prepTime} min</Text>
+                        <Text>{meal.prep_time || meal.prepTime || 0} min</Text>
                       </HStack>
-                      <Badge colorScheme={getDifficultyColor(meal.difficulty)} size="sm">
-                        {meal.difficulty}
+                      <Badge colorScheme={getDifficultyColor(meal.difficulty_level || meal.difficulty || 'easy')} size="sm">
+                        {meal.difficulty_level || meal.difficulty || 'easy'}
                       </Badge>
                     </HStack>
 
                     {/* Dietary Tags */}
                     <HStack wrap="wrap" spacing={1}>
-                      {meal.dietaryTags.map((tag) => (
+                      {(meal.dietary_tags || meal.dietaryTags || []).map((tag) => (
                         <Badge key={tag} size="sm" colorScheme="green" variant="subtle">
                           {tag}
                         </Badge>
@@ -441,10 +504,10 @@ const MealPlanning: React.FC<MealPlanningProps> = ({ user = null }) => {
             </ModalBody>
             <ModalFooter>
               <Button variant="ghost" mr={3} onClick={onClose}>
-                {t('common.cancel')}
+                {t('cancel', 'en')}
               </Button>
               <Button colorScheme="blue">
-                {t('common.save')}
+                {t('save', 'en')}
               </Button>
             </ModalFooter>
           </ModalContent>

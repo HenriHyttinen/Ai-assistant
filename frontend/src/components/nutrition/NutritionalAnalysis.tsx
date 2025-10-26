@@ -80,30 +80,36 @@ const NutritionalAnalysis: React.FC<NutritionalAnalysisProps> = ({
       const startDate = new Date();
       
       if (analysisType === 'daily') {
-        startDate.setDate(endDate.getDate() - 1);
+        startDate.setDate(endDate.getDate()); // Same day for daily analysis
       } else if (analysisType === 'weekly') {
-        startDate.setDate(endDate.getDate() - 7);
+        startDate.setDate(endDate.getDate() - 6); // Last 7 days including today
       } else {
-        startDate.setMonth(endDate.getMonth() - 1);
+        startDate.setDate(endDate.getDate() - 29); // Last 30 days including today
       }
 
       // Get Supabase session token
       const { supabase } = await import('../../lib/supabase');
       const { data: { session } } = await supabase.auth.getSession();
       
+      // Add cache-busting parameter to force fresh data
+      const timestamp = new Date().getTime();
       const response = await fetch(
-        `http://localhost:8000/nutrition/nutritional-analysis?start_date=${startDate.toISOString().split('T')[0]}&end_date=${endDate.toISOString().split('T')[0]}&analysis_type=${analysisType}`,
+        `http://localhost:8000/nutrition/nutritional-analysis?start_date=${startDate.toISOString().split('T')[0]}&end_date=${endDate.toISOString().split('T')[0]}&analysis_type=${analysisType}&_t=${timestamp}`,
         {
           method: 'GET',
           headers: {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${session?.access_token || ''}`,
+            'Cache-Control': 'no-cache',
+            'Pragma': 'no-cache'
           },
         }
       );
 
       if (response.ok) {
         const data = await response.json();
+        console.log('🔍 NutritionalAnalysis API Response:', data);
+        console.log('🔍 Calories from API:', data.totals?.calories);
         setAnalysisData(data);
       } else {
         const errorText = await response.text();

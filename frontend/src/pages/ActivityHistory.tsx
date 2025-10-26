@@ -123,7 +123,7 @@ const ActivityHistory = () => {
       
       toast({
         title: 'Export Successful',
-        description: `Your activities have been exported as ${format.toUpperCase()}`,
+        description: `Your activities have been exported as ${format?.toUpperCase() || 'FILE'}`,
         status: 'success',
         duration: 5000,
         isClosable: true,
@@ -151,7 +151,7 @@ const ActivityHistory = () => {
       
       toast({
         title: 'Export Successful',
-        description: `Your complete health data has been exported as ${format.toUpperCase()}`,
+        description: `Your complete health data has been exported as ${format?.toUpperCase() || 'FILE'}`,
         status: 'success',
         duration: 5000,
         isClosable: true,
@@ -179,7 +179,7 @@ const ActivityHistory = () => {
       
       toast({
         title: 'Export Successful',
-        description: `Your weekly summary has been exported as ${format.toUpperCase()}`,
+        description: `Your weekly summary has been exported as ${format?.toUpperCase() || 'FILE'}`,
         status: 'success',
         duration: 5000,
         isClosable: true,
@@ -207,7 +207,7 @@ const ActivityHistory = () => {
       
       toast({
         title: 'Export Successful',
-        description: `Your monthly summary has been exported as ${format.toUpperCase()}`,
+        description: `Your monthly summary has been exported as ${format?.toUpperCase() || 'FILE'}`,
         status: 'success',
         duration: 5000,
         isClosable: true,

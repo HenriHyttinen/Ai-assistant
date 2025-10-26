@@ -206,7 +206,6 @@ const WeightProgressCard = ({
     return '📊 STABLE';
   };
 
-  // Debug logging removed to prevent console spam
 
   const handleSubmit = async () => {
     if (!newWeight || isNaN(Number(newWeight))) {

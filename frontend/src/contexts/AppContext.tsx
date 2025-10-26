@@ -1,6 +1,6 @@
-import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
-import { settings } from '../services/api';
+import { createContext, useContext, useState, useEffect, useRef, type ReactNode } from 'react';
 import { useSupabaseAuth } from './SupabaseAuthContext';
+import { settings } from '../services/api';
 
 // Inline types to avoid module loading issues
 type Language = 'en' | 'es' | 'fr' | 'de';
@@ -29,31 +29,68 @@ export function AppProvider({ children }: AppProviderProps) {
   const [language, setLanguageState] = useState<Language>('en');
   const [measurementSystem, setMeasurementSystemState] = useState<'metric' | 'imperial'>('metric');
   const [loading, setLoading] = useState(true);
+  const settingsLoadedRef = useRef<string | boolean>(false);
+  const lastErrorTimeRef = useRef<number>(0);
 
   // Load settings when user is authenticated
   useEffect(() => {
     const loadSettings = async () => {
       if (!user) {
         setLoading(false);
+        settingsLoadedRef.current = false;
         return;
       }
 
+      // Prevent multiple calls - use user ID as part of the key
+      const currentUserId = user.id;
+      if (settingsLoadedRef.current === currentUserId) {
+        return;
+      }
+
+      settingsLoadedRef.current = currentUserId;
+      
+      if (!user.id || !user.email) {
+        console.log('User not fully authenticated, skipping settings API call');
+        setLoading(false);
+        return;
+      }
+      
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      const now = Date.now();
+      if (lastErrorTimeRef.current > 0 && (now - lastErrorTimeRef.current) < 5000) {
+        console.log('Circuit breaker: Too many recent errors, skipping settings API call');
+        setLoading(false);
+        return;
+      }
+      
       try {
         const response = await settings.getSettings();
-        const { language: userLanguage, measurementSystem: userMeasurementSystem } = response.data;
+        const settingsData = response.data;
         
-        setLanguageState(userLanguage);
-        setLanguage(userLanguage);
-        setMeasurementSystemState(userMeasurementSystem);
+        if (settingsData) {
+          setLanguageState(settingsData.language || 'en');
+          setLanguage(settingsData.language || 'en');
+          setMeasurementSystemState(settingsData.measurementSystem || 'metric');
+        } else {
+          // Use defaults if no settings found
+          setLanguageState('en');
+          setLanguage('en');
+          setMeasurementSystemState('metric');
+        }
       } catch (error) {
-        // Settings not found, using defaults
-      } finally {
-        setLoading(false);
+        console.warn('Failed to load settings, using defaults:', error);
+        // Use defaults on error
+        setLanguageState('en');
+        setLanguage('en');
+        setMeasurementSystemState('metric');
       }
+      
+      setLoading(false);
     };
 
     loadSettings();
-  }, [user]);
+  }, [user?.id]); // Use user.id instead of entire user object to prevent unnecessary re-renders
 
   const handleSetLanguage = (newLanguage: Language) => {
     setLanguageState(newLanguage);

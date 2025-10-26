@@ -21,7 +21,7 @@ import {
 import { useFormik } from 'formik';
 import * as Yup from 'yup';
 import { useState, useEffect } from 'react';
-import { healthProfile, analytics, settings } from '../services/api';
+import { healthProfile, analytics } from '../services/api';
 import ConsentModal from '../components/ConsentModal';
 import { getErrorMessage } from '../utils/errorUtils';
 import { 
@@ -649,7 +649,7 @@ const Profile = () => {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [needsCreate, setNeedsCreate] = useState(false);
-  const [measurementSystem, setMeasurementSystem] = useState<'metric' | 'imperial'>('metric');
+  const [measurementSystem] = useState<'metric' | 'imperial'>('metric');
   const [showConsentModal, setShowConsentModal] = useState(false);
 
   const handleConsentGiven = () => {
@@ -663,13 +663,14 @@ const Profile = () => {
         setLoading(true);
         setError(null);
         
-        // Load measurement system settings first
+        /*
         try {
           const settingsResponse = await settings.getSettings();
           setMeasurementSystem(settingsResponse.data.measurementSystem);
         } catch (settingsError) {
           // Settings not found, using default metric system
         }
+        */
         
         const response = await healthProfile.getProfile();
         setProfileData(response.data);
@@ -813,10 +814,10 @@ const Profile = () => {
     }
   }, [measurementSystem]);
 
-  // Reload measurement system when page becomes visible (user navigates back from Settings)
   useEffect(() => {
     const handleFocus = async () => {
       if (profileData) {
+        /*
         try {
           const settingsResponse = await settings.getSettings();
           const newMeasurementSystem = settingsResponse.data.measurementSystem;
@@ -826,6 +827,7 @@ const Profile = () => {
         } catch (settingsError) {
           // Settings not found, using current measurement system
         }
+        */
       }
     };
 

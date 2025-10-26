@@ -59,10 +59,17 @@ const AchievementNotification: React.FC<AchievementNotificationProps> = ({
 
   // Check for new achievements periodically
   useEffect(() => {
+    console.log('Starting achievement checking');
+    
     const checkForNewAchievements = async () => {
       try {
+        // Get Supabase session token for authentication
+        const { supabase } = await import('../lib/supabase');
+        const { data: { session } } = await supabase.auth.getSession();
+        const headers = session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
+        
         // Use the check endpoint to get only newly unlocked achievements
-        const response = await api.post('/achievements/check');
+        const response = await api.post('/achievements/check', {}, { headers });
         const newAchievements = response.data.new_achievements || [];
         
         if (newAchievements.length > 0) {
@@ -135,7 +142,7 @@ const AchievementNotification: React.FC<AchievementNotificationProps> = ({
     checkForNewAchievements();
 
     return () => clearInterval(interval);
-  }, [language, toast, onAchievementUnlocked, shownAchievements]);
+  }, [language, toast, onAchievementUnlocked]); // Removed shownAchievements from dependencies
 
   // Auto-hide notification after 5 seconds
   useEffect(() => {

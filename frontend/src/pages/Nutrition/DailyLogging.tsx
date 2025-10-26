@@ -1,0 +1,593 @@
+import React, { useState, useEffect } from 'react';
+import {
+  Box,
+  Button,
+  Card,
+  CardBody,
+  CardHeader,
+  FormControl,
+  FormLabel,
+  Input,
+  Select,
+  VStack,
+  HStack,
+  Text,
+  Badge,
+  Divider,
+  useToast,
+  useColorModeValue,
+  Heading,
+  Table,
+  Thead,
+  Tbody,
+  Tr,
+  Th,
+  Td,
+  IconButton,
+  Modal,
+  ModalOverlay,
+  ModalContent,
+  ModalHeader,
+  ModalBody,
+  ModalCloseButton,
+  useDisclosure,
+  NumberInput,
+  NumberInputField,
+  NumberInputStepper,
+  NumberIncrementStepper,
+  NumberDecrementStepper
+} from '@chakra-ui/react';
+import { FiPlus, FiTrash2, FiEdit, FiSave, FiX } from 'react-icons/fi';
+
+interface FoodEntry {
+  id: string;
+  food_name: string;
+  quantity: number;
+  unit: string;
+  meal_type: string;
+  calories: number;
+  protein: number;
+  carbs: number;
+  fats: number;
+  recipe_id?: string;
+}
+
+interface DailyLogData {
+  log_date: string;
+  total_calories: number;
+  total_protein: number;
+  total_carbs: number;
+  total_fats: number;
+  meal_count: number;
+  entries: FoodEntry[];
+}
+
+const DailyLogging: React.FC = () => {
+  const [selectedDate, setSelectedDate] = useState<string>(
+    new Date().toISOString().split('T')[0]
+  );
+  const [entries, setEntries] = useState<FoodEntry[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [editingEntry, setEditingEntry] = useState<FoodEntry | null>(null);
+  const [newEntry, setNewEntry] = useState<Partial<FoodEntry>>({
+    food_name: '',
+    quantity: 1,
+    unit: 'serving',
+    meal_type: 'breakfast',
+    calories: 0,
+    protein: 0,
+    carbs: 0,
+    fats: 0
+  });
+  
+  const { isOpen, onOpen, onClose } = useDisclosure();
+  const toast = useToast();
+  
+  const cardBg = useColorModeValue('white', 'gray.800');
+  const borderColor = useColorModeValue('gray.200', 'gray.600');
+  
+  useEffect(() => {
+    loadDailyLog();
+  }, [selectedDate]);
+  
+  const loadDailyLog = async () => {
+    try {
+      setLoading(true);
+      
+      const { supabase } = await import('../../lib/supabase');
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session?.access_token) {
+        toast({
+          title: 'Please log in',
+          status: 'error',
+          duration: 3000,
+          isClosable: true,
+        });
+        return;
+      }
+      
+      const response = await fetch(
+        `http://localhost:8000/daily-logging/daily-log/${selectedDate}`,
+        {
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+      
+      if (response.ok) {
+        const data: DailyLogData = await response.json();
+        setEntries(data.entries || []);
+      } else {
+        setEntries([]);
+      }
+    } catch (error) {
+      console.error('Error loading daily log:', error);
+      toast({
+        title: 'Error loading daily log',
+        status: 'error',
+        duration: 3000,
+        isClosable: true,
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  const saveDailyLog = async () => {
+    try {
+      setLoading(true);
+      
+      const { supabase } = await import('../../lib/supabase');
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session?.access_token) {
+        toast({
+          title: 'Please log in',
+          status: 'error',
+          duration: 3000,
+          isClosable: true,
+        });
+        return;
+      }
+      
+      const requestData = {
+        log_date: selectedDate,
+        entries: entries.map(entry => ({
+          food_name: entry.food_name,
+          quantity: entry.quantity,
+          unit: entry.unit,
+          meal_type: entry.meal_type,
+          calories: entry.calories,
+          protein: entry.protein,
+          carbs: entry.carbs,
+          fats: entry.fats,
+          recipe_id: entry.recipe_id
+        }))
+      };
+      
+      const response = await fetch(
+        'http://localhost:8000/daily-logging/log-daily-intake',
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(requestData),
+        }
+      );
+      
+      if (response.ok) {
+        toast({
+          title: 'Daily log saved successfully',
+          status: 'success',
+          duration: 3000,
+          isClosable: true,
+        });
+        loadDailyLog();
+      } else {
+        throw new Error('Failed to save daily log');
+      }
+    } catch (error) {
+      console.error('Error saving daily log:', error);
+      toast({
+        title: 'Error saving daily log',
+        status: 'error',
+        duration: 3000,
+        isClosable: true,
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  const addEntry = () => {
+    if (!newEntry.food_name || newEntry.calories === 0) {
+      toast({
+        title: 'Please fill in food name and calories',
+        status: 'warning',
+        duration: 3000,
+        isClosable: true,
+      });
+      return;
+    }
+    
+    const entry: FoodEntry = {
+      id: Date.now().toString(),
+      food_name: newEntry.food_name!,
+      quantity: newEntry.quantity || 1,
+      unit: newEntry.unit || 'serving',
+      meal_type: newEntry.meal_type || 'breakfast',
+      calories: newEntry.calories || 0,
+      protein: newEntry.protein || 0,
+      carbs: newEntry.carbs || 0,
+      fats: newEntry.fats || 0,
+      recipe_id: newEntry.recipe_id
+    };
+    
+    setEntries([...entries, entry]);
+    setNewEntry({
+      food_name: '',
+      quantity: 1,
+      unit: 'serving',
+      meal_type: 'breakfast',
+      calories: 0,
+      protein: 0,
+      carbs: 0,
+      fats: 0
+    });
+    onClose();
+  };
+  
+  const editEntry = (entry: FoodEntry) => {
+    setEditingEntry(entry);
+    onOpen();
+  };
+  
+  const updateEntry = () => {
+    if (!editingEntry) return;
+    
+    setEntries(entries.map(entry => 
+      entry.id === editingEntry.id ? editingEntry : entry
+    ));
+    setEditingEntry(null);
+    onClose();
+  };
+  
+  const deleteEntry = (entryId: string) => {
+    setEntries(entries.filter(entry => entry.id !== entryId));
+  };
+  
+  const getMealTypeColor = (mealType: string) => {
+    switch (mealType) {
+      case 'breakfast': return 'yellow';
+      case 'lunch': return 'blue';
+      case 'dinner': return 'purple';
+      case 'snack': return 'green';
+      default: return 'gray';
+    }
+  };
+  
+  const totalCalories = entries.reduce((sum, entry) => sum + entry.calories, 0);
+  const totalProtein = entries.reduce((sum, entry) => sum + entry.protein, 0);
+  const totalCarbs = entries.reduce((sum, entry) => sum + entry.carbs, 0);
+  const totalFats = entries.reduce((sum, entry) => sum + entry.fats, 0);
+  
+  return (
+    <Box p={6}>
+      <Heading mb={6}>Daily Food Logging</Heading>
+      
+      {/* Date Selection */}
+      <Card bg={cardBg} borderColor={borderColor} mb={6}>
+        <CardBody>
+          <HStack spacing={4}>
+            <FormControl>
+              <FormLabel>Select Date</FormLabel>
+              <Input
+                type="date"
+                value={selectedDate}
+                onChange={(e) => setSelectedDate(e.target.value)}
+              />
+            </FormControl>
+            <Button
+              colorScheme="blue"
+              onClick={saveDailyLog}
+              isLoading={loading}
+              isDisabled={entries.length === 0}
+            >
+              Save Log
+            </Button>
+          </HStack>
+        </CardBody>
+      </Card>
+      
+      {/* Daily Summary */}
+      <Card bg={cardBg} borderColor={borderColor} mb={6}>
+        <CardHeader>
+          <Heading size="md">Daily Summary - {selectedDate}</Heading>
+        </CardHeader>
+        <CardBody>
+          <HStack spacing={8} wrap="wrap">
+            <VStack align="start">
+              <Text fontSize="sm" color="gray.500">Total Calories</Text>
+              <Text fontSize="2xl" fontWeight="bold">{totalCalories.toFixed(0)}</Text>
+            </VStack>
+            <VStack align="start">
+              <Text fontSize="sm" color="gray.500">Protein</Text>
+              <Text fontSize="2xl" fontWeight="bold">{totalProtein.toFixed(1)}g</Text>
+            </VStack>
+            <VStack align="start">
+              <Text fontSize="sm" color="gray.500">Carbs</Text>
+              <Text fontSize="2xl" fontWeight="bold">{totalCarbs.toFixed(1)}g</Text>
+            </VStack>
+            <VStack align="start">
+              <Text fontSize="sm" color="gray.500">Fats</Text>
+              <Text fontSize="2xl" fontWeight="bold">{totalFats.toFixed(1)}g</Text>
+            </VStack>
+            <VStack align="start">
+              <Text fontSize="sm" color="gray.500">Meals</Text>
+              <Text fontSize="2xl" fontWeight="bold">{entries.length}</Text>
+            </VStack>
+          </HStack>
+        </CardBody>
+      </Card>
+      
+      {/* Add Entry Button */}
+      <Button
+        leftIcon={<FiPlus />}
+        colorScheme="green"
+        onClick={onOpen}
+        mb={4}
+      >
+        Add Food Entry
+      </Button>
+      
+      {/* Food Entries Table */}
+      <Card bg={cardBg} borderColor={borderColor}>
+        <CardBody>
+          {entries.length === 0 ? (
+            <Text textAlign="center" color="gray.500" py={8}>
+              No food entries for this date. Click "Add Food Entry" to start logging.
+            </Text>
+          ) : (
+            <Table variant="simple">
+              <Thead>
+                <Tr>
+                  <Th>Food</Th>
+                  <Th>Quantity</Th>
+                  <Th>Meal</Th>
+                  <Th>Calories</Th>
+                  <Th>Protein</Th>
+                  <Th>Carbs</Th>
+                  <Th>Fats</Th>
+                  <Th>Actions</Th>
+                </Tr>
+              </Thead>
+              <Tbody>
+                {entries.map((entry) => (
+                  <Tr key={entry.id}>
+                    <Td>
+                      <Text fontWeight="medium">{entry.food_name}</Text>
+                    </Td>
+                    <Td>
+                      <Text>{entry.quantity} {entry.unit}</Text>
+                    </Td>
+                    <Td>
+                      <Badge colorScheme={getMealTypeColor(entry.meal_type)}>
+                        {entry.meal_type}
+                      </Badge>
+                    </Td>
+                    <Td>
+                      <Text fontWeight="medium">{entry.calories.toFixed(0)}</Text>
+                    </Td>
+                    <Td>{entry.protein.toFixed(1)}g</Td>
+                    <Td>{entry.carbs.toFixed(1)}g</Td>
+                    <Td>{entry.fats.toFixed(1)}g</Td>
+                    <Td>
+                      <HStack spacing={2}>
+                        <IconButton
+                          aria-label="Edit entry"
+                          icon={<FiEdit />}
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => editEntry(entry)}
+                        />
+                        <IconButton
+                          aria-label="Delete entry"
+                          icon={<FiTrash2 />}
+                          size="sm"
+                          variant="ghost"
+                          colorScheme="red"
+                          onClick={() => deleteEntry(entry.id)}
+                        />
+                      </HStack>
+                    </Td>
+                  </Tr>
+                ))}
+              </Tbody>
+            </Table>
+          )}
+        </CardBody>
+      </Card>
+      
+      {/* Add/Edit Entry Modal */}
+      <Modal isOpen={isOpen} onClose={onClose} size="lg">
+        <ModalOverlay />
+        <ModalContent>
+          <ModalHeader>
+            {editingEntry ? 'Edit Food Entry' : 'Add Food Entry'}
+          </ModalHeader>
+          <ModalCloseButton />
+          <ModalBody pb={6}>
+            <VStack spacing={4}>
+              <FormControl>
+                <FormLabel>Food Name</FormLabel>
+                <Input
+                  value={editingEntry?.food_name || newEntry.food_name || ''}
+                  onChange={(e) => {
+                    if (editingEntry) {
+                      setEditingEntry({...editingEntry, food_name: e.target.value});
+                    } else {
+                      setNewEntry({...newEntry, food_name: e.target.value});
+                    }
+                  }}
+                  placeholder="e.g., Grilled Chicken Breast"
+                />
+              </FormControl>
+              
+              <HStack spacing={4} w="full">
+                <FormControl>
+                  <FormLabel>Quantity</FormLabel>
+                  <NumberInput
+                    value={editingEntry?.quantity || newEntry.quantity || 1}
+                    onChange={(value) => {
+                      if (editingEntry) {
+                        setEditingEntry({...editingEntry, quantity: parseFloat(value) || 1});
+                      } else {
+                        setNewEntry({...newEntry, quantity: parseFloat(value) || 1});
+                      }
+                    }}
+                  >
+                    <NumberInputField />
+                    <NumberInputStepper>
+                      <NumberIncrementStepper />
+                      <NumberDecrementStepper />
+                    </NumberInputStepper>
+                  </NumberInput>
+                </FormControl>
+                
+                <FormControl>
+                  <FormLabel>Unit</FormLabel>
+                  <Select
+                    value={editingEntry?.unit || newEntry.unit || 'serving'}
+                    onChange={(e) => {
+                      if (editingEntry) {
+                        setEditingEntry({...editingEntry, unit: e.target.value});
+                      } else {
+                        setNewEntry({...newEntry, unit: e.target.value});
+                      }
+                    }}
+                  >
+                    <option value="serving">Serving</option>
+                    <option value="g">Grams</option>
+                    <option value="oz">Ounces</option>
+                    <option value="cup">Cup</option>
+                    <option value="tbsp">Tablespoon</option>
+                    <option value="tsp">Teaspoon</option>
+                  </Select>
+                </FormControl>
+                
+                <FormControl>
+                  <FormLabel>Meal Type</FormLabel>
+                  <Select
+                    value={editingEntry?.meal_type || newEntry.meal_type || 'breakfast'}
+                    onChange={(e) => {
+                      if (editingEntry) {
+                        setEditingEntry({...editingEntry, meal_type: e.target.value});
+                      } else {
+                        setNewEntry({...newEntry, meal_type: e.target.value});
+                      }
+                    }}
+                  >
+                    <option value="breakfast">Breakfast</option>
+                    <option value="lunch">Lunch</option>
+                    <option value="dinner">Dinner</option>
+                    <option value="snack">Snack</option>
+                  </Select>
+                </FormControl>
+              </HStack>
+              
+              <HStack spacing={4} w="full">
+                <FormControl>
+                  <FormLabel>Calories</FormLabel>
+                  <NumberInput
+                    value={editingEntry?.calories || newEntry.calories || 0}
+                    onChange={(value) => {
+                      if (editingEntry) {
+                        setEditingEntry({...editingEntry, calories: parseFloat(value) || 0});
+                      } else {
+                        setNewEntry({...newEntry, calories: parseFloat(value) || 0});
+                      }
+                    }}
+                  >
+                    <NumberInputField />
+                  </NumberInput>
+                </FormControl>
+                
+                <FormControl>
+                  <FormLabel>Protein (g)</FormLabel>
+                  <NumberInput
+                    value={editingEntry?.protein || newEntry.protein || 0}
+                    onChange={(value) => {
+                      if (editingEntry) {
+                        setEditingEntry({...editingEntry, protein: parseFloat(value) || 0});
+                      } else {
+                        setNewEntry({...newEntry, protein: parseFloat(value) || 0});
+                      }
+                    }}
+                  >
+                    <NumberInputField />
+                  </NumberInput>
+                </FormControl>
+              </HStack>
+              
+              <HStack spacing={4} w="full">
+                <FormControl>
+                  <FormLabel>Carbs (g)</FormLabel>
+                  <NumberInput
+                    value={editingEntry?.carbs || newEntry.carbs || 0}
+                    onChange={(value) => {
+                      if (editingEntry) {
+                        setEditingEntry({...editingEntry, carbs: parseFloat(value) || 0});
+                      } else {
+                        setNewEntry({...newEntry, carbs: parseFloat(value) || 0});
+                      }
+                    }}
+                  >
+                    <NumberInputField />
+                  </NumberInput>
+                </FormControl>
+                
+                <FormControl>
+                  <FormLabel>Fats (g)</FormLabel>
+                  <NumberInput
+                    value={editingEntry?.fats || newEntry.fats || 0}
+                    onChange={(value) => {
+                      if (editingEntry) {
+                        setEditingEntry({...editingEntry, fats: parseFloat(value) || 0});
+                      } else {
+                        setNewEntry({...newEntry, fats: parseFloat(value) || 0});
+                      }
+                    }}
+                  >
+                    <NumberInputField />
+                  </NumberInput>
+                </FormControl>
+              </HStack>
+              
+              <HStack spacing={4} w="full" pt={4}>
+                <Button
+                  colorScheme="blue"
+                  onClick={editingEntry ? updateEntry : addEntry}
+                  leftIcon={editingEntry ? <FiSave /> : <FiPlus />}
+                >
+                  {editingEntry ? 'Update Entry' : 'Add Entry'}
+                </Button>
+                <Button variant="ghost" onClick={onClose}>
+                  Cancel
+                </Button>
+              </HStack>
+            </VStack>
+          </ModalBody>
+        </ModalContent>
+      </Modal>
+    </Box>
+  );
+};
+
+export default DailyLogging;
+
+

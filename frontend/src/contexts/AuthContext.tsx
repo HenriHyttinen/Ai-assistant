@@ -38,22 +38,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const navigate = useNavigate();
 
   useEffect(() => {
-    const token = localStorage.getItem('token');
-    if (token) {
-      authService.getProfile()
-        .then((userData) => {
-          setUser(userData);
-        })
-        .catch(() => {
-          localStorage.removeItem('token');
-        })
-        .finally(() => {
-          setLoading(false);
-        });
-    } else {
-      setLoading(false);
-    }
-  }, []);
+      console.log('Checking authentication status');
+      
+      const token = localStorage.getItem('token');
+      if (token) {
+        authService.getProfile()
+          .then((userData) => {
+            setUser(userData);
+          })
+          .catch((error) => {
+            console.log('Auth profile error:', error);
+            localStorage.removeItem('token');
+          })
+          .finally(() => {
+            setLoading(false);
+          });
+      } else {
+        setLoading(false);
+      }
+    }, []);
 
   const login = async (email: string, password: string) => {
     try {
@@ -108,7 +111,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         throw new Error('No temporary token found. Please login again.');
       }
       
-      // Temporarily set the temp token for the API call
       localStorage.setItem('token', tempToken);
       
       const response = await authService.verify2FA({ email, code });

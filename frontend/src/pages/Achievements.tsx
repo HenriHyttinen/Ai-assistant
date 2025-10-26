@@ -61,7 +61,12 @@ const Achievements = () => {
       setLoading(true);
       setError(null);
       
-      const response = await api.get('/achievements/available');
+      // Get Supabase session token for authentication
+      const { supabase } = await import('../lib/supabase');
+      const { data: { session } } = await supabase.auth.getSession();
+      const headers = session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
+      
+      const response = await api.get('/achievements/available', { headers });
       const achievementsData = response.data.achievements || [];
       setAchievements(achievementsData);
       
@@ -91,6 +96,7 @@ const Achievements = () => {
   };
 
   useEffect(() => {
+    console.log('Loading achievements');
     fetchAchievements();
   }, []);
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Box,
   Container,
@@ -29,6 +29,7 @@ import {
 import NutritionDashboard from './Nutrition/NutritionDashboard';
 import MealPlanning from './Nutrition/MealPlanning';
 import RecipeSearch from './Nutrition/RecipeSearch';
+import DailyLogging from './Nutrition/DailyLogging';
 import ShoppingList from '../components/nutrition/ShoppingList';
 import NutritionalAnalysis from '../components/nutrition/NutritionalAnalysis';
 import {
@@ -39,6 +40,7 @@ import {
   FiSettings,
   FiPlus,
   FiRefreshCw,
+  FiEdit3,
 } from 'react-icons/fi';
 import { t } from '../utils/translations';
 
@@ -64,19 +66,27 @@ const Nutrition: React.FC = () => {
     loadNutritionData();
   }, []);
 
-  const loadNutritionData = async () => {
+  const loadNutritionData = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
       
-      // For now, just set empty data to avoid API issues
-      // TODO: Implement proper authentication and API calls
+      // Load nutrition data from API
+      const [preferencesRes, mealPlansRes, recipesRes, shoppingListsRes, logsRes] = await Promise.allSettled([
+        // Add actual API calls here when backend is ready
+        Promise.resolve({ data: null }),
+        Promise.resolve({ data: [] }),
+        Promise.resolve({ data: [] }),
+        Promise.resolve({ data: [] }),
+        Promise.resolve({ data: [] })
+      ]);
+      
       setNutritionData({
-        preferences: null,
-        mealPlans: [],
-        recipes: [],
-        shoppingLists: [],
-        nutritionalLogs: []
+        preferences: preferencesRes.status === 'fulfilled' ? preferencesRes.value.data : null,
+        mealPlans: mealPlansRes.status === 'fulfilled' ? mealPlansRes.value.data : [],
+        recipes: recipesRes.status === 'fulfilled' ? recipesRes.value.data : [],
+        shoppingLists: shoppingListsRes.status === 'fulfilled' ? shoppingListsRes.value.data : [],
+        nutritionalLogs: logsRes.status === 'fulfilled' ? logsRes.value.data : []
       });
       
     } catch (err) {
@@ -85,7 +95,7 @@ const Nutrition: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   const handleDataUpdate = () => {
     loadNutritionData();
@@ -233,6 +243,12 @@ const Nutrition: React.FC = () => {
                 </Tab>
                 <Tab>
                   <HStack spacing={2}>
+                    <Icon as={FiEdit3} />
+                    <Text>Daily Logging</Text>
+                  </HStack>
+                </Tab>
+                <Tab>
+                  <HStack spacing={2}>
                     <Icon as={FiBarChart} />
                     <Text>{t('nutritionalAnalysis')}</Text>
                   </HStack>
@@ -254,6 +270,10 @@ const Nutrition: React.FC = () => {
 
                 <TabPanel px={0} py={6}>
                   <ShoppingList />
+                </TabPanel>
+
+                <TabPanel px={0} py={6}>
+                  <DailyLogging />
                 </TabPanel>
 
                 <TabPanel px={0} py={6}>

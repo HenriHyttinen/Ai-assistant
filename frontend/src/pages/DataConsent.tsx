@@ -291,7 +291,7 @@ const DataConsent = () => {
     };
 
     loadConsentStatus();
-  }, [user]);
+  }, [user?.id]); // Use user.id instead of entire user object to prevent unnecessary re-renders
 
   const handleConsentChange = (key: keyof ConsentData, value: boolean) => {
     setConsentData(prev => ({
