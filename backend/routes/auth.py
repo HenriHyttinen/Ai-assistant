@@ -338,7 +338,6 @@ def oauth_login(
     db: Session = Depends(get_db)
 ):
     # Implement OAuth login logic here
-    # This is a placeholder that would be implemented with specific OAuth providers
     raise HTTPException(
         status_code=status.HTTP_501_NOT_IMPLEMENTED,
         detail="OAuth login not implemented yet"
@@ -778,28 +777,49 @@ def delete_account(
         user_id = current_user.id
         
         # Delete all related data in the correct order to avoid foreign key constraints
-        # 1. Delete metrics history (references health_profiles)
+        # 1. Delete shopping list items (references shopping_lists)
+        db.execute(text("DELETE FROM shopping_list_items WHERE shopping_list_id IN (SELECT id FROM shopping_lists WHERE user_id = :user_id)"), {"user_id": user_id})
+        
+        # 2. Delete shopping lists
+        db.execute(text("DELETE FROM shopping_lists WHERE user_id = :user_id"), {"user_id": user_id})
+        
+        # 3. Delete meal plan recipes (references meal_plan_meals)
+        db.execute(text("DELETE FROM meal_plan_recipes WHERE meal_plan_id IN (SELECT id FROM meal_plans WHERE user_id = :user_id)"), {"user_id": user_id})
+        
+        # 4. Delete meal plan meals (references meal_plans)
+        db.execute(text("DELETE FROM meal_plan_meals WHERE meal_plan_id IN (SELECT id FROM meal_plans WHERE user_id = :user_id)"), {"user_id": user_id})
+        
+        # 5. Delete meal plans
+        db.execute(text("DELETE FROM meal_plans WHERE user_id = :user_id"), {"user_id": user_id})
+        
+        # 6. Delete nutritional logs
+        db.execute(text("DELETE FROM nutritional_logs WHERE user_id = :user_id"), {"user_id": user_id})
+        
+        # 7. Delete user nutrition preferences
+        db.execute(text("DELETE FROM user_nutrition_preferences WHERE user_id = :user_id"), {"user_id": user_id})
+        
+        # 8. Delete metrics history (references health_profiles)
         db.execute(text("DELETE FROM metrics_history WHERE health_profile_id IN (SELECT id FROM health_profiles WHERE user_id = :user_id)"), {"user_id": user_id})
         
-        # 2. Delete health profiles
+        # 9. Delete health profiles
         db.execute(text("DELETE FROM health_profiles WHERE user_id = :user_id"), {"user_id": user_id})
         
-        # 3. Delete activity logs
+        # 10. Delete activity logs
         db.execute(text("DELETE FROM activity_logs WHERE user_id = :user_id"), {"user_id": user_id})
         
-        # 4. Delete goals
+        # 11. Delete goals
         db.execute(text("DELETE FROM goals WHERE user_id = :user_id"), {"user_id": user_id})
         
-        # 5. Delete user settings
+        # 12. Delete user settings
         db.execute(text("DELETE FROM user_settings WHERE user_id = :user_id"), {"user_id": user_id})
         
-        # 6. Delete data consent
+        # 13. Delete data consent
         db.execute(text("DELETE FROM data_consent WHERE user_id = :user_id"), {"user_id": user_id})
         
-        # 7. Delete user achievements
+        # 14. Delete user achievements
         db.execute(text("DELETE FROM user_achievements WHERE user_id = :user_id"), {"user_id": user_id})
         
-        # 8. Finally delete the user
+        # 15. Finally delete the user
         db.execute(text("DELETE FROM users WHERE id = :user_id"), {"user_id": user_id})
         
         db.commit()

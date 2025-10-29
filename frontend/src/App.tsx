@@ -1,5 +1,6 @@
 // @ts-nocheck
 import React from 'react';
+import './utils/consoleSuppression'; // Suppress non-critical console warnings
 import { ChakraProvider } from '@chakra-ui/react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { SupabaseAuthProvider } from './contexts/SupabaseAuthContext';
@@ -23,8 +24,11 @@ import VerifyEmail from './pages/VerifyEmail';
 import OAuthCallback from './pages/OAuthCallback';
 import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
-import MainLayout from './layouts/MainLayout';
+import ResponsiveLayout from './components/ResponsiveLayout';
 import ProtectedRoute from './components/ProtectedRoute';
+import OfflineIndicator from './components/OfflineIndicator';
+import PWAInstallPrompt from './components/PWAInstallPrompt';
+import { registerServiceWorker } from './utils/serviceWorker';
 
 const App = () => {
   // Suppress React DevTools message in development
@@ -38,11 +42,29 @@ const App = () => {
     };
   }
 
+  // Register service worker for offline functionality
+  React.useEffect(() => {
+    registerServiceWorker({
+      onUpdate: (registration) => {
+        console.log('New content available, please refresh');
+        // You could show a notification to the user here
+      },
+      onSuccess: (registration) => {
+        console.log('Service Worker registered successfully');
+      },
+      onOfflineReady: () => {
+        console.log('App is ready for offline use');
+      },
+    });
+  }, []);
+
   return (
     <ChakraProvider theme={theme}>
       <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <SupabaseAuthProvider>
           <AppProvider>
+            <OfflineIndicator showDetails={true} />
+            <PWAInstallPrompt />
             <Routes>
               <Route path="/login" element={<SupabaseLogin />} />
               <Route path="/register" element={<Register />} />
@@ -55,7 +77,7 @@ const App = () => {
                 path="/"
                 element={
                   <ProtectedRoute>
-                    <MainLayout />
+                    <ResponsiveLayout />
                   </ProtectedRoute>
                 }
               >

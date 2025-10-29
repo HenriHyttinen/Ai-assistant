@@ -8,7 +8,7 @@ import asyncio
 class RateLimiter:
     """Simple in-memory rate limiter for API protection."""
     
-    def __init__(self, max_requests: int = 10, time_window: int = 60):
+    def __init__(self, max_requests: int = 100, time_window: int = 60):
         """
         Initialize rate limiter.
         

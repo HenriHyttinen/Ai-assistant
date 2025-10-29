@@ -1,0 +1,61 @@
+# Git
+.git
+.gitignore
+
+# Documentation
+README.md
+*.md
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node modules (will be installed in container)
+frontend/node_modules
+frontend/dist
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+env
+venv
+.venv
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+*.log
+logs/
+
+# Environment files
+.env
+.env.local
+.env.production
+
+# Docker
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Testing
+coverage/
+.pytest_cache/
+.coverage
+
+# Temporary files
+tmp/
+temp/

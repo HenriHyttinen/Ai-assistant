@@ -26,9 +26,115 @@ import {
   ModalHeader,
   ModalBody,
   ModalCloseButton,
+  IconButton,
+  Input,
 } from '@chakra-ui/react';
-import { FiShoppingCart, FiPlus, FiTrash2, FiCheck, FiEye } from 'react-icons/fi';
+import { FiShoppingCart, FiPlus, FiTrash2, FiCheck, FiEye, FiEdit, FiSave, FiX } from 'react-icons/fi';
 import { t } from '../../utils/translations';
+
+// Shopping List Item Component
+interface ShoppingListItemProps {
+  item: any;
+  onTogglePurchased: (itemId: string) => void;
+  onRemove: (itemId: string) => void;
+  onUpdateQuantity: (itemId: string, quantity: number) => void;
+}
+
+const ShoppingListItem: React.FC<ShoppingListItemProps> = ({
+  item,
+  onTogglePurchased,
+  onRemove,
+  onUpdateQuantity
+}) => {
+  const [isEditingQuantity, setIsEditingQuantity] = useState(false);
+  const [editQuantity, setEditQuantity] = useState(item.quantity);
+
+  const handleSaveQuantity = () => {
+    if (editQuantity > 0 && editQuantity !== item.quantity) {
+      onUpdateQuantity(item.id, editQuantity);
+    }
+    setIsEditingQuantity(false);
+  };
+
+  const handleCancelEdit = () => {
+    setEditQuantity(item.quantity);
+    setIsEditingQuantity(false);
+  };
+
+  return (
+    <HStack justify="space-between" p={3} bg="gray.50" borderRadius="md" spacing={3}>
+      <HStack spacing={3} flex={1}>
+        <Checkbox 
+          isChecked={item.purchased || item.is_purchased} 
+          onChange={() => onTogglePurchased(item.id)}
+        />
+        <VStack align="start" spacing={0} flex={1}>
+          <Text fontWeight="medium">{item.name || item.ingredient_id}</Text>
+          <HStack spacing={2}>
+            <Badge size="sm" colorScheme="blue">{item.category}</Badge>
+            {item.notes && (
+              <Text fontSize="xs" color="gray.500" fontStyle="italic">
+                {item.notes}
+              </Text>
+            )}
+          </HStack>
+        </VStack>
+      </HStack>
+      
+      <HStack spacing={2}>
+        {isEditingQuantity ? (
+          <HStack spacing={1}>
+            <Input
+              size="sm"
+              width="60px"
+              type="number"
+              value={editQuantity}
+              onChange={(e) => setEditQuantity(parseFloat(e.target.value) || 0)}
+              min="0"
+              step="0.1"
+            />
+            <Text fontSize="sm" color="gray.600" minWidth="20px">
+              {item.unit}
+            </Text>
+            <IconButton
+              size="sm"
+              icon={<FiSave />}
+              onClick={handleSaveQuantity}
+              colorScheme="green"
+              variant="ghost"
+            />
+            <IconButton
+              size="sm"
+              icon={<FiX />}
+              onClick={handleCancelEdit}
+              colorScheme="red"
+              variant="ghost"
+            />
+          </HStack>
+        ) : (
+          <HStack spacing={2}>
+            <Text fontSize="sm" color="gray.600" minWidth="60px" textAlign="right">
+              {item.quantity} {item.unit}
+            </Text>
+            <IconButton
+              size="sm"
+              icon={<FiEdit />}
+              onClick={() => setIsEditingQuantity(true)}
+              variant="ghost"
+            />
+            <IconButton
+              size="sm"
+              icon={<FiTrash2 />}
+              onClick={() => onRemove(item.id)}
+              colorScheme="red"
+              variant="ghost"
+            />
+          </HStack>
+        )}
+      </HStack>
+    </HStack>
+  );
+};
 
 interface ShoppingListProps {
   shoppingLists?: any[];
@@ -184,14 +290,131 @@ const ShoppingList: React.FC<ShoppingListProps> = ({
     }
   };
 
-  const toggleItemPurchased = (itemId: string) => {
-    // This would update the item's purchased status
-    console.log('Toggle purchased for item:', itemId);
+  const toggleItemPurchased = async (itemId: string) => {
+    try {
+      // Get Supabase session token
+      const { supabase } = await import('../../lib/supabase');
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      const response = await fetch(`http://localhost:8000/nutrition/shopping-lists/items/${itemId}/purchased`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${session?.access_token || ''}`,
+        },
+      });
+
+      if (response.ok) {
+        // Update local state
+        setLists(prev => prev.map(list => ({
+          ...list,
+          items: list.items?.map((item: any) => 
+            item.id === itemId 
+              ? { ...item, purchased: !item.purchased }
+              : item
+          )
+        })));
+        
+        toast({
+          title: 'Item status updated!',
+          status: 'success',
+          duration: 2000,
+        });
+      } else {
+        throw new Error('Failed to update item status');
+      }
+    } catch (error) {
+      console.error('Error updating item status:', error);
+      toast({
+        title: 'Error updating item status',
+        description: 'Please try again later.',
+        status: 'error',
+        duration: 3000,
+      });
+    }
   };
 
-  const removeItem = (itemId: string) => {
-    // This would remove the item from the list
-    console.log('Remove item:', itemId);
+  const removeItem = async (itemId: string) => {
+    try {
+      // Get Supabase session token
+      const { supabase } = await import('../../lib/supabase');
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      const response = await fetch(`http://localhost:8000/nutrition/shopping-lists/items/${itemId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${session?.access_token || ''}`,
+        },
+      });
+
+      if (response.ok) {
+        // Update local state
+        setLists(prev => prev.map(list => ({
+          ...list,
+          items: list.items?.filter((item: any) => item.id !== itemId)
+        })));
+        
+        toast({
+          title: 'Item removed!',
+          status: 'success',
+          duration: 2000,
+        });
+      } else {
+        throw new Error('Failed to remove item');
+      }
+    } catch (error) {
+      console.error('Error removing item:', error);
+      toast({
+        title: 'Error removing item',
+        description: 'Please try again later.',
+        status: 'error',
+        duration: 3000,
+      });
+    }
+  };
+
+  const updateItemQuantity = async (itemId: string, newQuantity: number) => {
+    try {
+      // Get Supabase session token
+      const { supabase } = await import('../../lib/supabase');
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      const response = await fetch(`http://localhost:8000/nutrition/shopping-lists/items/${itemId}/quantity`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token || ''}`,
+        },
+        body: JSON.stringify({ new_quantity: newQuantity }),
+      });
+
+      if (response.ok) {
+        // Update local state
+        setLists(prev => prev.map(list => ({
+          ...list,
+          items: list.items?.map((item: any) => 
+            item.id === itemId 
+              ? { ...item, quantity: newQuantity }
+              : item
+          )
+        })));
+        
+        toast({
+          title: 'Quantity updated!',
+          status: 'success',
+          duration: 2000,
+        });
+      } else {
+        throw new Error('Failed to update quantity');
+      }
+    } catch (error) {
+      console.error('Error updating quantity:', error);
+      toast({
+        title: 'Error updating quantity',
+        description: 'Please try again later.',
+        status: 'error',
+        duration: 3000,
+      });
+    }
   };
 
   return (
@@ -345,17 +568,13 @@ const ShoppingList: React.FC<ShoppingListProps> = ({
                 <VStack spacing={3} align="stretch">
                   <Text fontWeight="semibold">Items:</Text>
                   {selectedList.items?.map((item: any) => (
-                    <HStack key={item.id} justify="space-between" p={2} bg="gray.50" borderRadius="md">
-                      <HStack>
-                        <Checkbox 
-                          isChecked={item.purchased} 
-                          onChange={() => toggleItemPurchased(item.id)}
-                        />
-                        <Text>{item.name}</Text>
-                        <Badge size="sm" colorScheme="blue">{item.category}</Badge>
-                      </HStack>
-                      <Text fontSize="sm" color="gray.600">{item.quantity}</Text>
-                    </HStack>
+                    <ShoppingListItem 
+                      key={item.id} 
+                      item={item} 
+                      onTogglePurchased={toggleItemPurchased}
+                      onRemove={removeItem}
+                      onUpdateQuantity={updateItemQuantity}
+                    />
                   )) || (
                     <Text color="gray.500" fontStyle="italic">No items in this list</Text>
                   )}

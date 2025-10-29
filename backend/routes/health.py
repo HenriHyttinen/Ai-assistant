@@ -132,7 +132,6 @@ def create_activity_log(
             from services.achievement_service import AchievementService
             achievement_service = AchievementService(db)
             new_achievements = achievement_service.check_and_award_achievements(current_user.id)
-            # Note: We could return new achievements in the response, but for now we'll just log them
             if new_achievements:
                 print(f"User {current_user.id} unlocked {len(new_achievements)} new achievements!")
         except Exception as e:
@@ -204,7 +203,6 @@ def get_my_health_analytics(
             detail="Health profile not found"
         )
     
-    # Get latest metrics
     latest_metrics = db.query(health.MetricsHistory)\
         .filter(health.MetricsHistory.health_profile_id == profile.id)\
         .order_by(health.MetricsHistory.recorded_at.desc())\
@@ -242,7 +240,6 @@ def get_my_health_analytics(
         db.commit()
         db.refresh(latest_metrics)
     
-    # Get metrics trends
     metrics_history = health.get_metrics_history(db, profile.id, days=30)
     
     # Filter out None values and create trend data with timestamps

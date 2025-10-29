@@ -50,6 +50,7 @@ const NutritionPreferences: React.FC<NutritionPreferencesProps> = ({
     carbs_target: 200,
     fats_target: 60,
     meals_per_day: 3,
+    snacks_per_day: 2,
     preferred_meal_times: {
       breakfast: '08:00',
       lunch: '12:30',
@@ -73,6 +74,7 @@ const NutritionPreferences: React.FC<NutritionPreferencesProps> = ({
         carbs_target: preferences.carbs_target || 200,
         fats_target: preferences.fats_target || 60,
         meals_per_day: preferences.meals_per_day || 3,
+        snacks_per_day: preferences.snacks_per_day || 2,
         preferred_meal_times: preferences.preferred_meal_times || {
           breakfast: '08:00',
           lunch: '12:30',
@@ -90,8 +92,8 @@ const NutritionPreferences: React.FC<NutritionPreferencesProps> = ({
   ];
 
   const allergyOptions = [
-    'nuts', 'peanuts', 'tree-nuts', 'dairy', 'eggs', 'soy', 'wheat', 'gluten',
-    'fish', 'shellfish', 'sesame', 'mustard', 'sulfites'
+    'dairy', 'eggs', 'gluten', 'wheat', 'nuts', 'tree-nuts', 'peanuts', 
+    'fish', 'shellfish', 'soy', 'sesame', 'mustard', 'sulfites', 'nightshades'
   ];
 
   const cuisineOptions = [
@@ -358,6 +360,21 @@ const NutritionPreferences: React.FC<NutritionPreferencesProps> = ({
                   <option value={4}>4 meals</option>
                   <option value={5}>5 meals</option>
                   <option value={6}>6 meals</option>
+                </Select>
+              </FormControl>
+
+              <FormControl>
+                <FormLabel>Snacks per Day</FormLabel>
+                <Select
+                  value={formData.snacks_per_day}
+                  onChange={(e) => handleInputChange('snacks_per_day', parseInt(e.target.value))}
+                >
+                  <option value={0}>No snacks</option>
+                  <option value={1}>1 snack</option>
+                  <option value={2}>2 snacks</option>
+                  <option value={3}>3 snacks</option>
+                  <option value={4}>4 snacks</option>
+                  <option value={5}>5 snacks</option>
                 </Select>
               </FormControl>
 

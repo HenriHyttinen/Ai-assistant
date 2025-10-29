@@ -27,6 +27,7 @@ import {
   Center,
   Divider,
   IconButton,
+  Icon,
   Menu,
   MenuButton,
   MenuList,
@@ -49,14 +50,21 @@ import {
   FiHeart,
   FiMoreVertical,
   FiEye,
-  FiPlus
+  FiPlus,
+  FiFilter
 } from 'react-icons/fi';
+import MicronutrientFilters from '../../components/nutrition/MicronutrientFilters';
+import RatingFilters from '../../components/recipe/RatingFilters';
+import StarRating from '../../components/recipe/StarRating';
+import recipeRatingService from '../../services/recipeRatingService';
+import AddToMealPlanModal from '../../components/nutrition/AddToMealPlanModal';
 
 interface Recipe {
   id: string;
   title: string;
   cuisine: string;
   meal_type: string;
+  servings: number;
   calories?: number;
   protein?: number;
   carbs?: number;
@@ -65,6 +73,18 @@ interface Recipe {
   calculated_protein?: number;
   calculated_carbs?: number;
   calculated_fats?: number;
+  // Per-serving nutrition (for daily logging)
+  per_serving_calories?: number;
+  per_serving_protein?: number;
+  per_serving_carbs?: number;
+  per_serving_fats?: number;
+  per_serving_sodium?: number;
+  // Total recipe nutrition (for full recipe display)
+  total_calories?: number;
+  total_protein?: number;
+  total_carbs?: number;
+  total_fats?: number;
+  total_sodium?: number;
   prep_time: number;
   cook_time: number;
   difficulty_level: 'easy' | 'medium' | 'hard';
@@ -91,8 +111,13 @@ const RecipeSearch: React.FC<RecipeSearchProps> = () => {
     mealType: '',
     difficulty: '',
     maxCalories: '',
-    dietaryTags: [] as string[],
     maxPrepTime: ''
+  });
+  const [micronutrientFilters, setMicronutrientFilters] = useState({
+    nutrients: [] as string[],
+    minValues: {} as Record<string, number>,
+    maxValues: {} as Record<string, number>,
+    categories: [] as string[]
   });
   const [sortBy, setSortBy] = useState('');
   const [sortOrder, setSortOrder] = useState('asc');
@@ -101,14 +126,54 @@ const RecipeSearch: React.FC<RecipeSearchProps> = () => {
   const [totalPages, setTotalPages] = useState(1);
   const [totalResults, setTotalResults] = useState(0);
   const [selectedRecipe, setSelectedRecipe] = useState<Recipe | null>(null);
+  const [userPreferences, setUserPreferences] = useState<any>(null);
   const { isOpen, onOpen, onClose } = useDisclosure();
+  
+  // Add to meal plan modal state
+  const [addToMealPlanRecipe, setAddToMealPlanRecipe] = useState<Recipe | null>(null);
+  const { isOpen: isAddToMealPlanOpen, onOpen: onAddToMealPlanOpen, onClose: onAddToMealPlanClose } = useDisclosure();
+  
+  // Rating-related state
+  const [ratingFilters, setRatingFilters] = useState({
+    minRating: 1,
+    maxRating: 5,
+    verifiedOnly: false,
+    wouldMakeAgain: null as boolean | null,
+    minReviews: 0
+  });
+  const [recipeStats, setRecipeStats] = useState<{ [key: string]: any }>({});
+  const [loadingStats, setLoadingStats] = useState<{ [key: string]: boolean }>({});
+  const [showRatingFilters, setShowRatingFilters] = useState(false);
 
   const cardBg = useColorModeValue('white', 'gray.800');
   const borderColor = useColorModeValue('gray.200', 'gray.600');
 
   useEffect(() => {
+    loadUserPreferences();
     loadRecipes();
   }, []);
+
+  const loadUserPreferences = async () => {
+    try {
+      const { supabase } = await import('../../lib/supabase');
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session?.access_token) {
+        return;
+      }
+      
+      const response = await fetch('http://localhost:8000/nutrition/preferences', {
+        headers: { Authorization: `Bearer ${session.access_token}` }
+      });
+      
+      if (response.ok) {
+        const preferences = await response.json();
+        setUserPreferences(preferences);
+      }
+    } catch (error) {
+      console.error('Error loading user preferences:', error);
+    }
+  };
 
   // Auto-search when sorting or pagination changes
   useEffect(() => {
@@ -116,6 +181,38 @@ const RecipeSearch: React.FC<RecipeSearchProps> = () => {
       loadRecipes();
     }
   }, [sortBy, sortOrder, currentPage, pageKey]);
+
+  // Rating functions
+  const loadRecipeStats = async (recipeId: string) => {
+    if (loadingStats[recipeId] || recipeStats[recipeId]) return;
+    
+    try {
+      setLoadingStats(prev => ({ ...prev, [recipeId]: true }));
+      const stats = await recipeRatingService.getRecipeStats(recipeId);
+      setRecipeStats(prev => ({ ...prev, [recipeId]: stats }));
+    } catch (error) {
+      console.error('Error loading recipe stats:', error);
+    } finally {
+      setLoadingStats(prev => ({ ...prev, [recipeId]: false }));
+    }
+  };
+
+  const handleRatingFilterChange = (filterType: string, value: any) => {
+    setRatingFilters(prev => ({
+      ...prev,
+      [filterType]: value
+    }));
+  };
+
+  const resetRatingFilters = () => {
+    setRatingFilters({
+      minRating: 1,
+      maxRating: 5,
+      verifiedOnly: false,
+      wouldMakeAgain: null,
+      minReviews: 0
+    });
+  };
 
   const loadRecipes = async () => {
     try {
@@ -140,12 +237,17 @@ const RecipeSearch: React.FC<RecipeSearchProps> = () => {
         meal_type: filters.mealType || undefined,
         difficulty_level: filters.difficulty || undefined,
         max_calories: filters.maxCalories ? parseInt(filters.maxCalories) : undefined,
-        dietary_tags: filters.dietaryTags.length > 0 ? filters.dietaryTags : undefined,
         max_prep_time: filters.maxPrepTime && filters.maxPrepTime !== '' ? parseInt(filters.maxPrepTime) : undefined,
         sort_by: sortBy || undefined,
         sort_order: sortOrder,
         limit: 20,
-        page: currentPage
+        page: currentPage,
+        // Include user preferences for automatic filtering
+        user_preferences: userPreferences ? {
+          dietary_preferences: userPreferences.dietary_preferences || [],
+          allergies: userPreferences.allergies || [],
+          disliked_ingredients: userPreferences.disliked_ingredients || []
+        } : undefined
       };
       
       const response = await fetch('http://localhost:8000/nutrition/recipes/search', {
@@ -227,12 +329,24 @@ const RecipeSearch: React.FC<RecipeSearchProps> = () => {
         meal_type: filters.mealType || undefined,
         difficulty_level: filters.difficulty || undefined,
         max_calories: filters.maxCalories ? parseInt(filters.maxCalories) : undefined,
-        dietary_tags: filters.dietaryTags.length > 0 ? filters.dietaryTags : undefined,
         max_prep_time: filters.maxPrepTime && filters.maxPrepTime !== '' ? parseInt(filters.maxPrepTime) : undefined,
         sort_by: sortBy || undefined,
         sort_order: sortOrder,
         limit: 20, // Increased default limit
-        page: 1 // Always start from page 1 when searching
+        page: 1, // Always start from page 1 when searching
+        // Micronutrient filters
+        micronutrient_filters: micronutrientFilters.nutrients.length > 0 ? {
+          nutrients: micronutrientFilters.nutrients,
+          min_values: micronutrientFilters.minValues,
+          max_values: micronutrientFilters.maxValues,
+          categories: micronutrientFilters.categories
+        } : undefined,
+        // Include user preferences for automatic filtering
+        user_preferences: userPreferences ? {
+          dietary_preferences: userPreferences.dietary_preferences || [],
+          allergies: userPreferences.allergies || [],
+          disliked_ingredients: userPreferences.disliked_ingredients || []
+        } : undefined
       };
       
       console.log('🔍 FRONTEND SENDING REQUEST:', searchRequest);
@@ -282,6 +396,22 @@ const RecipeSearch: React.FC<RecipeSearchProps> = () => {
   const handleRecipeView = (recipe: Recipe) => {
     setSelectedRecipe(recipe);
     onOpen();
+  };
+
+  const handleAddToMealPlan = (recipe: Recipe) => {
+    setAddToMealPlanRecipe(recipe);
+    onAddToMealPlanOpen();
+  };
+
+  const handleRecipeAdded = () => {
+    // Refresh the page or show success message
+    toast({
+      title: "Recipe Added!",
+      description: "Recipe has been added to your meal plan",
+      status: "success",
+      duration: 3000,
+      isClosable: true,
+    });
   };
 
   const getDifficultyColor = (difficulty: string) => {
@@ -368,7 +498,46 @@ const RecipeSearch: React.FC<RecipeSearchProps> = () => {
                 </datalist>
               </InputGroup>
 
-              {/* Filters */}
+              {/* Micronutrient Filters */}
+              <MicronutrientFilters 
+                onFiltersChange={setMicronutrientFilters}
+                initialFilters={micronutrientFilters}
+              />
+
+              {/* Rating Filters */}
+              <Box>
+                <HStack justify="space-between" mb={3}>
+                  <Text fontSize="md" fontWeight="semibold">
+                    Rating Filters
+                  </Text>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setShowRatingFilters(!showRatingFilters)}
+                    leftIcon={<Icon as={FiFilter} />}
+                  >
+                    {showRatingFilters ? 'Hide' : 'Show'} Rating Filters
+                  </Button>
+                </HStack>
+                
+                {showRatingFilters && (
+                  <RatingFilters
+                    minRating={ratingFilters.minRating}
+                    maxRating={ratingFilters.maxRating}
+                    verifiedOnly={ratingFilters.verifiedOnly}
+                    wouldMakeAgain={ratingFilters.wouldMakeAgain}
+                    minReviews={ratingFilters.minReviews}
+                    onMinRatingChange={(value) => handleRatingFilterChange('minRating', value)}
+                    onMaxRatingChange={(value) => handleRatingFilterChange('maxRating', value)}
+                    onVerifiedOnlyChange={(checked) => handleRatingFilterChange('verifiedOnly', checked)}
+                    onWouldMakeAgainChange={(value) => handleRatingFilterChange('wouldMakeAgain', value)}
+                    onMinReviewsChange={(value) => handleRatingFilterChange('minReviews', value)}
+                    onReset={resetRatingFilters}
+                  />
+                )}
+              </Box>
+
+              {/* Basic Filters */}
               <Grid templateColumns={{ base: '1fr', md: 'repeat(3, 1fr)' }} gap={4}>
                 <FormControl>
                   <FormLabel>{t('nutrition.cuisine', 'en')}</FormLabel>
@@ -382,6 +551,16 @@ const RecipeSearch: React.FC<RecipeSearchProps> = () => {
                     <option value="International">International</option>
                     <option value="Italian">Italian</option>
                     <option value="Mexican">Mexican</option>
+                    <option value="French">French</option>
+                    <option value="Chinese">Chinese</option>
+                    <option value="Thai">Thai</option>
+                    <option value="Japanese">Japanese</option>
+                    <option value="Korean">Korean</option>
+                    <option value="Indian">Indian</option>
+                    <option value="Greek">Greek</option>
+                    <option value="Spanish">Spanish</option>
+                    <option value="German">German</option>
+                    <option value="American">American</option>
                   </Select>
                 </FormControl>
 
@@ -432,20 +611,6 @@ const RecipeSearch: React.FC<RecipeSearchProps> = () => {
                   />
                 </FormControl>
 
-                <FormControl>
-                  <FormLabel>{t('nutrition.dietaryTags', 'en')}</FormLabel>
-                  <CheckboxGroup
-                    value={filters.dietaryTags}
-                    onChange={(values: any) => setFilters({...filters, dietaryTags: values as string[]})}
-                  >
-                    <Stack direction="row" wrap="wrap">
-                      <Checkbox value="vegetarian">{t('vegetarian')}</Checkbox>
-                      <Checkbox value="vegan">{t('vegan')}</Checkbox>
-                      <Checkbox value="gluten-free">{t('glutenFree')}</Checkbox>
-                      <Checkbox value="high-protein">High-protein</Checkbox>
-                    </Stack>
-                  </CheckboxGroup>
-                </FormControl>
               </Grid>
 
               <Button colorScheme="blue" onClick={handleSearch} isLoading={loading}>
@@ -524,7 +689,9 @@ const RecipeSearch: React.FC<RecipeSearchProps> = () => {
                     </Heading>
                     <HStack spacing={2}>
                       <Badge colorScheme="blue" size="sm">{recipe.cuisine}</Badge>
-                      <Badge colorScheme="purple" size="sm">{recipe.meal_type}</Badge>
+                      <Badge colorScheme="purple" size="sm">
+                        {recipe.meal_type.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                      </Badge>
                     </HStack>
                   </VStack>
                   {recipe.id && recipe.id.startsWith('recipe_') && (
@@ -545,7 +712,7 @@ const RecipeSearch: React.FC<RecipeSearchProps> = () => {
                       <MenuItem icon={<FiEye />} onClick={() => handleRecipeView(recipe)}>
                         {t('nutrition.viewRecipe', 'en')}
                       </MenuItem>
-                      <MenuItem icon={<FiPlus />}>
+                      <MenuItem icon={<FiPlus />} onClick={() => handleAddToMealPlan(recipe)}>
                         {t('nutrition.addToMealPlan', 'en')}
                       </MenuItem>
                       <MenuItem icon={<FiHeart />}>
@@ -558,14 +725,33 @@ const RecipeSearch: React.FC<RecipeSearchProps> = () => {
               <CardBody>
                 <VStack spacing={3} align="stretch">
                   {/* Nutritional Info */}
-                  <HStack justify="space-between" fontSize="sm">
-                    <Text>{recipe.calculated_calories || 0} {t('nutrition.calories', 'en')}</Text>
-                    <Text>{recipe.calculated_protein || 0}g {t('nutrition.protein', 'en')}</Text>
-                  </HStack>
-                  <HStack justify="space-between" fontSize="sm">
-                    <Text>{recipe.calculated_carbs || 0}g {t('nutrition.carbs', 'en')}</Text>
-                    <Text>{recipe.calculated_fats || 0}g {t('nutrition.fats', 'en')}</Text>
-                  </HStack>
+                  <VStack spacing={2} align="stretch">
+                    {/* Total Recipe Nutrition */}
+                    <Box>
+                      <Text fontSize="xs" color="gray.500" mb={1}>Total Recipe ({recipe.servings} servings)</Text>
+                      <HStack justify="space-between" fontSize="sm">
+                        <Text fontWeight="bold">{recipe.total_calories || recipe.calculated_calories || 0} {t('nutrition.calories', 'en')}</Text>
+                        <Text fontWeight="bold">{recipe.total_protein || recipe.calculated_protein || 0}g {t('nutrition.protein', 'en')}</Text>
+                      </HStack>
+                      <HStack justify="space-between" fontSize="sm">
+                        <Text>{recipe.total_carbs || recipe.calculated_carbs || 0}g {t('nutrition.carbs', 'en')}</Text>
+                        <Text>{recipe.total_fats || recipe.calculated_fats || 0}g {t('nutrition.fats', 'en')}</Text>
+                      </HStack>
+                    </Box>
+                    
+                    {/* Per-Serving Nutrition */}
+                    <Box>
+                      <Text fontSize="xs" color="gray.500" mb={1}>Per Serving</Text>
+                      <HStack justify="space-between" fontSize="sm" color="blue.600">
+                        <Text fontWeight="bold">{recipe.per_serving_calories || 0} {t('nutrition.calories', 'en')}</Text>
+                        <Text fontWeight="bold">{recipe.per_serving_protein || 0}g {t('nutrition.protein', 'en')}</Text>
+                      </HStack>
+                      <HStack justify="space-between" fontSize="sm" color="blue.600">
+                        <Text>{recipe.per_serving_carbs || 0}g {t('nutrition.carbs', 'en')}</Text>
+                        <Text>{recipe.per_serving_fats || 0}g {t('nutrition.fats', 'en')}</Text>
+                      </HStack>
+                    </Box>
+                  </VStack>
 
                   <Divider />
 
@@ -575,14 +761,47 @@ const RecipeSearch: React.FC<RecipeSearchProps> = () => {
                       <FiClock />
                       <Text>{recipe.prep_time} min</Text>
                     </HStack>
-                    <HStack>
-                      <FiStar />
-                      <Text>{recipe.rating}</Text>
-                    </HStack>
                     <Badge colorScheme={getDifficultyColor(recipe.difficulty_level)} size="sm">
                       {recipe.difficulty_level}
                     </Badge>
                   </HStack>
+
+                  {/* Rating Display */}
+                  <Box>
+                    {loadingStats[recipe.id] ? (
+                      <HStack spacing={2}>
+                        <Spinner size="sm" />
+                        <Text fontSize="sm" color="gray.500">Loading ratings...</Text>
+                      </HStack>
+                    ) : recipeStats[recipe.id] ? (
+                      <VStack spacing={2} align="stretch">
+                        <HStack justify="space-between">
+                          <StarRating
+                            rating={recipeStats[recipe.id].average_rating}
+                            size="sm"
+                            showNumber={true}
+                          />
+                          <Text fontSize="xs" color="gray.500">
+                            ({recipeStats[recipe.id].total_ratings} ratings)
+                          </Text>
+                        </HStack>
+                        {recipeStats[recipe.id].verified_cooks > 0 && (
+                          <Text fontSize="xs" color="blue.600">
+                            {recipeStats[recipe.id].verified_cooks} verified cooks
+                          </Text>
+                        )}
+                      </VStack>
+                    ) : (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => loadRecipeStats(recipe.id)}
+                        leftIcon={<Icon as={FiStar} />}
+                      >
+                        Load Ratings
+                      </Button>
+                    )}
+                  </Box>
 
                   {/* Dietary Tags */}
                   <HStack wrap="wrap" spacing={1}>
@@ -836,6 +1055,16 @@ const RecipeSearch: React.FC<RecipeSearchProps> = () => {
             </ModalFooter>
           </ModalContent>
         </Modal>
+
+        {/* Add to Meal Plan Modal */}
+        {addToMealPlanRecipe && (
+          <AddToMealPlanModal
+            isOpen={isAddToMealPlanOpen}
+            onClose={onAddToMealPlanClose}
+            recipe={addToMealPlanRecipe}
+            onRecipeAdded={handleRecipeAdded}
+          />
+        )}
       </VStack>
     </Box>
   );

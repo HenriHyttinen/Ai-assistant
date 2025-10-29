@@ -32,8 +32,11 @@ import {
   FiHeart,
   FiActivity,
   FiCoffee,
-  FiPieChart
+  FiPieChart,
+  FiZap
 } from 'react-icons/fi';
+import MicronutrientAnalysis from '../../components/nutrition/MicronutrientAnalysis';
+import MacronutrientVisualization from '../../components/nutrition/MacronutrientVisualization';
 
 interface NutritionalData {
   calories: number;
@@ -78,6 +81,7 @@ const NutritionDashboard: React.FC<NutritionDashboardProps> = ({ user = null }) 
     carbs: 250,
     fats: 65
   });
+  const [activeTab, setActiveTab] = useState<'overview' | 'micronutrients'>('overview');
 
   const cardBg = useColorModeValue('white', 'gray.800');
   const borderColor = useColorModeValue('gray.200', 'gray.600');
@@ -301,8 +305,31 @@ const NutritionDashboard: React.FC<NutritionDashboardProps> = ({ user = null }) 
           </Text>
         </Box>
 
-        {/* Quick Stats */}
-        <Grid templateColumns={{ base: '1fr', md: 'repeat(4, 1fr)' }} gap={4}>
+        {/* Navigation Tabs */}
+        <HStack spacing={4} mb={4}>
+          <Button
+            variant={activeTab === 'overview' ? 'solid' : 'outline'}
+            colorScheme="blue"
+            leftIcon={<FiPieChart />}
+            onClick={() => setActiveTab('overview')}
+          >
+            Overview
+          </Button>
+          <Button
+            variant={activeTab === 'micronutrients' ? 'solid' : 'outline'}
+            colorScheme="purple"
+            leftIcon={<FiZap />}
+            onClick={() => setActiveTab('micronutrients')}
+          >
+            Micronutrients
+          </Button>
+        </HStack>
+
+        {/* Content based on active tab */}
+        {activeTab === 'overview' ? (
+          <>
+            {/* Quick Stats */}
+            <Grid templateColumns={{ base: '1fr', md: 'repeat(4, 1fr)' }} gap={4}>
           <Card bg={cardBg} borderColor={borderColor}>
             <CardBody>
               <Stat>
@@ -375,12 +402,7 @@ const NutritionDashboard: React.FC<NutritionDashboardProps> = ({ user = null }) 
         {/* Today's Meal Plan */}
         <Card bg={cardBg} borderColor={borderColor}>
           <CardHeader>
-            <HStack justify="space-between">
-              <Heading size="md">{t('nutrition.todaysMeals', 'en')}</Heading>
-                <Button size="sm" colorScheme="blue" leftIcon={<FiCoffee />}>
-                  {t('nutrition.generateMealPlan', 'en')}
-                </Button>
-            </HStack>
+            <Heading size="md">{t('nutrition.todaysMeals', 'en')}</Heading>
           </CardHeader>
           <CardBody>
             {mealPlan ? (
@@ -494,6 +516,28 @@ const NutritionDashboard: React.FC<NutritionDashboardProps> = ({ user = null }) 
             </VStack>
           </CardBody>
         </Card>
+          </>
+        ) : (
+          <>
+            <MicronutrientAnalysis userId={user?.id} onUpdate={loadNutritionData} />
+            <MacronutrientVisualization
+              currentData={{
+                calories: nutritionalData?.calories || 0,
+                protein: nutritionalData?.protein || 0,
+                carbs: nutritionalData?.carbs || 0,
+                fats: nutritionalData?.fats || 0
+              }}
+              targets={{
+                calories: goals.calories,
+                protein: goals.protein,
+                carbs: goals.carbs,
+                fats: goals.fats
+              }}
+              dailyBreakdown={[]}
+              period="daily"
+            />
+          </>
+        )}
       </VStack>
     </Box>
   );

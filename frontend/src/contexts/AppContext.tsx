@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useRef, type ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useRef, useMemo, type ReactNode } from 'react';
 import { useSupabaseAuth } from './SupabaseAuthContext';
 import { settings } from '../services/api';
 
@@ -16,9 +16,13 @@ interface AppContextType {
   setLanguage: (language: Language) => void;
   setMeasurementSystem: (system: 'metric' | 'imperial') => void;
   loading: boolean;
+  user: any | null; // Allow user to be null
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
+
+// Export AppContext as a named export
+export { AppContext };
 
 interface AppProviderProps {
   children: ReactNode;
@@ -40,20 +44,35 @@ export function AppProvider({ children }: AppProviderProps) {
         settingsLoadedRef.current = false;
         return;
       }
-
-      // Prevent multiple calls - use user ID as part of the key
-      const currentUserId = user.id;
-      if (settingsLoadedRef.current === currentUserId) {
+      
+      // Only load settings if user is authenticated and we haven't loaded them yet
+      if (settingsLoadedRef.current === user.id) {
         return;
       }
 
-      settingsLoadedRef.current = currentUserId;
-      
       if (!user.id || !user.email) {
         console.log('User not fully authenticated, skipping settings API call');
         setLoading(false);
         return;
       }
+
+      // Double-check authentication with Supabase
+      try {
+        const { supabase } = await import('../lib/supabase');
+        const { data: { session } } = await supabase.auth.getSession();
+        
+        if (!session?.access_token) {
+          console.log('No valid session, skipping settings API call');
+          setLoading(false);
+          return;
+        }
+      } catch (error) {
+        console.log('Error checking session, skipping settings API call:', error);
+        setLoading(false);
+        return;
+      }
+
+      settingsLoadedRef.current = user.id;
       
       await new Promise(resolve => setTimeout(resolve, 100));
 
@@ -90,7 +109,7 @@ export function AppProvider({ children }: AppProviderProps) {
     };
 
     loadSettings();
-  }, [user?.id]); // Use user.id instead of entire user object to prevent unnecessary re-renders
+  }, [user?.id, user?.email]); // Use specific user properties to prevent unnecessary re-renders
 
   const handleSetLanguage = (newLanguage: Language) => {
     setLanguageState(newLanguage);
@@ -101,6 +120,16 @@ export function AppProvider({ children }: AppProviderProps) {
     setMeasurementSystemState(newSystem);
   };
 
+  // Memoize the user object to prevent unnecessary re-renders
+  const stableUser = useMemo(() => {
+    if (!user) return null;
+    return {
+      id: user.id,
+      email: user.email,
+      // Only include essential properties to prevent object reference changes
+    };
+  }, [user?.id, user?.email]);
+
   return (
     <AppContext.Provider
       value={{
@@ -109,6 +138,7 @@ export function AppProvider({ children }: AppProviderProps) {
         setLanguage: handleSetLanguage,
         setMeasurementSystem: handleSetMeasurementSystem,
         loading,
+        user: stableUser,
       }}
     >
       {children}

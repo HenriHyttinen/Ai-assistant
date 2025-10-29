@@ -45,7 +45,7 @@ print('Database setup complete!')
 "
 ```
 
-### Advanced Setup
+### Manual Setup
 
 For complete setup with all features:
 ```bash

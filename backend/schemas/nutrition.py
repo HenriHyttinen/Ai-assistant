@@ -1,6 +1,7 @@
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 from typing import List, Optional, Dict, Any
 from datetime import datetime, date
+from backend.constants.dietary import DIETARY_PREFERENCES, ALLERGIES_INTOLERANCES
 from enum import Enum
 
 # Enums for better type safety
@@ -74,19 +75,26 @@ class RecipeResponse(BaseModel):
     id: str
     title: str
     cuisine: str
-    meal_type: MealType
+    meal_type: str
     servings: int
     summary: Optional[str]
     prep_time: int
     cook_time: int
-    total_time: int
     difficulty_level: str
     dietary_tags: List[str]
     source: str
     image_url: Optional[str]
-    ingredients: List[Dict[str, Any]]
-    instructions: List[Dict[str, Any]]
-    nutrition: NutritionalInfo
+    # Calculated nutritional data
+    calculated_calories: Optional[float] = 0
+    calculated_protein: Optional[float] = 0
+    calculated_carbs: Optional[float] = 0
+    calculated_fats: Optional[float] = 0
+    calculated_fiber: Optional[float] = 0
+    calculated_sugar: Optional[float] = 0
+    calculated_sodium: Optional[float] = 0
+    # Recipe content
+    ingredients_list: Optional[List[str]] = []
+    instructions_list: Optional[List[str]] = []
     created_at: datetime
     updated_at: datetime
 
@@ -104,8 +112,44 @@ class UserNutritionPreferencesCreate(BaseModel):
     carbs_target: Optional[float] = Field(None, ge=0)
     fats_target: Optional[float] = Field(None, ge=0)
     meals_per_day: int = Field(3, ge=1, le=6)
+    snacks_per_day: int = Field(2, ge=0, le=5)  # Number of snacks per day
     preferred_meal_times: Optional[Dict[str, str]] = None
     timezone: str = Field("UTC", description="Timezone in ISO format")
+
+    @field_validator('dietary_preferences')
+    @classmethod
+    def validate_diets(cls, v: Optional[List[str]]):
+        if not v:
+            return []
+        invalid = [d for d in v if d not in DIETARY_PREFERENCES]
+        if invalid:
+            raise ValueError(f"Unsupported dietary preferences: {invalid}. Allowed: {DIETARY_PREFERENCES}")
+        return v
+
+    @field_validator('allergies')
+    @classmethod
+    def validate_allergies(cls, v: Optional[List[str]]):
+        if not v:
+            return []
+        invalid = [a for a in v if a not in ALLERGIES_INTOLERANCES]
+        if invalid:
+            raise ValueError(f"Unsupported allergies: {invalid}. Allowed: {ALLERGIES_INTOLERANCES}")
+        return v
+
+    @field_validator('preferred_meal_times')
+    @classmethod
+    def validate_meal_times(cls, v: Optional[Dict[str, str]]):
+        if not v:
+            return v
+        for k, iso in v.items():
+            if not isinstance(iso, str):
+                raise ValueError("preferred_meal_times values must be ISO 8601 strings")
+            try:
+                # Accept Z as UTC
+                datetime.fromisoformat(iso.replace('Z', '+00:00'))
+            except Exception:
+                raise ValueError(f"Invalid ISO 8601 time for '{k}': {iso}")
+        return v
 
 class UserNutritionPreferencesUpdate(BaseModel):
     dietary_preferences: Optional[List[str]] = None
@@ -117,8 +161,43 @@ class UserNutritionPreferencesUpdate(BaseModel):
     carbs_target: Optional[float] = Field(None, ge=0)
     fats_target: Optional[float] = Field(None, ge=0)
     meals_per_day: Optional[int] = Field(None, ge=1, le=6)
+    snacks_per_day: Optional[int] = Field(None, ge=0, le=5)
     preferred_meal_times: Optional[Dict[str, str]] = None
     timezone: Optional[str] = None
+
+    @field_validator('dietary_preferences')
+    @classmethod
+    def validate_diets_update(cls, v: Optional[List[str]]):
+        if v is None:
+            return v
+        invalid = [d for d in v if d not in DIETARY_PREFERENCES]
+        if invalid:
+            raise ValueError(f"Unsupported dietary preferences: {invalid}. Allowed: {DIETARY_PREFERENCES}")
+        return v
+
+    @field_validator('allergies')
+    @classmethod
+    def validate_allergies_update(cls, v: Optional[List[str]]):
+        if v is None:
+            return v
+        invalid = [a for a in v if a not in ALLERGIES_INTOLERANCES]
+        if invalid:
+            raise ValueError(f"Unsupported allergies: {invalid}. Allowed: {ALLERGIES_INTOLERANCES}")
+        return v
+
+    @field_validator('preferred_meal_times')
+    @classmethod
+    def validate_meal_times_update(cls, v: Optional[Dict[str, str]]):
+        if v is None:
+            return v
+        for k, iso in v.items():
+            if not isinstance(iso, str):
+                raise ValueError("preferred_meal_times values must be ISO 8601 strings")
+            try:
+                datetime.fromisoformat(iso.replace('Z', '+00:00'))
+            except Exception:
+                raise ValueError(f"Invalid ISO 8601 time for '{k}': {iso}")
+        return v
 
 class UserNutritionPreferencesResponse(BaseModel):
     id: int
@@ -132,6 +211,7 @@ class UserNutritionPreferencesResponse(BaseModel):
     carbs_target: Optional[float]
     fats_target: Optional[float]
     meals_per_day: int
+    snacks_per_day: int
     preferred_meal_times: Dict[str, str]
     timezone: str
     created_at: datetime
@@ -147,12 +227,53 @@ class MealPlanRequest(BaseModel):
     end_date: Optional[date] = None
     preferences: Optional[UserNutritionPreferencesCreate] = None
 
+    @field_validator('end_date')
+    @classmethod
+    def validate_dates(cls, v, info):
+        start = info.data.get('start_date')
+        if v is not None and start is not None and v < start:
+            raise ValueError('end_date must be on or after start_date')
+        return v
+
 class MealPlanMealCreate(BaseModel):
     meal_date: date
     meal_type: MealType
     meal_time: Optional[datetime] = None
     meal_name: str
     recipes: List[Dict[str, Any]]  # Recipe IDs and servings
+
+    @field_validator('meal_time', mode='before')
+    @classmethod
+    def parse_meal_time(cls, v):
+        if v is None:
+            return v
+        if isinstance(v, str):
+            try:
+                dt = datetime.fromisoformat(v.replace('Z', '+00:00'))
+                return dt
+            except Exception:
+                raise ValueError('meal_time must be ISO 8601')
+        return v
+
+class MealPlanMealResponse(BaseModel):
+    id: int
+    meal_plan_id: str
+    meal_date: date
+    meal_type: MealType
+    meal_time: Optional[datetime] = None
+    meal_name: str
+    recipes: List[Dict[str, Any]]  # Recipe details with servings
+    total_calories: Optional[float] = None
+    total_protein: Optional[float] = None
+    total_carbs: Optional[float] = None
+    total_fat: Optional[float] = None
+    total_fiber: Optional[float] = None
+    total_sodium: Optional[float] = None
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
 
 class MealPlanCreate(BaseModel):
     plan_type: PlanType
@@ -232,8 +353,8 @@ class ShoppingListResponse(BaseModel):
     meal_plan_id: Optional[str]
     is_active: bool
     items: List[Dict[str, Any]]
-    total_items: int
-    purchased_items: int
+    total_items: int = Field(..., description="Total number of items in the list")
+    purchased_items: int = Field(..., description="Number of purchased items")
     created_at: datetime
     updated_at: datetime
 
@@ -248,6 +369,17 @@ class MealPlanGenerationRequest(BaseModel):
     preferences_override: Optional[Dict[str, Any]] = None
     generation_strategy: Optional[str] = "balanced"  # balanced, high_protein, low_carb, etc.
 
+class MicronutrientFilter(BaseModel):
+    nutrients: List[str] = []
+    min_values: Dict[str, float] = {}
+    max_values: Dict[str, float] = {}
+    categories: List[str] = []
+
+class UserPreferences(BaseModel):
+    dietary_preferences: Optional[List[str]] = []
+    allergies: Optional[List[str]] = []
+    disliked_ingredients: Optional[List[str]] = []
+
 class RecipeSearchRequest(BaseModel):
     query: Optional[str] = None
     cuisine: Optional[str] = None
@@ -257,7 +389,21 @@ class RecipeSearchRequest(BaseModel):
     min_protein: Optional[float] = None
     max_prep_time: Optional[int] = None
     difficulty_level: Optional[DifficultyLevel] = None
-    limit: int = Field(20, ge=1, le=100)
+    # Micronutrient filters
+    min_vitamin_d: Optional[float] = None
+    min_vitamin_c: Optional[float] = None
+    min_iron: Optional[float] = None
+    min_calcium: Optional[float] = None
+    min_magnesium: Optional[float] = None
+    min_zinc: Optional[float] = None
+    micronutrient_filters: Optional[MicronutrientFilter] = None
+    # User preferences for automatic filtering
+    user_preferences: Optional[UserPreferences] = None
+    # Sorting and pagination
+    sort_by: Optional[str] = Field(None, description="Sort by: title, calories, protein, prep_time, difficulty, id")
+    sort_order: Optional[str] = Field("asc", description="Sort order: asc or desc")
+    limit: int = Field(20, ge=1, le=500)
+    page: int = Field(1, ge=1, description="Page number for pagination")
 
 class NutritionalAnalysisRequest(BaseModel):
     start_date: date

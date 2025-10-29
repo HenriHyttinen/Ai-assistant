@@ -23,11 +23,12 @@ class UserNutritionPreferences(Base, TimestampMixin):
     
     # Meal preferences
     meals_per_day = Column(Integer, nullable=False, default=3)
+    snacks_per_day = Column(Integer, nullable=False, default=2)  # Number of snacks per day
     preferred_meal_times = Column(JSON, nullable=True)  # {"breakfast": "08:00", "lunch": "12:30", "dinner": "19:00"}
     timezone = Column(String, nullable=False, default="UTC")
     
     # Relationships
-    user = relationship("User", back_populates="nutrition_preferences")
+    # user = relationship("User", back_populates="nutrition_preferences")
 
 class MealPlan(Base, TimestampMixin):
     __tablename__ = "meal_plans"
@@ -46,9 +47,21 @@ class MealPlan(Base, TimestampMixin):
     generation_parameters = Column(JSON, nullable=True)
     
     # Relationships
-    user = relationship("User", back_populates="meal_plans")
+    # user = relationship("User", back_populates="meal_plans")
     meals = relationship("MealPlanMeal", back_populates="meal_plan", cascade="all, delete-orphan")
-    recipes = relationship("MealPlanRecipe", back_populates="meal_plan", cascade="all, delete-orphan")
+    # recipes = relationship("MealPlanRecipe", back_populates="meal_plan", cascade="all, delete-orphan")
+
+class MealPlanVersion(Base, TimestampMixin):
+    __tablename__ = "meal_plan_versions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    meal_plan_id = Column(String, ForeignKey("meal_plans.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    version_label = Column(String, nullable=False)
+    snapshot = Column(JSON, nullable=False)  # Full meal plan snapshot including meals and recipes
+    is_restorable = Column(Boolean, default=True)
+
+    meal_plan = relationship("MealPlan")
 
 class MealPlanMeal(Base):
     __tablename__ = "meal_plan_meals"
@@ -66,9 +79,13 @@ class MealPlanMeal(Base):
     carbs = Column(Float, nullable=False, default=0.0)
     fats = Column(Float, nullable=False, default=0.0)
     
+    # Detailed recipe information
+    recipe_details = Column(JSON, nullable=True)  # Store full recipe details as JSON
+    cuisine = Column(String, nullable=True)  # Store cuisine type for easy access
+    
     # Relationships
     meal_plan = relationship("MealPlan", back_populates="meals")
-    recipes = relationship("MealPlanRecipe", back_populates="meal", cascade="all, delete-orphan")
+    # recipes = relationship("MealPlanRecipe", back_populates="meal", cascade="all, delete-orphan")
 
 class MealPlanRecipe(Base):
     __tablename__ = "meal_plan_recipes"
@@ -81,9 +98,9 @@ class MealPlanRecipe(Base):
     is_alternative = Column(Boolean, default=False)  # For alternative meal options
     
     # Relationships
-    meal_plan = relationship("MealPlan", back_populates="recipes")
-    meal = relationship("MealPlanMeal", back_populates="recipes")
-    recipe = relationship("Recipe", back_populates="meal_plans")
+    # meal_plan = relationship("MealPlan", back_populates="recipes")
+    # meal = relationship("MealPlanMeal", back_populates="recipes")
+    # recipe = relationship("Recipe", back_populates="meal_plans")
 
 class NutritionalLog(Base, TimestampMixin):
     __tablename__ = "nutritional_logs"
@@ -102,14 +119,29 @@ class NutritionalLog(Base, TimestampMixin):
     sugar = Column(Float, nullable=False, default=0.0)
     sodium = Column(Float, nullable=False, default=0.0)
     
-    # Micronutrients (bonus feature)
-    vitamin_d = Column(Float, nullable=True)
-    vitamin_b12 = Column(Float, nullable=True)
-    iron = Column(Float, nullable=True)
-    calcium = Column(Float, nullable=True)
+    # Micronutrients (comprehensive tracking)
+    vitamin_d = Column(Float, nullable=True)  # IU
+    vitamin_b12 = Column(Float, nullable=True)  # mcg
+    iron = Column(Float, nullable=True)  # mg
+    calcium = Column(Float, nullable=True)  # mg
+    vitamin_c = Column(Float, nullable=True)  # mg
+    vitamin_a = Column(Float, nullable=True)  # IU
+    vitamin_e = Column(Float, nullable=True)  # mg
+    vitamin_k = Column(Float, nullable=True)  # mcg
+    thiamine = Column(Float, nullable=True)  # mg (B1)
+    riboflavin = Column(Float, nullable=True)  # mg (B2)
+    niacin = Column(Float, nullable=True)  # mg (B3)
+    folate = Column(Float, nullable=True)  # mcg (B9)
+    magnesium = Column(Float, nullable=True)  # mg
+    zinc = Column(Float, nullable=True)  # mg
+    selenium = Column(Float, nullable=True)  # mcg
+    potassium = Column(Float, nullable=True)  # mg
+    phosphorus = Column(Float, nullable=True)  # mg
+    omega_3 = Column(Float, nullable=True)  # g
+    omega_6 = Column(Float, nullable=True)  # g
     
     # Relationships
-    user = relationship("User", back_populates="nutritional_logs")
+    # user = relationship("User", back_populates="nutritional_logs")
 
 class ShoppingList(Base, TimestampMixin):
     __tablename__ = "shopping_lists"
@@ -121,7 +153,7 @@ class ShoppingList(Base, TimestampMixin):
     is_active = Column(Boolean, default=True)
     
     # Relationships
-    user = relationship("User", back_populates="shopping_lists")
+    # user = relationship("User", back_populates="shopping_lists")
     meal_plan = relationship("MealPlan")
     items = relationship("ShoppingListItem", back_populates="shopping_list", cascade="all, delete-orphan")
 
@@ -139,4 +171,4 @@ class ShoppingListItem(Base):
     
     # Relationships
     shopping_list = relationship("ShoppingList", back_populates="items")
-    ingredient = relationship("Ingredient")
+    # ingredient = relationship("Ingredient")

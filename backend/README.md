@@ -1,6 +1,6 @@
 # Numbers Don't Lie - Backend API
 
-A robust FastAPI backend service powering the Numbers Don't Lie wellness platform. Provides comprehensive RESTful APIs for health data management, user authentication, and intelligent analytics.
+A FastAPI backend service powering the Numbers Don't Lie wellness platform. Provides RESTful APIs for health data management, user authentication, and analytics.
 
 ## Core Features
 

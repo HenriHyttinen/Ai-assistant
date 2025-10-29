@@ -2,6 +2,7 @@ from typing import Dict, Any, List
 import os
 import re
 from dotenv import load_dotenv
+from services.ai_recovery_service import execute_with_recovery
 
 load_dotenv()
 
@@ -298,7 +299,7 @@ def generate_health_insights(health_data: Dict[str, Any], user_settings: Dict[st
     # Check if OpenAI client is available
     openai_client = get_openai_client()
     if not openai_client:
-        print("OpenAI API key not available, using mock insights")
+        print("API key not available, using mock insights")
         fitness_goal = current_state.get('fitness_goal', 'general_fitness')
         return generate_mock_insights(language, fitness_goal)
     
@@ -332,9 +333,36 @@ def generate_health_insights(health_data: Dict[str, Any], user_settings: Dict[st
         
     except Exception as e:
         # If OpenAI API fails (quota exceeded, network issues, etc.), fall back to mock insights
-        print(f"OpenAI API error: {e}")
+        print(f"API error: {e}")
         print("Falling back to mock insights...")
         fitness_goal = current_state.get('fitness_goal', 'general_fitness')
+        return generate_mock_insights(language, fitness_goal)
+
+async def generate_health_insights_with_recovery(health_data: Dict[str, Any], user_settings: Dict[str, Any] = None, user_goals: List[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """
+    Generate health insights with comprehensive recovery mechanisms
+    """
+    request_data = {
+        "health_data": health_data,
+        "user_settings": user_settings,
+        "user_goals": user_goals
+    }
+    
+    try:
+        return await execute_with_recovery(
+            generate_health_insights,
+            "health_insights",
+            request_data,
+            cache_ttl=1200,  # Cache for 20 minutes
+            health_data=health_data,
+            user_settings=user_settings,
+            user_goals=user_goals
+        )
+    except Exception as e:
+        print(f"All recovery mechanisms failed for health insights: {str(e)}")
+        # Final fallback
+        language = user_settings.get('language', 'en') if user_settings else 'en'
+        fitness_goal = health_data.get('fitness_goal', 'general_fitness')
         return generate_mock_insights(language, fitness_goal)
 
 def generate_weekly_summary(health_data: Dict[str, Any], user_settings: Dict[str, Any] = None) -> Dict[str, Any]:

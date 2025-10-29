@@ -48,5 +48,5 @@ class HealthProfile(Base, TimestampMixin):
     squat_count = Column(Integer, nullable=True)  # Number of squats can do
 
     # Relationships
-    user = relationship("User", back_populates="health_profile")
+    # user = relationship("User", back_populates="health_profile")
     metrics_history = relationship("MetricsHistory", back_populates="health_profile") 

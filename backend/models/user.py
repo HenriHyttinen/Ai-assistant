@@ -19,16 +19,10 @@ class User(Base, TimestampMixin):
     oauth_id = Column(String, nullable=True)
     profile_picture = Column(String, nullable=True)
 
-    # Relationships - using string references to avoid circular imports
-    health_profile = relationship("HealthProfile", back_populates="user", uselist=False)
-    activity_logs = relationship("ActivityLog", back_populates="user")
-    goals = relationship("Goal", back_populates="user")
-    settings = relationship("UserSettings", back_populates="user", uselist=False)
-    consent = relationship("DataConsent", back_populates="user", uselist=False)
-    achievements = relationship("UserAchievement", back_populates="user")
+    # Relationships - basic ones needed for authentication
+    # Temporarily commented out to fix SQLAlchemy relationship issues
+    # recipe_ratings = relationship("RecipeRating", back_populates="user", lazy="select")
+    # recipe_reviews = relationship("RecipeReview", back_populates="user", lazy="select")
+    # review_helpful_votes = relationship("ReviewHelpful", back_populates="user", lazy="select")
     
-    # Nutrition-related relationships
-    nutrition_preferences = relationship("UserNutritionPreferences", back_populates="user", uselist=False)
-    meal_plans = relationship("MealPlan", back_populates="user")
-    nutritional_logs = relationship("NutritionalLog", back_populates="user")
-    shopping_lists = relationship("ShoppingList", back_populates="user") 
+    # Other relationships will be added as needed 

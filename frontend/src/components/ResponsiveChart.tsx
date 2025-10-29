@@ -49,8 +49,8 @@ const ResponsiveChart: React.FC<ResponsiveChartProps> = ({
   });
 
   return (
-    <Box width="100%" height={chartHeight}>
-      <ResponsiveContainer width="100%" height="100%">
+    <Box width="100%" height={chartHeight} minWidth="300px">
+      <ResponsiveContainer width="100%" height="100%" minWidth={300} minHeight={200}>
         <LineChart 
           data={data} 
           margin={margin}

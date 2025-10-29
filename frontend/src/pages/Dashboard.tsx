@@ -21,6 +21,11 @@ import {
   Button,
   Icon,
   useDisclosure,
+  Tabs,
+  TabList,
+  TabPanels,
+  Tab,
+  TabPanel,
 } from '@chakra-ui/react';
 import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
@@ -67,7 +72,7 @@ interface AIInsights {
 }
 
 const Dashboard = () => {
-  const { measurementSystem, language } = useApp();
+  const { measurementSystem, language, user } = useApp();
 
   // Helper function to format duration in hours and minutes
   const formatDuration = (minutes: number): string => {
@@ -87,9 +92,12 @@ const Dashboard = () => {
   const [analyticsData, setAnalyticsData] = useState<HealthAnalytics | null>(null);
   const [profileData, setProfileData] = useState<HealthProfile | null>(null);
   const [aiInsights, setAiInsights] = useState<AIInsights | null>(null);
+  const [nutritionalInsights, setNutritionalInsights] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [needsHealthProfile, setNeedsHealthProfile] = useState(false);
+  const [chartsReady, setChartsReady] = useState(false);
+  const [aiRequestCount, setAiRequestCount] = useState(0);
 
   const fetchData = useCallback(async () => {
     try {
@@ -97,14 +105,27 @@ const Dashboard = () => {
       setError(null);
       setNeedsHealthProfile(false);
       
-      console.log('Health profile API call re-enabled');
+      // Check if user is fully authenticated before making API calls
+      if (!user || !user.id || !user.email) {
+        console.log('User not fully authenticated, skipping dashboard API calls');
+        setLoading(false);
+        return;
+      }
+      
+      console.log('Starting dashboard data fetch...');
       
       // First, try to fetch health profile
       let profileResponse;
       try {
-        profileResponse = await healthProfile.getProfile();
+        console.log('Fetching health profile...');
+        profileResponse = await Promise.race([
+          healthProfile.getProfile(),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Health profile fetch timed out')), 12000))
+        ]);
         setProfileData(profileResponse.data);
+        console.log('Health profile fetched successfully');
       } catch (profileError: any) {
+        console.error('Health profile fetch error:', profileError);
         if (profileError?.response?.status === 404) {
           // User doesn't have a health profile yet
           setNeedsHealthProfile(true);
@@ -114,76 +135,145 @@ const Dashboard = () => {
         throw profileError;
       }
         
-        /*
-        // First, try to fetch health profile
-        let profileResponse;
-        try {
-          profileResponse = await healthProfile.getProfile();
-          setProfileData(profileResponse.data);
-        } catch (profileError: any) {
-          if (profileError?.response?.status === 404) {
-            // User doesn't have a health profile yet
+        console.log('Fetching analytics and insights in parallel...');
+        
+        // Fetch analytics and insights in parallel for better performance
+        const analyticsWithRetry = async () => {
+          try {
+            return await Promise.race([
+              analytics.getAnalytics(),
+              new Promise((_, reject) => 
+                setTimeout(() => reject(new Error('Analytics timeout')), 15000)
+              )
+            ]);
+          } catch (err: any) {
+            // One quick retry with shorter timeout
+            if (err?.message === 'Analytics timeout' || err?.code === 'ECONNABORTED') {
+              console.warn('Analytics timeout, retrying once...');
+              try {
+                return await Promise.race([
+                  analytics.getAnalytics(),
+                  new Promise((_, reject) => 
+                    setTimeout(() => reject(new Error('Analytics timeout (retry)')), 5000)
+                  )
+                ]);
+              } catch (retryErr) {
+                throw retryErr;
+              }
+            }
+            throw err;
+          }
+        };
+
+        const [analyticsResult, insightsResult] = await Promise.allSettled([
+          analyticsWithRetry().catch((error: any) => {
+            console.warn('Analytics fetch warning:', error?.message || error);
+            if (error?.response?.status === 404) {
+              throw new Error('Analytics not found - profile incomplete');
+            }
+            throw error;
+          }),
+          Promise.race([
+            healthProfile.getInsights(),
+            new Promise((_, reject) => 
+              setTimeout(() => reject(new Error('Insights timeout')), 12000)
+            )
+          ]).catch((error: any) => {
+            console.warn('Insights fetch warning:', error?.message || error);
+            // Return fallback insights instead of throwing
+            return {
+              data: {
+                insights: [
+                  "Welcome to your health journey! Start by logging your weight and activities.",
+                  "Set up your health profile to get personalized insights.",
+                  "Track your daily activities to see your progress over time.",
+                  "✅ You're taking the first step towards better health!",
+                  "💡 Consider setting specific, achievable health goals"
+                ],
+                metrics: {
+                  bmi: 0,
+                  bmi_category: "Unknown",
+                  wellness_score: 0
+                }
+              }
+            };
+          })
+        ]);
+        
+        // Handle analytics result
+        if (analyticsResult.status === 'fulfilled') {
+          setAnalyticsData(analyticsResult.value.data);
+          console.log('Analytics data fetched successfully');
+        } else {
+          console.error('Analytics failed:', analyticsResult.reason);
+          if (analyticsResult.reason.message === 'Analytics not found - profile incomplete') {
             setNeedsHealthProfile(true);
             setLoading(false);
             return;
           }
-          throw profileError;
-        }
-        */
-        
-        console.log('Analytics API call re-enabled');
-        
-        // If we have a profile, fetch analytics data
-        try {
-          const analyticsResponse = await analytics.getAnalytics();
-          setAnalyticsData(analyticsResponse.data);
-        } catch (analyticsError: any) {
-          if (analyticsError?.response?.status === 404) {
-            // Analytics not found, likely because profile is incomplete
-            setNeedsHealthProfile(true);
-            setLoading(false);
-            return;
-          }
-          throw analyticsError;
         }
         
-        console.log('AI insights API call re-enabled');
-        
-        // Fetch AI insights
-        try {
-          const insightsResponse = await healthProfile.getInsights();
+        // Handle insights result
+        if (insightsResult.status === 'fulfilled') {
+          const insightsResponse = insightsResult.value;
           if (insightsResponse && insightsResponse.data && insightsResponse.data.insights) {
             setAiInsights(insightsResponse.data);
+            console.log('AI insights fetched successfully');
           }
-        } catch (insightsError) {
-          console.error('Failed to refresh insights:', insightsError);
-          // Set fallback insights for development
-          setAiInsights({
-            insights: [
-              "Welcome to your health journey! Start by logging your weight and activities.",
-              "Set up your health profile to get personalized insights.",
-              "Track your daily activities to see your progress over time.",
-              "✅ You're taking the first step towards better health!",
-              "💡 Consider setting specific, achievable health goals"
-            ],
-            metrics: {
-              bmi: 0,
-              bmi_category: "Unknown",
-              wellness_score: 0
-            }
-          });
+        } else {
+          console.error('Insights failed:', insightsResult.reason);
         }
+
+        // Fetch nutritional insights asynchronously (non-blocking) with delay and concurrency limit
+        setTimeout(() => {
+          // Limit concurrent AI requests to prevent overwhelming the backend
+          if (aiRequestCount >= 2) {
+            console.log('AI request limit reached, skipping nutritional insights');
+            return;
+          }
+          
+          setAiRequestCount(prev => prev + 1);
+          
+          import('../services/nutritionAnalyticsService').then(({ default: nutritionAnalyticsService }) => {
+            Promise.race([
+              nutritionAnalyticsService.getComprehensiveAnalysis('2024-01-01', '2024-12-31', 'daily'),
+              new Promise((_, reject) => setTimeout(() => reject(new Error('Nutritional insights timeout')), 15000))
+            ])
+              .then(nutritionalData => {
+                setNutritionalInsights(nutritionalData);
+                setAiRequestCount(prev => Math.max(0, prev - 1)); // Decrement counter
+              })
+              .catch(nutritionalError => {
+                console.warn('Failed to load nutritional insights:', nutritionalError);
+                setNutritionalInsights(null);
+                setAiRequestCount(prev => Math.max(0, prev - 1)); // Decrement counter
+              });
+          }).catch(error => {
+            console.warn('Failed to import nutrition analytics service:', error);
+            setAiRequestCount(prev => Math.max(0, prev - 1)); // Decrement counter
+          });
+        }, 2000); // Delay by 2 seconds to not overwhelm the backend
     } catch (err) {
       console.error('Error fetching dashboard data:', err);
       setError('Failed to load dashboard data');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [user]);
 
   useEffect(() => {
     fetchData();
-  }, [fetchData]);
+  }, [user]);
+
+  // allow layout to settle to avoid 0x0 chart warnings
+  useEffect(() => {
+    if (!loading && !error) {
+      const id = setTimeout(() => setChartsReady(true), 150);
+      return () => clearTimeout(id);
+    } else {
+      setChartsReady(false);
+    }
+  }, [loading, error]);
 
 
   // Listen for profile updates from other pages
@@ -342,14 +432,18 @@ const Dashboard = () => {
 
       <Grid templateColumns={{ base: '1fr', lg: '2fr 1fr' }} gap={6}>
         <GridItem>
-          <WeightProgressCard
-            currentWeight={profileData?.weight || 0}
-            targetWeight={profileData?.target_weight || 0}
-            weightTrend={analyticsData?.weight_trend || []}
-            weightTrendTimestamps={analyticsData?.weight_trend_timestamps || []}
-            measurementSystem={measurementSystem}
-            fitnessGoal={profileData?.fitness_goal}
-          />
+          {chartsReady ? (
+            <WeightProgressCard
+              currentWeight={profileData?.weight || 0}
+              targetWeight={profileData?.target_weight || 0}
+              weightTrend={analyticsData?.weight_trend || []}
+              weightTrendTimestamps={analyticsData?.weight_trend_timestamps || []}
+              measurementSystem={measurementSystem}
+              fitnessGoal={profileData?.fitness_goal}
+            />
+          ) : (
+            <Card><CardBody><Spinner size="md" color="blue.500" /></CardBody></Card>
+          )}
         </GridItem>
 
         <GridItem>
@@ -386,9 +480,9 @@ const Dashboard = () => {
         </GridItem>
       </Grid>
 
-      {/* AI Insights */}
+      {/* AI Insights - Grouped Health and Nutritional Insights */}
       <Card mt={6} bg="rgba(255, 255, 255, 0.95)" backdropFilter="blur(10px)" border="1px solid rgba(255, 255, 255, 0.2)" boxShadow="0 8px 32px rgba(0, 0, 0, 0.1)">
-              <CardHeader>
+        <CardHeader>
           <Heading size="md">{t('personalizedHealthInsights', language)}</Heading>
           {/* Cache Status Indicator */}
           {aiInsights && (
@@ -419,21 +513,90 @@ const Dashboard = () => {
               )}
             </Box>
           )}
-              </CardHeader>
-              <CardBody>
-          <VStack spacing={4} align="stretch">
-            {aiInsights?.insights?.map((insight, index) => (
-              <Box key={index} p={4} bg="blue.50" borderRadius="md" border="1px" borderColor="blue.200">
-                <Text color="blue.800">{insight}</Text>
+        </CardHeader>
+        <CardBody>
+          <Tabs variant="enclosed" colorScheme="blue">
+            <TabList>
+              <Tab>🏃‍♂️ Health Insights</Tab>
+              <Tab>🥗 Nutritional Insights</Tab>
+            </TabList>
+
+            <TabPanels>
+              {/* Health Insights Tab */}
+              <TabPanel px={0}>
+                <VStack spacing={4} align="stretch">
+                  {aiInsights?.insights?.map((insight, index) => (
+                    <Box key={index} p={4} bg="blue.50" borderRadius="md" border="1px" borderColor="blue.200">
+                      <Text color="blue.800">{insight}</Text>
                     </Box>
-            )) || (
-              <Box p={4} bg="blue.50" borderRadius="md" border="1px" borderColor="blue.200">
-                <Text color="blue.800">Welcome to your health journey! Start by logging your weight and activities.</Text>
+                  )) || (
+                    <Box p={4} bg="blue.50" borderRadius="md" border="1px" borderColor="blue.200">
+                      <Text color="blue.800">Welcome to your health journey! Start by logging your weight and activities.</Text>
                     </Box>
-            )}
+                  )}
                 </VStack>
-              </CardBody>
-            </Card>
+              </TabPanel>
+
+              {/* Nutritional Insights Tab */}
+              <TabPanel px={0}>
+                <VStack spacing={4} align="stretch">
+                  {nutritionalInsights ? (
+                    <>
+                      {/* Achievements */}
+                      {nutritionalInsights.ai_insights?.achievements && nutritionalInsights.ai_insights.achievements.length > 0 && (
+                        <Box>
+                          <Text fontWeight="semibold" color="green.600" mb={2}>
+                            🎉 Achievements
+                          </Text>
+                          {nutritionalInsights.ai_insights.achievements.map((achievement: string, index: number) => (
+                            <Box key={index} p={3} bg="green.50" borderRadius="md" border="1px" borderColor="green.200" mb={2}>
+                              <Text color="green.800" fontSize="sm">{achievement}</Text>
+                            </Box>
+                          ))}
+                        </Box>
+                      )}
+
+                      {/* Concerns */}
+                      {nutritionalInsights.ai_insights?.concerns && nutritionalInsights.ai_insights.concerns.length > 0 && (
+                        <Box>
+                          <Text fontWeight="semibold" color="orange.600" mb={2}>
+                            ⚠️ Areas for Improvement
+                          </Text>
+                          {nutritionalInsights.ai_insights.concerns.map((concern: string, index: number) => (
+                            <Box key={index} p={3} bg="orange.50" borderRadius="md" border="1px" borderColor="orange.200" mb={2}>
+                              <Text color="orange.800" fontSize="sm">{concern}</Text>
+                            </Box>
+                          ))}
+                        </Box>
+                      )}
+
+                      {/* Suggestions */}
+                      {nutritionalInsights.ai_insights?.suggestions && nutritionalInsights.ai_insights.suggestions.length > 0 && (
+                        <Box>
+                          <Text fontWeight="semibold" color="purple.600" mb={2}>
+                            💡 Recommendations
+                          </Text>
+                          {nutritionalInsights.ai_insights.suggestions.map((suggestion: string, index: number) => (
+                            <Box key={index} p={3} bg="purple.50" borderRadius="md" border="1px" borderColor="purple.200" mb={2}>
+                              <Text color="purple.800" fontSize="sm">{suggestion}</Text>
+                            </Box>
+                          ))}
+                        </Box>
+                      )}
+                    </>
+                  ) : (
+                    <Box p={4} bg="gray.50" borderRadius="md" border="1px" borderColor="gray.200">
+                      <Text color="gray.600" textAlign="center">
+                        Start logging your meals to see personalized nutritional insights!
+                      </Text>
+                    </Box>
+                  )}
+                </VStack>
+              </TabPanel>
+            </TabPanels>
+          </Tabs>
+        </CardBody>
+      </Card>
 
 
       <ActivityLogModal

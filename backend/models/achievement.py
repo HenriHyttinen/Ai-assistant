@@ -28,5 +28,5 @@ class UserAchievement(Base):
     is_unlocked = Column(Boolean, default=False)
     
     # Relationships
-    user = relationship("User", back_populates="achievements")
+    # user = relationship("User", back_populates="achievements")
     achievement = relationship("Achievement")

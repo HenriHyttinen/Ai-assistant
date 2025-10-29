@@ -5,7 +5,7 @@ const API_BASE_URL = (import.meta as any).env?.VITE_API_URL || 'http://localhost
 
 const api = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 10000, // 10 second timeout for better responsiveness
+  timeout: 15000, // 15 second timeout for AI requests
   headers: {
     'Content-Type': 'application/json',
   },
@@ -14,85 +14,126 @@ const api = axios.create({
 const responseCache = new Map();
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
+function normalizeUrlForCache(url: string): string {
+  if (!url) return '';
+  try {
+    const u = new URL(url, API_BASE_URL);
+    // Remove volatile params
+    u.searchParams.delete('t');
+    u.searchParams.delete('retryAttempted');
+    return u.pathname + (u.search ? '?' + u.searchParams.toString() : '');
+  } catch {
+    // Fallback simple strip
+    return url
+      .replace(/([?&])t=\d+/g, '$1')
+      .replace(/([?&])retryAttempted=true/g, '$1')
+      .replace(/[?&]$/,'');
+  }
+}
+
+function getCachedResponse(url: string, params?: any) {
+  const keyUrl = normalizeUrlForCache(url);
+  const cacheKey = `${keyUrl}${JSON.stringify(params || {})}`;
+  const cached = responseCache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+    return cached.response;
+  }
+  return null;
+}
+
+function setCachedResponse(url: string, params: any, response: any) {
+  const keyUrl = normalizeUrlForCache(url);
+  const cacheKey = `${keyUrl}${JSON.stringify(params || {})}`;
+  responseCache.set(cacheKey, { response, timestamp: Date.now() });
+}
+
+// Circuit breaker for server issues
+let serverDownTime = 0;
+const SERVER_DOWN_THRESHOLD = 30000; // 30 seconds
+
 // Request debouncing to prevent rapid requests
 const requestDebounce = new Map();
 const DEBOUNCE_DELAY = 1; // 1ms - only block truly identical requests within milliseconds
 
 // const activeRequests = new Map();
 
-// Request interceptor - FIXED and re-enabled
-api.interceptors.request.use(
-  async (config) => {
-    // Ensure config has required properties
-    if (!config) {
-      console.error('❌ Config is undefined');
-      return Promise.reject(new Error('Request config is undefined'));
-    }
-    
-    // Ensure method and url are defined and properly formatted
-    const method = (config.method || 'GET').toString().toUpperCase();
-    const url = (config.url || '').toString();
-    
-    // Ensure all required properties exist
-    if (!config.headers) {
-      config.headers = {};
-    }
-    
-    if (!config.timeout) {
-      config.timeout = 10000;
-    }
-    
-    console.log(`API CALL: ${method} ${url}`);
-    
-    if (method === 'GET') {
-      const cacheKey = `${url}${JSON.stringify(config.params || {})}`;
-      const cached = responseCache.get(cacheKey);
-      
-      if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
-        console.log(`Using cached response for ${url}`);
-        return Promise.resolve(cached.response);
-      }
-    }
-    
-    try {
-      const { supabase } = await import('../lib/supabase');
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      // Ensure headers object exists
-      if (!config.headers) {
-        config.headers = {};
-      }
-      
-      if (session?.access_token) {
-        config.headers.Authorization = `Bearer ${session.access_token}`;
-        console.log(`Using Supabase token for ${url}`);
-      } else {
-        // Fallback to localStorage token (for FastAPI JWT)
-        const token = localStorage.getItem('token');
-        if (token) {
-          config.headers.Authorization = `Bearer ${token}`;
-          console.log(`Using localStorage token for ${url}`);
-        } else {
-          console.warn(`No auth token available for ${url} - request may fail`);
-        }
-      }
-    } catch (authError) {
-      console.error('Auth error:', authError);
-      // Don't reject requests if auth fails - let the backend handle it
-    }
-    
-    // This prevents Axios from encountering undefined when calling toUpperCase internally
-    if (!config.method) {
-      config.method = 'get';
-    }
-    
-    // Ensure method is lowercase string (Axios expects this)
-    config.method = config.method.toString().toLowerCase();
-    
-    return config;
-  },
-  (error) => Promise.reject(error)
-);
+// Request interceptor - TEMPORARILY DISABLED to fix toUpperCase error
+// api.interceptors.request.use(
+//   async (config) => {
+//     // Ensure config has required properties
+//     if (!config) {
+//       console.error('❌ Config is undefined');
+//       return Promise.reject(new Error('Request config is undefined'));
+//     }
+//     
+//     // Ensure method and url are defined and properly formatted
+//     const method = (config.method || 'GET')?.toString()?.toUpperCase() || 'GET';
+//     const url = (config.url || '')?.toString() || '';
+//     
+//     // Ensure all required properties exist
+//     if (!config.headers) {
+//       config.headers = {};
+//     }
+//     
+//     if (!config.timeout) {
+//       config.timeout = 5000;
+//     }
+//     
+//     console.log(`API CALL: ${method} ${url}`);
+//     
+//     if (method === 'GET') {
+//       const cacheKey = `${url}${JSON.stringify(config.params || {})}`;
+//       const cached = responseCache.get(cacheKey);
+//       
+//       if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+//         console.log(`Using cached response for ${url}`);
+//         return Promise.resolve(cached.response);
+//       }
+//     }
+//     
+//     try {
+//       const { supabase } = await import('../lib/supabase');
+//       const { data: { session } } = await supabase.auth.getSession();
+//       
+//       // Ensure headers object exists
+//       if (!config.headers) {
+//         config.headers = {};
+//       }
+//       
+//       if (session?.access_token) {
+//         config.headers.Authorization = `Bearer ${session.access_token}`;
+//         console.log(`Using Supabase token for ${url}`, { 
+//           hasToken: !!session.access_token,
+//           tokenLength: session.access_token?.length,
+//           tokenStart: session.access_token?.substring(0, 20) + '...'
+//         });
+//       } else {
+//         // Fallback to localStorage token (for FastAPI JWT)
+//         const token = localStorage.getItem('token');
+//         if (token) {
+//           config.headers.Authorization = `Bearer ${token}`;
+//           console.log(`Using localStorage token for ${url}`);
+//         } else {
+//           console.warn(`No auth token available for ${url} - request may fail`);
+//         }
+//       }
+//     } catch (authError) {
+//       console.error('Auth error:', authError);
+//       // Don't reject requests if auth fails - let the backend handle it
+//     }
+//     
+//     // This prevents Axios from encountering undefined when calling toUpperCase internally
+//     if (!config.method) {
+//       config.method = 'GET';
+//     }
+//     
+//     // Ensure method is uppercase string (Axios expects this)
+//     config.method = config.method.toString().toUpperCase();
+//     
+//     return config;
+//   },
+//   (error) => Promise.reject(error)
+// );
 
 // Response interceptor
 api.interceptors.response.use(
@@ -100,26 +141,46 @@ api.interceptors.response.use(
     const method = (response.config?.method || 'GET').toString().toLowerCase();
     if (method === 'get' && response.status === 200) {
       const url = response.config?.url || '';
-      const cacheKey = `${url}${JSON.stringify(response.config?.params || {})}`;
-      responseCache.set(cacheKey, {
-        response: response,
-        timestamp: Date.now()
-      });
+      const params = response.config?.params || {};
+      setCachedResponse(url, params, response);
     }
     return response;
   },
   async (error) => {
     if (error.code === 'ECONNABORTED' || error.code === 'ECONNREFUSED') {
+      serverDownTime = Date.now();
       console.warn('Server not available, using cached data or fallback');
+      
+      // Check circuit breaker
+      if (serverDownTime > 0 && (Date.now() - serverDownTime) > SERVER_DOWN_THRESHOLD) {
+        console.warn('Circuit breaker open - server down too long, using cache only');
+        // Try to return cached data if available
+        const url = error.config?.url || '';
+        const method = (error.config?.method || 'GET').toString().toLowerCase();
+        if (method === 'get') {
+          const cached = getCachedResponse(url, error.config?.params);
+          if (cached) return Promise.resolve(cached);
+        }
+        return Promise.reject(new Error('Server unavailable - circuit breaker open'));
+      }
+      
+      // For critical endpoints, try a quick retry (but only once)
+      const url = error.config?.url || '';
+      const isCritical = url.includes('/health/profiles/me') || url.includes('/settings/me');
+      
+      if (isCritical && !error.config?.retryAttempted && !url.includes('retryAttempted=true')) {
+        console.log(`Retrying critical endpoint: ${url}`);
+        error.config.retryAttempted = true;
+        error.config.timeout = 5000; // 5 second timeout for retry
+        error.config.url = `${url}${url.includes('?') ? '&' : '?'}retryAttempted=true`;
+        return api.request(error.config);
+      }
+      
       // Try to return cached data if available
       const method = (error.config?.method || 'GET').toString().toLowerCase();
       if (method === 'get') {
-        const url = error.config?.url || '';
-        const cacheKey = `${url}${JSON.stringify(error.config?.params || {})}`;
-        const cached = responseCache.get(cacheKey);
-        if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
-          return Promise.resolve(cached.response);
-        }
+        const cached = getCachedResponse(url, error.config?.params);
+        if (cached) return Promise.resolve(cached);
       }
     }
     if (!error.config) {
@@ -265,7 +326,11 @@ export const healthProfile = {
     const { supabase } = await import('../lib/supabase');
     const { data: { session } } = await supabase.auth.getSession();
     const headers = session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
-    return api.get<HealthProfile>(`/health/profiles/me?t=${Date.now()}`, { headers });
+    // no t param to allow caching
+    const url = `/health/profiles/me`;
+    const cached = getCachedResponse(url, undefined);
+    if (cached) return cached;
+    return api.get<HealthProfile>(url, { headers });
   },
   updateProfile: async (data: Partial<HealthProfile>) => {
     const { supabase } = await import('../lib/supabase');
@@ -280,10 +345,24 @@ export const healthProfile = {
     return api.post<HealthProfile>('/health/profiles', data, { headers });
   },
   getInsights: async () => {
-    const { supabase } = await import('../lib/supabase');
-    const { data: { session } } = await supabase.auth.getSession();
-    const headers = session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
-    return api.get('/health/insights', { headers });
+    try {
+      const { supabase } = await import('../lib/supabase');
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session?.access_token) {
+        throw new Error('No valid session found for insights');
+      }
+      
+      const headers = { Authorization: `Bearer ${session.access_token}` };
+      const url = '/health/insights';
+      const cached = getCachedResponse(url, undefined);
+      if (cached) return cached;
+      console.log('Making insights request with headers:', headers);
+      return api.get('/health/insights', { headers });
+    } catch (error) {
+      console.error('Error in getInsights:', error);
+      throw error;
+    }
   },
 };
 
@@ -293,6 +372,9 @@ export const analytics = {
     const { supabase } = await import('../lib/supabase');
     const { data: { session } } = await supabase.auth.getSession();
     const headers = session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
+    const url = `/health/profiles/me/analytics`;
+    const cached = getCachedResponse(url, undefined);
+    if (cached) return cached;
     return api.get<HealthAnalytics>(`/health/profiles/me/analytics?t=${Date.now()}`, { headers });
   },
   getMetrics: async (days: number = 30) => {
@@ -364,29 +446,50 @@ export const settings = {
 // Goals API calls
 export const goals = {
   getGoals: async () => {
-    // Simple auth without interceptor
-    const { supabase } = await import('../lib/supabase');
-    const { data: { session } } = await supabase.auth.getSession();
-    const headers = session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
-    return api.get<Goal[]>('/goals', { headers });
+    try {
+      // Simple auth without interceptor
+      const { supabase } = await import('../lib/supabase');
+      const { data: { session } } = await supabase.auth.getSession();
+      const headers = session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
+      console.log('API CALL: GET /goals');
+      return api.get<Goal[]>('/goals', { headers });
+    } catch (error) {
+      console.error('Error in getGoals:', error);
+      throw error;
+    }
   },
   createGoal: async (data: Omit<Goal, 'id'>) => {
-    const { supabase } = await import('../lib/supabase');
-    const { data: { session } } = await supabase.auth.getSession();
-    const headers = session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
-    return api.post<Goal>('/goals', data, { headers });
+    try {
+      const { supabase } = await import('../lib/supabase');
+      const { data: { session } } = await supabase.auth.getSession();
+      const headers = session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
+      return api.post<Goal>('/goals', data, { headers });
+    } catch (error) {
+      console.error('Error in createGoal:', error);
+      throw error;
+    }
   },
   updateGoal: async (id: string, data: Partial<Goal>) => {
-    const { supabase } = await import('../lib/supabase');
-    const { data: { session } } = await supabase.auth.getSession();
-    const headers = session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
-    return api.put<Goal>(`/goals/${id}`, data, { headers });
+    try {
+      const { supabase } = await import('../lib/supabase');
+      const { data: { session } } = await supabase.auth.getSession();
+      const headers = session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
+      return api.put<Goal>(`/goals/${id}`, data, { headers });
+    } catch (error) {
+      console.error('Error in updateGoal:', error);
+      throw error;
+    }
   },
   deleteGoal: async (id: string) => {
-    const { supabase } = await import('../lib/supabase');
-    const { data: { session } } = await supabase.auth.getSession();
-    const headers = session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
-    return api.delete(`/goals/${id}`, { headers });
+    try {
+      const { supabase } = await import('../lib/supabase');
+      const { data: { session } } = await supabase.auth.getSession();
+      const headers = session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
+      return api.delete(`/goals/${id}`, { headers });
+    } catch (error) {
+      console.error('Error in deleteGoal:', error);
+      throw error;
+    }
   },
 };
 

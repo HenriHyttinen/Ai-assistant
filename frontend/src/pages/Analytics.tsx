@@ -18,12 +18,19 @@ import {
   StatLabel,
   StatNumber,
   useDisclosure,
+  Tabs,
+  TabList,
+  TabPanels,
+  Tab,
+  TabPanel,
 } from '@chakra-ui/react';
 import { useState, useEffect } from 'react';
 import { analytics, goals, healthProfile } from '../services/api';
 import { useApp } from '../contexts/AppContext';
 import { getErrorMessage } from '../utils/errorUtils';
 import ActivityLogModal from '../components/ActivityLogModal';
+import MacronutrientVisualization from '../components/nutrition/MacronutrientVisualization';
+import NutritionalAnalysis from '../components/nutrition/NutritionalAnalysis';
 import { t } from '../utils/translations';
 
 // Helper functions for BMI and wellness score statuses
@@ -84,6 +91,7 @@ const Analytics = () => {
   const [analyticsData, setAnalyticsData] = useState<HealthAnalytics | null>(null);
   const [goalsList, setGoalsList] = useState<Goal[]>([]);
   const [profileData, setProfileData] = useState<any>(null);
+  const [nutritionalData, setNutritionalData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const { isOpen, onOpen, onClose } = useDisclosure();
@@ -94,10 +102,15 @@ const Analytics = () => {
         setError(null);
         
         // Use Promise.allSettled to handle individual failures gracefully
-        const [analyticsResult, goalsResult, profileResult] = await Promise.allSettled([
+        const [analyticsResult, goalsResult, profileResult, nutritionalResult] = await Promise.allSettled([
           analytics.getAnalytics(),
           goals.getGoals(),
-          healthProfile.getProfile()
+          healthProfile.getProfile(),
+          // Load nutritional analysis data
+          fetch('http://localhost:8000/nutrition/analysis', {
+            method: 'GET',
+            headers: { 'Content-Type': 'application/json' }
+          }).then(res => res.ok ? res.json() : null)
         ]);
         
         // Handle analytics data
@@ -150,6 +163,14 @@ const Analytics = () => {
           setProfileData(null);
         }
         
+        // Handle nutritional data
+        if (nutritionalResult.status === 'fulfilled') {
+          setNutritionalData(nutritionalResult.value);
+        } else {
+          console.warn('Nutritional data failed to load:', nutritionalResult.reason);
+          setNutritionalData(null);
+        }
+        
     } catch (err) {
       setError('Failed to load analytics data');
       console.error('Analytics error:', err);
@@ -198,6 +219,17 @@ const Analytics = () => {
           {t('refresh' as any, language)}
         </Button>
       </HStack>
+
+      {/* Analytics Tabs */}
+      <Tabs variant="enclosed" colorScheme="blue">
+        <TabList>
+          <Tab>{t('healthAnalytics' as any, language)}</Tab>
+          <Tab>{t('nutritionalProgress' as any, language)}</Tab>
+        </TabList>
+
+        <TabPanels>
+          {/* Health Analytics Tab */}
+          <TabPanel px={0}>
 
       <SimpleGrid columns={{ base: 1, lg: 2 }} spacing={6}>
         {/* Weight Progress */}
@@ -405,6 +437,57 @@ const Analytics = () => {
             )}
           </CardBody>
         </Card>
+
+          </TabPanel>
+
+          {/* Nutritional Progress Tab */}
+          <TabPanel px={0}>
+            {nutritionalData ? (
+              <VStack spacing={6} align="stretch">
+                {/* Nutritional Analysis Component */}
+                <NutritionalAnalysis 
+                  nutritionalLogs={nutritionalData.logs || []}
+                  onUpdate={fetchData}
+                />
+                
+                {/* Macronutrient Visualization */}
+                <MacronutrientVisualization
+                  currentData={{
+                    calories: nutritionalData.totals?.calories || 0,
+                    protein: nutritionalData.totals?.protein || 0,
+                    carbs: nutritionalData.totals?.carbs || 0,
+                    fats: nutritionalData.totals?.fats || 0
+                  }}
+                  targets={{
+                    calories: nutritionalData.targets?.calories || 2000,
+                    protein: nutritionalData.targets?.protein || 150,
+                    carbs: nutritionalData.targets?.carbs || 250,
+                    fats: nutritionalData.targets?.fats || 65
+                  }}
+                  dailyBreakdown={nutritionalData.daily_breakdown || []}
+                  period="weekly"
+                />
+              </VStack>
+            ) : (
+              <Card>
+                <CardBody>
+                  <VStack spacing={4} py={8}>
+                    <Text color="gray.500" textAlign="center">
+                      {t('noNutritionalData' as any, language)}
+                    </Text>
+                    <Text fontSize="sm" color="gray.400" textAlign="center">
+                      {t('startLoggingMeals' as any, language)}
+                    </Text>
+                    <Button colorScheme="blue" as="a" href="/nutrition">
+                      {t('goToNutrition' as any, language)}
+                    </Button>
+                  </VStack>
+                </CardBody>
+              </Card>
+            )}
+          </TabPanel>
+        </TabPanels>
+      </Tabs>
 
       {/* Activity Log Modal */}
       <ActivityLogModal

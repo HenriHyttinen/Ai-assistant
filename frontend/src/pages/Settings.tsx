@@ -34,6 +34,7 @@ import { useSupabaseAuth } from '../contexts/SupabaseAuthContext';
 import { useApp } from '../contexts/AppContext';
 import { authService } from '../services/auth';
 import { settings as settingsApi } from '../services/api';
+import NutritionPreferencesCard from '../components/settings/NutritionPreferencesCard';
 // Inline translation function to avoid module loading issues
 const translations = {
   en: {
@@ -277,6 +278,69 @@ const Settings = () => {
     }
   };
 
+  const loadNutritionPreferences = async () => {
+    if (!user) return null;
+    
+    try {
+      const { supabase } = await import('../lib/supabase');
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session?.access_token) {
+        throw new Error('No authentication session found');
+      }
+      
+      const response = await fetch('http://localhost:8000/nutrition/preferences', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        }
+      });
+      
+      if (response.ok) {
+        return await response.json();
+      } else if (response.status === 404) {
+        return null; // No preferences set yet
+      } else {
+        throw new Error('Failed to load nutrition preferences');
+      }
+    } catch (error) {
+      console.error('Error loading nutrition preferences:', error);
+      return null;
+    }
+  };
+
+  const saveNutritionPreferences = async (preferences: any) => {
+    if (!user) throw new Error('User not authenticated');
+    
+    try {
+      const { supabase } = await import('../lib/supabase');
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session?.access_token) {
+        throw new Error('No authentication session found');
+      }
+      
+      const response = await fetch('http://localhost:8000/nutrition/preferences', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify(preferences)
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to save nutrition preferences');
+      }
+      
+      return await response.json();
+    } catch (error) {
+      console.error('Error saving nutrition preferences:', error);
+      throw error;
+    }
+  };
+
   const [backupCodes, setBackupCodes] = useState<string[]>([]);
 
   const handleSetup2FA = async () => {
@@ -458,6 +522,11 @@ const Settings = () => {
             </VStack>
           </CardBody>
         </Card>
+
+        <NutritionPreferencesCard
+          onLoad={loadNutritionPreferences}
+          onSave={saveNutritionPreferences}
+        />
 
         <Card>
           <CardHeader>

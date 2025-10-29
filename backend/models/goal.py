@@ -16,4 +16,4 @@ class Goal(Base, TimestampMixin):
     progress = Column(Float, default=0.0)
     
     # Relationships
-    user = relationship("User", back_populates="goals")
+    # user = relationship("User", back_populates="goals")

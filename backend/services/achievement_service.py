@@ -11,48 +11,58 @@ logger = logging.getLogger(__name__)
 class AchievementService:
     def __init__(self, db: Session):
         self.db = db
+        self._cache = {}  # Simple in-memory cache for achievement checks
     
     def check_and_award_achievements(self, user_id: int) -> List[Dict]:
         """Check if user has unlocked any new achievements and award them"""
         new_achievements = []
         
-        # Get all available achievements
-        achievements = self.db.query(Achievement).filter(Achievement.is_active == True).all()
-        
-        for achievement in achievements:
-            # Check if user already has this achievement
-            existing = self.db.query(UserAchievement).filter(
-                UserAchievement.user_id == user_id,
-                UserAchievement.achievement_id == achievement.id
-            ).first()
+        try:
+            # Get all available achievements
+            achievements = self.db.query(Achievement).filter(Achievement.is_active == True).all()
             
-            if existing and existing.is_unlocked:
-                continue
+            for achievement in achievements:
+                # Check if user already has this achievement
+                existing = self.db.query(UserAchievement).filter(
+                    UserAchievement.user_id == user_id,
+                    UserAchievement.achievement_id == achievement.id
+                ).first()
                 
-            # Check if achievement requirements are met
-            if self._check_achievement_requirements(user_id, achievement):
-                # Award the achievement
-                if existing:
-                    existing.is_unlocked = True
-                    existing.unlocked_at = datetime.utcnow()
-                else:
-                    user_achievement = UserAchievement(
-                        user_id=user_id,
-                        achievement_id=achievement.id,
-                        is_unlocked=True,
-                        progress=achievement.requirement_value
-                    )
-                    self.db.add(user_achievement)
+                if existing and existing.is_unlocked:
+                    continue
+                    
+                # Check if achievement requirements are met
+                if self._check_achievement_requirements(user_id, achievement):
+                    # Award the achievement
+                    if existing:
+                        existing.is_unlocked = True
+                        existing.unlocked_at = datetime.utcnow()
+                    else:
+                        user_achievement = UserAchievement(
+                            user_id=user_id,
+                            achievement_id=achievement.id,
+                            is_unlocked=True,
+                            progress=achievement.requirement_value
+                        )
+                        self.db.add(user_achievement)
+                    
+                    new_achievements.append({
+                        "id": achievement.id,
+                        "name": achievement.name,
+                        "description": achievement.description,
+                        "icon": achievement.icon,
+                        "points": achievement.points,
+                        "unlocked_at": datetime.utcnow().isoformat()
+                    })
+            
+            if new_achievements:
+                self.db.commit()
                 
-                new_achievements.append({
-                    "id": achievement.id,
-                    "name": achievement.name,
-                    "description": achievement.description,
-                    "icon": achievement.icon,
-                    "points": achievement.points
-                })
+        except Exception as e:
+            logger.error(f"Error in check_and_award_achievements: {e}")
+            # Don't fail the entire request if achievement checking fails
+            self.db.rollback()
         
-        self.db.commit()
         return new_achievements
     
     def _check_achievement_requirements(self, user_id: int, achievement: Achievement) -> bool:
@@ -108,17 +118,23 @@ class AchievementService:
     def _check_activity_streak(self, user_id: int, required_days: int) -> bool:
         """Check if user has activities on consecutive days"""
         today = datetime.utcnow().date()
-        streak_count = 0
+        start_date = today - timedelta(days=required_days - 1)
         
+        # Get all activity dates for the user in the required period
+        activity_dates = self.db.query(ActivityLog.created_at).filter(
+            ActivityLog.user_id == user_id,
+            ActivityLog.created_at >= start_date,
+            ActivityLog.created_at < today + timedelta(days=1)
+        ).all()
+        
+        # Convert to date set for faster lookup
+        activity_date_set = {activity[0].date() for activity in activity_dates}
+        
+        # Check consecutive days from today backwards
+        streak_count = 0
         for i in range(required_days):
             check_date = today - timedelta(days=i)
-            has_activity = self.db.query(ActivityLog).filter(
-                ActivityLog.user_id == user_id,
-                ActivityLog.created_at >= check_date,
-                ActivityLog.created_at < check_date + timedelta(days=1)
-            ).first() is not None
-            
-            if has_activity:
+            if check_date in activity_date_set:
                 streak_count += 1
             else:
                 break
@@ -128,20 +144,32 @@ class AchievementService:
     def _check_weekly_consistency(self, user_id: int, required_weeks: int) -> bool:
         """Check if user has been consistent for required weeks"""
         today = datetime.utcnow().date()
+        start_date = today - timedelta(days=(required_weeks * 7) + 6)
+        
+        # Get all activities for the user in the required period
+        activities = self.db.query(ActivityLog.created_at).filter(
+            ActivityLog.user_id == user_id,
+            ActivityLog.created_at >= start_date,
+            ActivityLog.created_at <= today
+        ).all()
+        
+        # Group activities by week
+        weekly_counts = {}
+        for activity in activities:
+            activity_date = activity[0].date()
+            # Calculate week start (Monday)
+            week_start = activity_date - timedelta(days=activity_date.weekday())
+            if week_start not in weekly_counts:
+                weekly_counts[week_start] = 0
+            weekly_counts[week_start] += 1
+        
+        # Check consecutive weeks from current week backwards
         consistent_weeks = 0
+        current_week_start = today - timedelta(days=today.weekday())
         
         for week in range(required_weeks):
-            week_start = today - timedelta(days=(week * 7) + 6)
-            week_end = week_start + timedelta(days=6)
-            
-            # Check if user has at least 3 activities in this week
-            activity_count = self.db.query(ActivityLog).filter(
-                ActivityLog.user_id == user_id,
-                ActivityLog.created_at >= week_start,
-                ActivityLog.created_at <= week_end
-            ).count()
-            
-            if activity_count >= 3:
+            check_week = current_week_start - timedelta(weeks=week)
+            if check_week in weekly_counts and weekly_counts[check_week] >= 3:
                 consistent_weeks += 1
             else:
                 break

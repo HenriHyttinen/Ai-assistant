@@ -2,6 +2,7 @@ from sqlalchemy.orm import Session
 from models.user_settings import UserSettings
 from schemas.settings import UserSettingsCreate, UserSettingsUpdate
 from typing import Optional
+from utils.timezone import get_user_timezone, to_iso8601_with_timezone, get_current_time_in_timezone
 
 def get_user_settings(db: Session, user_id: int) -> Optional[UserSettings]:
     """Get user settings by user ID."""
@@ -43,3 +44,18 @@ def get_or_create_user_settings(db: Session, user_id: int) -> UserSettings:
         default_settings = UserSettingsCreate()
         settings = create_user_settings(db, user_id, default_settings)
     return settings
+
+def get_user_timezone_info(db: Session, user_id: int) -> dict:
+    """Get user's timezone information for datetime operations."""
+    settings = get_user_settings(db, user_id)
+    user_timezone = settings.timezone if settings else "UTC"
+    
+    return {
+        "timezone": user_timezone,
+        "timezone_obj": get_user_timezone(user_timezone),
+        "current_time": get_current_time_in_timezone(user_timezone),
+        "current_time_iso": to_iso8601_with_timezone(
+            get_current_time_in_timezone(user_timezone), 
+            user_timezone
+        )
+    }

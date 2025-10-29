@@ -23,10 +23,48 @@ class Recipe(Base, TimestampMixin):
     # Vector embedding for RAG (stored as JSON array)
     embedding = Column(JSON, nullable=True)
     
+    # Per-serving nutrition (for daily logging)
+    per_serving_calories = Column(Float, nullable=True)
+    per_serving_protein = Column(Float, nullable=True)
+    per_serving_carbs = Column(Float, nullable=True)
+    per_serving_fat = Column(Float, nullable=True)
+    per_serving_sodium = Column(Float, nullable=True)
+    
+    # Total recipe nutrition (for full recipe display)
+    total_calories = Column(Float, nullable=True)
+    total_protein = Column(Float, nullable=True)
+    total_carbs = Column(Float, nullable=True)
+    total_fat = Column(Float, nullable=True)
+    total_sodium = Column(Float, nullable=True)
+    
+    # Micronutrients (per serving)
+    per_serving_vitamin_d = Column(Float, nullable=True)  # mcg
+    per_serving_vitamin_b12 = Column(Float, nullable=True)  # mcg
+    per_serving_iron = Column(Float, nullable=True)  # mg
+    per_serving_calcium = Column(Float, nullable=True)  # mg
+    per_serving_magnesium = Column(Float, nullable=True)  # mg
+    per_serving_vitamin_c = Column(Float, nullable=True)  # mg
+    per_serving_folate = Column(Float, nullable=True)  # mcg
+    per_serving_zinc = Column(Float, nullable=True)  # mg
+    per_serving_potassium = Column(Float, nullable=True)  # mg
+    per_serving_fiber = Column(Float, nullable=True)  # g
+    
+    # Total micronutrients (for full recipe display)
+    total_vitamin_d = Column(Float, nullable=True)
+    total_vitamin_b12 = Column(Float, nullable=True)
+    total_iron = Column(Float, nullable=True)
+    total_calcium = Column(Float, nullable=True)
+    total_magnesium = Column(Float, nullable=True)
+    total_vitamin_c = Column(Float, nullable=True)
+    total_folate = Column(Float, nullable=True)
+    total_zinc = Column(Float, nullable=True)
+    total_potassium = Column(Float, nullable=True)
+    total_fiber = Column(Float, nullable=True)
+    
     # Relationships
     ingredients = relationship("RecipeIngredient", back_populates="recipe", cascade="all, delete-orphan")
     instructions = relationship("RecipeInstruction", back_populates="recipe", cascade="all, delete-orphan")
-    meal_plans = relationship("MealPlanRecipe", back_populates="recipe")
+    # meal_plans = relationship("MealPlanRecipe", back_populates="recipe")
 
 class Ingredient(Base, TimestampMixin):
     __tablename__ = "ingredients"
@@ -46,11 +84,26 @@ class Ingredient(Base, TimestampMixin):
     sugar = Column(Float, nullable=False, default=0.0)
     sodium = Column(Float, nullable=False, default=0.0)
     
-    # Micronutrients (bonus feature)
-    vitamin_d = Column(Float, nullable=True)
-    vitamin_b12 = Column(Float, nullable=True)
-    iron = Column(Float, nullable=True)
-    calcium = Column(Float, nullable=True)
+    # Micronutrients (comprehensive tracking)
+    vitamin_d = Column(Float, nullable=True)  # IU
+    vitamin_b12 = Column(Float, nullable=True)  # mcg
+    iron = Column(Float, nullable=True)  # mg
+    calcium = Column(Float, nullable=True)  # mg
+    vitamin_c = Column(Float, nullable=True)  # mg
+    vitamin_a = Column(Float, nullable=True)  # IU
+    vitamin_e = Column(Float, nullable=True)  # mg
+    vitamin_k = Column(Float, nullable=True)  # mcg
+    thiamine = Column(Float, nullable=True)  # mg (B1)
+    riboflavin = Column(Float, nullable=True)  # mg (B2)
+    niacin = Column(Float, nullable=True)  # mg (B3)
+    folate = Column(Float, nullable=True)  # mcg (B9)
+    magnesium = Column(Float, nullable=True)  # mg
+    zinc = Column(Float, nullable=True)  # mg
+    selenium = Column(Float, nullable=True)  # mcg
+    potassium = Column(Float, nullable=True)  # mg
+    phosphorus = Column(Float, nullable=True)  # mg
+    omega_3 = Column(Float, nullable=True)  # g
+    omega_6 = Column(Float, nullable=True)  # g
     
     # Vector embedding for RAG
     embedding = Column(JSON, nullable=True)

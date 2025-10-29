@@ -12,7 +12,6 @@ from sqlalchemy import text
 def setup_achievements():
     db = SessionLocal()
     try:
-        # First, create the achievements table if it doesn't exist
         create_table_sql = """
         CREATE TABLE IF NOT EXISTS achievements (
             id INTEGER PRIMARY KEY AUTOINCREMENT,

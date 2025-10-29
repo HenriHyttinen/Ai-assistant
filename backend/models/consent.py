@@ -32,4 +32,4 @@ class DataConsent(Base, TimestampMixin):
     usage_patterns = Column(Boolean, default=False)
     
     # Relationship
-    user = relationship("User", back_populates="consent")
+    # user = relationship("User", back_populates="consent")

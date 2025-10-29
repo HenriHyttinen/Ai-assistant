@@ -428,8 +428,8 @@ const WeightProgressCard = ({
                   <Text fontSize="lg" fontWeight="bold" mb={4}>
                     {t('weightTrendChart' as any, language)}
                   </Text>
-                  <Box p={isMobile ? 2 : 4} bg="white" borderRadius="md" border="1px" borderColor="gray.200" height={`${chartHeight}px`}>
-                    <ResponsiveContainer width="100%" height="100%">
+                  <Box p={isMobile ? 2 : 4} bg="white" borderRadius="md" border="1px" borderColor="gray.200" height={`${chartHeight}px`} minWidth="300px">
+                    <ResponsiveContainer width="100%" height="100%" minWidth={300} minHeight={200}>
                       <LineChart data={weightTrend.slice(-10).map((weight, index) => {
                         const recentTimestamps = weightTrendTimestamps.slice(-10);
                         const timestamp = recentTimestamps[index] || 

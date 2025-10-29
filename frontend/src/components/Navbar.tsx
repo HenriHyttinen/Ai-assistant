@@ -30,8 +30,9 @@ import {
 } from '@chakra-ui/icons';
 import { FiActivity, FiList, FiCoffee } from 'react-icons/fi';
 import { useSupabaseAuth } from '../contexts/SupabaseAuthContext';
-import { useApp } from '../contexts/AppContext';
+import { useApp, AppContext } from '../contexts/AppContext';
 import { t } from '../utils/translations';
+import { useContext } from 'react';
 
 // Navigation items - same as in Sidebar
 const LinkItems = [
@@ -48,6 +49,12 @@ const LinkItems = [
 export default function Navbar() {
   const { isOpen, onToggle } = useDisclosure();
   const { user, signOut } = useSupabaseAuth();
+  const appContext = useContext(AppContext);
+  
+  // Safety check to prevent context errors during hot reload
+  if (!appContext) {
+    return null;
+  }
 
   return (
     <Box position="fixed" w="full" zIndex={1000}>
@@ -149,7 +156,14 @@ const DesktopNav = () => {
 
 
 const MobileNav = () => {
-  const { language } = useApp();
+  const appContext = useContext(AppContext);
+  
+  // Safety check to prevent context errors during hot reload
+  if (!appContext) {
+    return null;
+  }
+  
+  const { language } = appContext;
   
   return (
     <VStack

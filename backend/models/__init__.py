@@ -5,6 +5,13 @@ from .activity_log import ActivityLog
 from .metrics_history import MetricsHistory
 from .consent import DataConsent
 from .goal import Goal
+from .nutrition import (
+    UserNutritionPreferences, MealPlan, MealPlanMeal, MealPlanRecipe,
+    NutritionalLog, ShoppingList, ShoppingListItem, MealPlanVersion
+)
+from .recipe import Recipe, Ingredient, RecipeIngredient, RecipeInstruction
+from .user_settings import UserSettings
+from .achievement import Achievement, UserAchievement
 
 __all__ = [
     'Base',
@@ -14,5 +21,20 @@ __all__ = [
     'ActivityLog',
     'MetricsHistory',
     'DataConsent',
-    'Goal'
+    'Goal',
+    'UserNutritionPreferences',
+    'MealPlan',
+    'MealPlanMeal',
+    'MealPlanRecipe',
+    'NutritionalLog',
+    'ShoppingList',
+    'ShoppingListItem',
+    'MealPlanVersion',
+    'Recipe',
+    'Ingredient',
+    'RecipeIngredient',
+    'RecipeInstruction',
+    'UserSettings',
+    'Achievement',
+    'UserAchievement'
 ] 

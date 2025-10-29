@@ -9,7 +9,7 @@ interface ProtectedRouteProps {
 }
 
 const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, require2FA = false }) => {
-  const { user, loading } = useSupabaseAuth();
+  const { user, loading, session } = useSupabaseAuth();
   const location = useLocation();
 
   if (loading) {
@@ -26,7 +26,7 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, require2FA = 
     );
   }
 
-  if (!user) {
+  if (!user || !session) {
     // Redirect to login page but save the attempted url
     return <Navigate to="/login" state={{ from: location }} replace />;
   }

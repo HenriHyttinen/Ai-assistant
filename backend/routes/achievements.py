@@ -45,5 +45,4 @@ async def check_new_achievements(
         new_achievements = achievement_service.check_and_award_achievements(current_user.id)
         return {"new_achievements": new_achievements, "count": len(new_achievements)}
     except Exception as e:
-        print(f"DEBUG: Error in achievement check: {e}")
         raise HTTPException(status_code=500, detail=f"Error checking achievements: {str(e)}")

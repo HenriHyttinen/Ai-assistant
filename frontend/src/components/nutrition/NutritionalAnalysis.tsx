@@ -5,6 +5,7 @@ import {
   HStack,
   Text,
   Button,
+  ButtonGroup,
   Card,
   CardBody,
   CardHeader,
@@ -27,6 +28,8 @@ import {
 } from '@chakra-ui/react';
 import { FiBarChart, FiTrendingUp, FiTrendingDown, FiTarget } from 'react-icons/fi';
 import { t } from '../../utils/translations';
+import MacronutrientVisualization from './MacronutrientVisualization';
+import AdvancedNutritionDashboard from './AdvancedNutritionDashboard';
 
 interface NutritionalAnalysisProps {
   nutritionalLogs?: any[];
@@ -39,6 +42,7 @@ const NutritionalAnalysis: React.FC<NutritionalAnalysisProps> = ({
 }) => {
   const [analysisType, setAnalysisType] = useState<'daily' | 'weekly' | 'monthly'>('daily');
   const [loading, setLoading] = useState(false);
+  const [dashboardMode, setDashboardMode] = useState<'basic' | 'advanced'>('advanced');
   const [analysisData, setAnalysisData] = useState<any>({
     totals: {
       calories: 0,
@@ -93,8 +97,12 @@ const NutritionalAnalysis: React.FC<NutritionalAnalysisProps> = ({
       
       // Add cache-busting parameter to force fresh data
       const timestamp = new Date().getTime();
+      const endpoint = dashboardMode === 'advanced' 
+        ? 'advanced-analytics' 
+        : 'nutritional-analysis';
+      
       const response = await fetch(
-        `http://localhost:8000/nutrition/nutritional-analysis?start_date=${startDate.toISOString().split('T')[0]}&end_date=${endDate.toISOString().split('T')[0]}&analysis_type=${analysisType}&_t=${timestamp}`,
+        `http://localhost:8000/nutrition/${endpoint}?start_date=${startDate.toISOString().split('T')[0]}&end_date=${endDate.toISOString().split('T')[0]}&analysis_type=${analysisType}&_t=${timestamp}`,
         {
           method: 'GET',
           headers: {
@@ -166,7 +174,7 @@ const NutritionalAnalysis: React.FC<NutritionalAnalysisProps> = ({
 
   React.useEffect(() => {
     loadAnalysis();
-  }, [analysisType]);
+  }, [analysisType, dashboardMode]);
 
   const getProgressColor = (percentage: number) => {
     if (percentage >= 90 && percentage <= 110) return 'green';
@@ -195,32 +203,59 @@ const NutritionalAnalysis: React.FC<NutritionalAnalysisProps> = ({
       {/* Analysis Controls */}
       <Card>
         <CardHeader>
-          <Heading size="md">Analysis Period</Heading>
+          <Heading size="md">Analysis Settings</Heading>
         </CardHeader>
         <CardBody>
-          <HStack spacing={4}>
-            <Button
-              colorScheme={analysisType === 'daily' ? 'blue' : 'gray'}
-              variant={analysisType === 'daily' ? 'solid' : 'outline'}
-              onClick={() => setAnalysisType('daily')}
-            >
-              {t('dailyIntake', 'en')}
-            </Button>
-            <Button
-              colorScheme={analysisType === 'weekly' ? 'blue' : 'gray'}
-              variant={analysisType === 'weekly' ? 'solid' : 'outline'}
-              onClick={() => setAnalysisType('weekly')}
-            >
-              {t('weeklyIntake', 'en')}
-            </Button>
-            <Button
-              colorScheme={analysisType === 'monthly' ? 'blue' : 'gray'}
-              variant={analysisType === 'monthly' ? 'solid' : 'outline'}
-              onClick={() => setAnalysisType('monthly')}
-            >
-              {t('monthlyIntake', 'en')}
-            </Button>
-          </HStack>
+          <VStack spacing={4} align="stretch">
+            {/* Dashboard Mode Toggle */}
+            <Box>
+              <Text fontWeight="semibold" mb={2}>Dashboard Mode</Text>
+              <ButtonGroup isAttached>
+                <Button
+                  colorScheme={dashboardMode === 'advanced' ? 'blue' : 'gray'}
+                  variant={dashboardMode === 'advanced' ? 'solid' : 'outline'}
+                  onClick={() => setDashboardMode('advanced')}
+                >
+                  Advanced Dashboard
+                </Button>
+                <Button
+                  colorScheme={dashboardMode === 'basic' ? 'blue' : 'gray'}
+                  variant={dashboardMode === 'basic' ? 'solid' : 'outline'}
+                  onClick={() => setDashboardMode('basic')}
+                >
+                  Basic View
+                </Button>
+              </ButtonGroup>
+            </Box>
+            
+            {/* Analysis Period */}
+            <Box>
+              <Text fontWeight="semibold" mb={2}>Analysis Period</Text>
+              <HStack spacing={4}>
+                <Button
+                  colorScheme={analysisType === 'daily' ? 'blue' : 'gray'}
+                  variant={analysisType === 'daily' ? 'solid' : 'outline'}
+                  onClick={() => setAnalysisType('daily')}
+                >
+                  {t('dailyIntake', 'en')}
+                </Button>
+                <Button
+                  colorScheme={analysisType === 'weekly' ? 'blue' : 'gray'}
+                  variant={analysisType === 'weekly' ? 'solid' : 'outline'}
+                  onClick={() => setAnalysisType('weekly')}
+                >
+                  {t('weeklyIntake', 'en')}
+                </Button>
+                <Button
+                  colorScheme={analysisType === 'monthly' ? 'blue' : 'gray'}
+                  variant={analysisType === 'monthly' ? 'solid' : 'outline'}
+                  onClick={() => setAnalysisType('monthly')}
+                >
+                  {t('monthlyIntake', 'en')}
+                </Button>
+              </HStack>
+            </Box>
+          </VStack>
         </CardBody>
       </Card>
 
@@ -230,7 +265,31 @@ const NutritionalAnalysis: React.FC<NutritionalAnalysisProps> = ({
           <Text mt={4}>Loading analysis...</Text>
         </Box>
       ) : analysisData ? (
-        <VStack spacing={6} align="stretch">
+        dashboardMode === 'advanced' ? (
+          <AdvancedNutritionDashboard
+            currentData={{
+              calories: analysisData.totals?.calories || 0,
+              protein: analysisData.totals?.protein || 0,
+              carbs: analysisData.totals?.carbs || 0,
+              fats: analysisData.totals?.fats || 0,
+              fiber: analysisData.totals?.fiber || 0,
+              sugar: analysisData.totals?.sugar || 0,
+              sodium: analysisData.totals?.sodium || 0
+            }}
+            targets={{
+              calories: analysisData.targets?.calories || 2000,
+              protein: analysisData.targets?.protein || 150,
+              carbs: analysisData.targets?.carbs || 250,
+              fats: analysisData.targets?.fats || 65
+            }}
+            dailyBreakdown={analysisData.daily_breakdown || []}
+            mealDistribution={analysisData.meal_distribution}
+            period={analysisType}
+            onPeriodChange={setAnalysisType}
+            aiInsights={analysisData.ai_insights}
+          />
+        ) : (
+          <VStack spacing={6} align="stretch">
           {/* Nutritional Overview */}
           <Card>
             <CardHeader>
@@ -359,6 +418,25 @@ const NutritionalAnalysis: React.FC<NutritionalAnalysisProps> = ({
             </CardBody>
           </Card>
 
+          {/* Macronutrient Visualization */}
+          <MacronutrientVisualization
+            currentData={{
+              calories: analysisData.totals.calories,
+              protein: analysisData.totals.protein,
+              carbs: analysisData.totals.carbs,
+              fats: analysisData.totals.fats
+            }}
+            targets={{
+              calories: analysisData.targets.calories,
+              protein: analysisData.targets.protein,
+              carbs: analysisData.targets.carbs,
+              fats: analysisData.targets.fats
+            }}
+            dailyBreakdown={analysisData.daily_breakdown || []}
+            period={analysisType}
+            onPeriodChange={setAnalysisType}
+          />
+
           {/* AI Insights */}
           {analysisData.ai_insights && (
             <Card>
@@ -413,6 +491,7 @@ const NutritionalAnalysis: React.FC<NutritionalAnalysisProps> = ({
             </Card>
           )}
         </VStack>
+        )
       ) : (
         <Alert status="info" borderRadius="lg">
           <AlertIcon />

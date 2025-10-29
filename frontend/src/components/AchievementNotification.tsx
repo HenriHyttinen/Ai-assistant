@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Box,
   Text,
@@ -61,15 +61,32 @@ const AchievementNotification: React.FC<AchievementNotificationProps> = ({
   useEffect(() => {
     console.log('Starting achievement checking');
     
+    const nextAllowedCheckRef = { current: 0 } as { current: number };
+
     const checkForNewAchievements = async () => {
       try {
+        // Simple backoff if we recently timed out
+        if (Date.now() < nextAllowedCheckRef.current) {
+          return;
+        }
         // Get Supabase session token for authentication
         const { supabase } = await import('../lib/supabase');
         const { data: { session } } = await supabase.auth.getSession();
-        const headers = session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
+        
+        // Only make API calls if user is authenticated
+        if (!session?.access_token) {
+          console.log('No authentication token, skipping achievement check');
+          return;
+        }
+        
+        const headers = { Authorization: `Bearer ${session.access_token}` };
         
         // Use the check endpoint to get only newly unlocked achievements
-        const response = await api.post('/achievements/check', {}, { headers });
+        // Add a shorter timeout specifically for achievements
+        const response = await api.post('/achievements/check', {}, { 
+          headers,
+          timeout: 3000 // 3 second timeout for achievements
+        });
         const newAchievements = response.data.new_achievements || [];
         
         if (newAchievements.length > 0) {
@@ -130,13 +147,20 @@ const AchievementNotification: React.FC<AchievementNotificationProps> = ({
           }
         }
       } catch (error) {
-        console.error('Error checking achievements:', error);
+        // Don't log timeout errors as they're expected when the service is slow
+        if (error.code !== 'ECONNABORTED') {
+          console.error('Error checking achievements:', error);
+        } else {
+          console.warn('Achievement check timed out, will retry later');
+          // Backoff 10 minutes after a timeout
+          nextAllowedCheckRef.current = Date.now() + 10 * 60 * 1000;
+        }
         // Silently fail - don't show error toasts for background checks
       }
     };
 
-    // Check every 30 seconds
-    const interval = setInterval(checkForNewAchievements, 30000);
+          // Check every 5 minutes to reduce backend load
+          const interval = setInterval(checkForNewAchievements, 300000);
     
     // Initial check
     checkForNewAchievements();

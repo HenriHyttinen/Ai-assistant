@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from typing import Any
+from typing import Any, List
 
 from database import get_db
 from services import settings as settings_service
@@ -11,6 +11,7 @@ from schemas.settings import (
     UserSettingsResponse
 )
 from models.user import User
+from utils.timezone import get_common_timezones, get_user_timezone_info
 
 router = APIRouter()
 
@@ -61,3 +62,16 @@ def create_my_settings(
     
     new_settings = settings_service.create_user_settings(db, current_user.id, settings_data)
     return UserSettingsResponse.model_validate(new_settings)
+
+@router.get("/timezones")
+def get_available_timezones() -> List[dict]:
+    """Get list of available timezones for user selection."""
+    return get_common_timezones()
+
+@router.get("/timezone-info")
+def get_user_timezone_info_endpoint(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+) -> dict:
+    """Get current user's timezone information."""
+    return get_user_timezone_info(db, current_user.id)

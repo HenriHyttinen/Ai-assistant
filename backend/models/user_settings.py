@@ -21,6 +21,7 @@ class UserSettings(Base, TimestampMixin):
     # User preferences
     measurement_system = Column(String, default="metric")  # "metric" or "imperial"
     language = Column(String, default="en")  # Language code (en, es, fr, de, etc.)
+    timezone = Column(String, default="UTC")  # Timezone in ISO format (e.g., "UTC", "America/New_York", "Europe/London")
     
     # Relationship
-    user = relationship("User", back_populates="settings")
+    # user = relationship("User", back_populates="settings")

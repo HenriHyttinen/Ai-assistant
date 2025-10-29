@@ -1,5 +1,6 @@
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 import time
@@ -24,6 +25,17 @@ from models.nutrition import (
     UserNutritionPreferences, MealPlan, MealPlanMeal, MealPlanRecipe,
     NutritionalLog, ShoppingList, ShoppingListItem
 )
+from models.recipe_rating import RecipeRating, RecipeReview, ReviewHelpful
+from models.nutrition_goals import NutritionGoal, GoalProgressLog, GoalMilestone, GoalTemplate
+from models.micronutrients import MicronutrientGoal, DailyMicronutrientIntake, MicronutrientDeficiency
+from models.nutrition_education import (
+    NutritionArticle, NutritionTip, QuizQuestion, UserEducationProgress,
+    UserQuizAnswer, UserLearningPath, DailyNutritionTip, NutritionFact
+)
+# from models.enhanced_nutrition import (
+#     NutritionalProfile, DailyNutritionalIntake, FoodComposition,
+#     NutritionalAnalysis, HealthMetrics, NutritionalCorrelation
+# )
 from routes.auth import router as auth_router
 from routes.health import router as health_router
 from routes.health_profile import router as health_profile_router
@@ -32,7 +44,17 @@ from routes.goals import router as goals_router
 from routes.settings import router as settings_router
 from routes.consent import router as consent_router
 from routes.achievements import router as achievements_router
+from routes.micronutrients import router as micronutrients_router
+from routes.nutrition_education import router as nutrition_education_router
+from routes.enhanced_nutrition import router as enhanced_nutrition_router
 from routes.nutrition import router as nutrition_router
+from routes.daily_logging import router as daily_logging_router
+from routes.ai_monitoring import router as ai_monitoring_router
+from routes.meal_plan_versioning import router as meal_plan_versioning_router
+from routes.recipe_rating import router as recipe_rating_router
+from routes.nutrition_analytics import router as nutrition_analytics_router
+from routes.nutrition_goals import router as nutrition_goals_router
+from routes.meal_plan_recipes import router as meal_plan_recipes_router
 from services.tasks import start_background_tasks
 from config import get_settings
 from logging_config import setup_logging
@@ -56,7 +78,7 @@ Base.metadata.create_all(bind=engine)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
-    start_background_tasks()
+    start_background_tasks()  # Re-enabled AI background tasks
     logger.info("Application started")
     yield
     # Shutdown
@@ -70,7 +92,6 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -78,31 +99,18 @@ app.add_middleware(
         "http://127.0.0.1:5173",
         "http://localhost:5174",
         "http://127.0.0.1:5174",
-        "http://localhost:5175",
-        "http://127.0.0.1:5175",
-        "http://localhost:5176",
-        "http://127.0.0.1:5176",
-        "http://localhost:5177",
-        "http://127.0.0.1:5177",
-        "http://localhost:5178",
-        "http://127.0.0.1:5178",
         "http://localhost:8080",
         "http://127.0.0.1:8080",
-        "https://dcffc4808b2c.ngrok-free.app",
     ],
-    allow_origin_regex=r"^https://.*\\.ngrok-free\\.app$|^http://(localhost|127\\.0\\.0\\.1):(5173|5174|5175|5176|5177|5178|8080)$",
+    allow_origin_regex=r"^https://.*\\.ngrok-free\\.app$|^http://(localhost|127\\.0\\.0\\.1):(5173|5174|8080)$",
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
-# Add security middleware
-app.add_middleware(SecurityMiddleware, force_https=False)  # Set to True in production
-
-# Add rate limiting middleware
+app.add_middleware(GZipMiddleware, minimum_size=1000)
+app.add_middleware(SecurityMiddleware, force_https=False)
 app.middleware("http")(rate_limit_middleware)
-# AI rate limiting disabled since AI is disabled
-# app.middleware("http")(ai_rate_limit_middleware)
 app.middleware("http")(auth_rate_limit_middleware)
 
 # Add error handling middleware
@@ -130,6 +138,16 @@ app.include_router(settings_router, prefix="/settings", tags=["Settings"])
 app.include_router(nutrition_router, prefix="/nutrition", tags=["Nutrition"])
 app.include_router(consent_router, tags=["Data Consent"])
 app.include_router(achievements_router, prefix="/achievements", tags=["Achievements"])
+app.include_router(micronutrients_router, prefix="/micronutrients", tags=["Micronutrients"])
+app.include_router(nutrition_education_router, prefix="/nutrition-education", tags=["Nutrition Education"])
+app.include_router(enhanced_nutrition_router, prefix="/enhanced-nutrition", tags=["Enhanced Nutrition"])
+app.include_router(daily_logging_router, prefix="/daily-logging", tags=["Daily Logging"])
+app.include_router(ai_monitoring_router, tags=["AI Monitoring"])
+app.include_router(meal_plan_versioning_router, tags=["Meal Plan Versioning"])
+app.include_router(recipe_rating_router, tags=["Recipe Ratings"])
+app.include_router(nutrition_analytics_router, tags=["Nutrition Analytics"])
+app.include_router(nutrition_goals_router, tags=["Nutrition Goals"])
+app.include_router(meal_plan_recipes_router, tags=["Meal Plan Recipes"])
 
 @app.get("/")
 async def root():

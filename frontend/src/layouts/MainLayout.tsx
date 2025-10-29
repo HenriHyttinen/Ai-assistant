@@ -3,14 +3,11 @@ import { Outlet } from 'react-router-dom';
 import Navbar from '../components/Navbar';
 import Sidebar from '../components/Sidebar';
 import AchievementNotification from '../components/AchievementNotification';
-import { AppProvider } from '../contexts/AppContext';
-
 const MainLayout = () => {
   const bgColor = useColorModeValue('gray.50', 'gray.900');
 
   return (
-    <AppProvider>
-      <Box minH="100vh" bg={bgColor}>
+    <Box minH="100vh" bg={bgColor}>
         <Navbar />
         <Flex pt="60px">
           <Sidebar />
@@ -27,7 +24,6 @@ const MainLayout = () => {
         </Flex>
         <AchievementNotification />
       </Box>
-    </AppProvider>
   );
 };
 

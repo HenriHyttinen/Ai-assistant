@@ -1,277 +1,305 @@
-# Counting Calories - Health Tracking App
+# Numbers Don't Lie - Health & Nutrition Platform
 
-A comprehensive wellness platform that leverages AI to provide personalized health insights, track wellness metrics, and guide users toward their health goals.
-
-## For Reviewers - Quick Access
-
-### Quick Fix for Missing Dependencies
-**If you get `ModuleNotFoundError: No module named 'supabase'` or `No module named 'lib'`:**
-```bash
-cd backend
-source venv/bin/activate
-python fix_dependencies.py
-```
-
-**Manual fix if the script doesn't work:**
-```bash
-cd backend
-source venv/bin/activate
-pip install supabase==2.3.0
-mkdir -p lib auth ai middleware schemas
-touch lib/__init__.py auth/__init__.py ai/__init__.py middleware/__init__.py schemas/__init__.py
-```
-
-### Database Setup (Required First)
-**If you get "no such table" errors, run this first:**
-
-**For Quick Setup (Recommended for Reviewers):**
-```bash
-cd backend/database_setup
-source ../venv/bin/activate
-python3 setup_reviewer.py
-```
-
-**For Full Setup:**
-```bash
-cd backend/database_setup
-source ../venv/bin/activate
-python3 setup_database.py
-```
-
-**Having Issues?** See [docs/REVIEWER_TROUBLESHOOTING.md](docs/REVIEWER_TROUBLESHOOTING.md) for common problems and solutions.
-
-### Option 1: Use Pre-configured Test Account (Recommended)
-**Setup the test account:**
-```bash
-cd backend/database_setup
-source ../venv/bin/activate
-python3 setup_reviewer_account.py
-```
-
-**Or manually (if script has issues):**
-```bash
-# 1. Register the account
-curl -X POST "http://localhost:8000/auth/register" \
-  -H "Content-Type: application/json" \
-  -d '{"email": "reviewer@test.com", "password": "testpass123"}'
-
-# 2. Verify the account  
-curl -X POST "http://localhost:8000/auth/verify-email-simple?email=reviewer@test.com"
-```
-
-**Then login with:**
-- Email: `reviewer@test.com`
-- Password: `testpass123`
-
-### Option 2: Create Your Own Account
-1. **Register** with any email (e.g., `your-email@example.com`)
-2. **Verify your account** using this simple command:
-   ```bash
-   curl -X POST "http://localhost:8000/auth/verify-email-simple?email=your-email@example.com"
-   ```
-3. **Login** with your email and password
-4. **2FA Code** (if prompted): Use `123456` (after enabling 2FA in Settings)
-
-**Demo Features to Test:**
-- ✅ Health Profile (create/edit with translations)
-- ✅ AI Insights (change fitness goals to see different recommendations)
-- ✅ Data Consent (Settings → Data Consent)
-- ✅ Multi-language support (Settings → Language)
-- ✅ 2FA Setup (Settings → Two-Factor Authentication)
+A health and nutrition tracking platform with meal planning, recipe management, and nutritional analysis. Built with FastAPI backend and React frontend.
 
 ## Features
 
-- **Health Profile** - Store your basic health info (weight, height, goals, etc.)
-- **AI-Powered Insights** - Get personalized health recommendations using OpenAI GPT-3.5
-- **Multi-language Support** - AI insights in English, Spanish, French, and German
-- **Progress Tracking** - See your progress over time with charts
-- **Goal Setting** - Set fitness goals and track progress
-- **Secure Authentication** - OAuth (Google, GitHub, Discord, Facebook, Apple) + Supabase
-- **Data Export** - Download your data if you want to switch apps
-- **Dietary Restrictions** - AI respects your dietary needs and restrictions
-- **Fallback System** - Works without AI when API is unavailable
+### Meal Planning
+- Daily and weekly meal plan generation
+- Support for 20+ dietary restrictions and allergies
+- Cultural meal patterns (Mediterranean, Asian, Indian, Mexican, etc.)
+- Seasonal ingredient preferences
+- User behavior analysis for better recommendations
+- Multi-step AI generation process
+- Recipe database with 500+ entries
+- Accurate nutritional calculations
 
-## Project Structure
+### Recipe Management
+- Search and filter recipes by name, ingredients, cuisine, dietary restrictions
+- Generate custom recipes based on preferences
+- Ingredient substitution suggestions
+- Portion size adjustments with automatic nutrition recalculation
+- Recipe ratings and reviews
 
-```
-counting-calories/
-├── backend/                 # FastAPI backend
-│   ├── database_setup/     # Database scripts and migrations
-│   ├── models/            # Database models
-│   ├── routes/            # API endpoints
-│   ├── services/          # Business logic
-│   └── static/            # Static files
-├── frontend/              # React frontend
-├── docs/                  # Documentation
-├── tests/                 # Test HTML files
-├── oauth-pages/           # OAuth consent pages
-└── README.md
-```
+### Nutritional Analysis
+- Track calories, protein, carbs, fats, vitamins, and minerals
+- Visual progress tracking with charts
+- AI-powered insights and recommendations
+- Goal tracking with BMI and activity level integration
+- Wellness score updates based on nutrition data
 
-## Tech Stack
+### Goal Management
+- Set and track nutrition goals
+- Achievement system for motivation
+- Milestone tracking and streak counting
+- Pre-defined goal templates
 
-- **Backend**: Python with FastAPI
-- **Frontend**: React with TypeScript (Vite)
-- **Database**: SQLite
-- **AI**: OpenAI GPT-3.5 Turbo for personalized health insights
-- **Auth**: Supabase Auth + OAuth2 (Google, GitHub, Discord, Facebook, Apple)
-- **UI**: Chakra UI
-- **Charts**: Recharts
-- **Rate Limiting**: Custom sliding window algorithm
-- **CORS**: Configured for development and production
+### Additional Features
+- Personalized recommendations based on cultural and seasonal preferences
+- Shopping list generation with ingredient categorization
+- Meal plan versioning and restore functionality
+- Integration with health dashboard
+- Error handling with fallback mechanisms
 
 ## Quick Start
 
-### Backend
+### Prerequisites
+- Docker and Docker Compose installed
+- No other dependencies required
+
+### Setup
 ```bash
-cd backend
-source venv/bin/activate
-python -m uvicorn main:app --reload
+# Clone the repository
+git clone <repository-url>
+cd numbers-dont-lie
+
+# Start the application
+./start.sh
 ```
 
-### Frontend
+The application will be available at:
+- Frontend: http://localhost
+- Backend API: http://localhost:8000
+- API Documentation: http://localhost:8000/docs
+
+### Docker Commands
+```bash
+# Build and start
+docker-compose up --build
+
+# Run in background
+docker-compose up -d
+
+# View logs
+docker-compose logs -f
+
+# Stop application
+docker-compose down
+```
+
+## Architecture
+
+### Backend (FastAPI)
+- OpenAI GPT-4 integration with sequential prompting
+- PostgreSQL database with SQLAlchemy ORM
+- Redis caching for performance
+- Supabase JWT authentication
+- SentenceTransformers for vector search
+- Function calling for nutritional calculations
+
+### Frontend (React + Chakra UI)
+- Chakra UI for responsive design
+- React Context for state management
+- Recharts for data visualization
+- Supabase client for authentication
+- Mobile-first responsive design
+
+### AI Components
+- Multi-step meal plan generation
+- Recipe database with 500+ entries and vector embeddings
+- Nutritional calculations and analysis
+- User preference learning
+- Cultural meal pattern adaptation
+
+## API Endpoints
+
+### Core Nutrition
+- `POST /nutrition/meal-plans/generate` - Generate meal plans
+- `POST /nutrition/meal-plans/generate-enhanced` - Enhanced meal plans
+- `GET /nutrition/preferences` - Get user preferences
+- `PUT /nutrition/preferences` - Update preferences
+- `GET /nutrition/comprehensive-ai-analysis` - Nutritional analysis
+
+### Recipes
+- `GET /recipes/search` - Search recipes with filters
+- `GET /recipes/{id}` - Get recipe details
+- `POST /recipes/generate` - Generate custom recipes
+- `POST /recipes/{id}/substitute` - Ingredient substitution
+
+### Goals & Analytics
+- `GET /nutrition-goals/dashboard/summary` - Goals dashboard
+- `POST /nutrition-goals` - Create nutrition goals
+- `GET /nutrition-analytics/trends` - Nutritional trends
+- `GET /achievements/check` - Check for new achievements
+
+## Project Requirements
+
+### Core Requirements
+- 15+ dietary preferences supported (vegetarian, vegan, keto, paleo, etc.)
+- 10+ food allergies handled (nuts, dairy, gluten, etc.)
+- ISO 8601 date format throughout
+- Sequential prompting with 3+ steps
+- Function calling for nutritional calculations
+- RAG implementation with 500+ recipes
+- Recipe management with search, filter, and generation
+- Nutritional analysis with macro tracking and visualization
+- Cross-feature integration with health dashboard
+
+### Advanced Features
+- Enhanced dietary restrictions with severity levels
+- Cultural meal patterns for 5+ cuisines
+- Seasonal ingredient integration
+- Behavioral pattern analysis
+- Achievement system for motivation
+- Meal plan versioning and restore
+- Comprehensive error handling
+
+## Development
+
+### Backend Development
+```bash
+cd backend
+pip install -r requirements.txt
+uvicorn main:app --reload
+```
+
+### Frontend Development
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
 
-**URLs:**
-- Frontend: http://localhost:5173 (or 5174/5175 if busy)
-- Backend API: http://localhost:8000
-- API Docs: http://localhost:8000/docs
-
-## Testing Features
-
-### Email Verification
-- Register through frontend
-- Check backend console for verification command
-- Run the curl command to verify
-- Login with your credentials
-
-### Two-Factor Authentication (2FA)
-1. **Enable 2FA** - Go to Settings → Two-Factor Authentication
-2. **Scan QR Code** - Use Google Authenticator or any TOTP app
-3. **Save Backup Codes** - 8 recovery codes (save these!)
-4. **Test Login** - Enter code from authenticator app or use backup codes
-
-### Password Reset
-1. **Request Reset** - Go to Login → "Forgot your password?"
-2. **Check Console** - Backend shows reset link
-3. **Reset Password** - Click link and set new password
-
-## Setup
-
-### Requirements
-- Python 3.8+
-- Node.js 16+
-- OpenAI API key (for AI insights - fallback available without it)
-
-### Environment Variables
-The `.env` file is already configured with:
-```
-# AI Configuration
-OPENAI_API_KEY=sk-proj-... (configured)
-USE_OPENAI=true
-
-# Supabase Configuration  
-SUPABASE_URL=https://idaenyycsiewbvxtdecn.supabase.co
-SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
-SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
-
-# OAuth Providers (configured)
-GOOGLE_CLIENT_ID=409374284979-...
-GITHUB_CLIENT_ID=Ov23liz8cgEtvuAlwlnh
-# Discord, Facebook, Apple also configured
-```
-
-### Installation
+### Database Setup
 ```bash
-# Backend
+# Run migrations
 cd backend
-python -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-cd database_setup
-python init_db.py
+python -c "from database import engine; from models import Base; Base.metadata.create_all(bind=engine)"
 
-# Frontend
-cd frontend
-npm install
+# Seed initial data
+python scripts/seed_goals_direct.py
 ```
 
-### Troubleshooting
+## Data Models
 
-**If you get `ModuleNotFoundError: No module named 'supabase'`:**
-```bash
-cd backend
-source venv/bin/activate
-pip install supabase==2.3.0
+### Recipe Schema
+```json
+{
+  "id": "r789",
+  "title": "Mediterranean Quinoa Bowl",
+  "cuisine": "Mediterranean",
+  "meal": "lunch",
+  "servings": 2,
+  "ingredients": [
+    {"id": "ing123", "name": "quinoa", "quantity": 180, "unit": "g"}
+  ],
+  "nutrition": {
+    "calories": 425,
+    "protein": 12.5,
+    "carbs": 48.3,
+    "fats": 22.7
+  },
+  "dietary_tags": ["vegetarian", "gluten-free", "high-protein"],
+  "preparation": [
+    {"step": "Cook quinoa", "description": "Rinse and cook quinoa", "ingredients": ["ing123"]}
+  ]
+}
 ```
 
-**If you get `ModuleNotFoundError: No module named 'lib'` or similar:**
-```bash
-cd backend
-touch lib/__init__.py auth/__init__.py ai/__init__.py middleware/__init__.py schemas/__init__.py
+### Enhanced Nutritional Data
+```json
+{
+  "glycemic_index": 45,
+  "antioxidant_profile": {
+    "polyphenols": "high",
+    "flavonoids": "medium"
+  },
+  "nutrient_density_score": 8.5,
+  "satiety_index": 76
+}
 ```
 
-**If you get import errors:**
-```bash
-cd backend
-source venv/bin/activate
-pip install -r requirements.txt
-```
+## AI Integration
 
-**Complete fix for all common issues:**
-```bash
-cd backend
-source venv/bin/activate
-python fix_dependencies.py
-```
+### Sequential Prompting Strategy
+1. Strategy Generation: Analyze user profile and define meal plan approach
+2. Meal Structure: Design specific meals and timing
+3. Recipe Generation: Create detailed recipes with RAG enhancement
+4. Nutritional Analysis: Evaluate and adjust nutritional balance
+5. Refinement: Address gaps and optimize for user preferences
 
-**Test if everything is working:**
-```bash
-cd backend
-source venv/bin/activate
-python test_imports.py
-```
+### Function Calling Implementation
+- Nutritional Calculations: Accurate macro/micro nutrient analysis
+- Ingredient Substitution: AI-driven alternatives based on availability
+- Portion Scaling: Automatic quantity and nutrition recalculation
+- Dietary Compliance: Verification against user restrictions
 
-**If you still get `ModuleNotFoundError: No module named 'lib.supabase'`:**
-```bash
-cd backend
-source venv/bin/activate
-python fix_missing_files.py
-```
+### RAG System
+- Vector Database: 500+ recipes with embeddings
+- Similarity Search: Cosine similarity for recipe retrieval
+- Context Augmentation: Enhanced prompts with retrieved examples
+- Quality Improvement: Community-driven recipe enhancement
 
-**Alternative fix - Replace the problematic import:**
-```bash
-cd backend
-source venv/bin/activate
-# Backup the original file
-cp auth/supabase_auth.py auth/supabase_auth_backup.py
-# Use the alternative version
-cp auth/supabase_auth_alternative.py auth/supabase_auth.py
-```
+## Error Handling
 
-## AI Features
+### API Reliability
+- Graceful degradation with fallback to cached data when AI fails
+- Retry logic with exponential backoff for transient failures
+- Circuit breaker to prevent cascade failures
+- User-friendly error messages
 
-### AI-Powered Health Insights
-- **Personalized Recommendations**: Based on your health profile, goals, and activity data
-- **Multi-language Support**: Insights in English, Spanish, French, and German
-- **Dietary Restrictions**: AI respects your dietary needs and medical conditions
-- **Goal-Oriented**: Tailored advice based on your active fitness goals
-- **Fallback System**: Works without OpenAI API (shows general health tips)
+### Recovery Mechanisms
+- Redis caching for frequently accessed data
+- Alternative AI models when primary fails
+- Comprehensive input validation
+- Detailed error tracking and monitoring
 
-### AI Configuration
-- **Model**: OpenAI GPT-3.5 Turbo
-- **Cost Control**: Intelligent fallback when API is unavailable
-- **Data Privacy**: Health data is normalized and PII is removed before AI processing
-- **Rate Limiting**: Prevents API abuse and controls costs
+## Mobile Optimization
 
-## Notes
+### Responsive Design
+- Mobile-first approach optimized for mobile devices
+- Touch-friendly interface with large buttons
+- Optimized loading and rendering
+- Offline support with cached recipes and meal plans
 
-- AI features work with fallback when API is unavailable
-- All OAuth providers are configured and working
-- All data stored locally in SQLite
-- Rate limiting prevents API abuse
-- CORS configured for development and production
+## Security
+
+### Authentication & Authorization
+- Supabase integration with secure JWT token handling
+- Role-based access control
+- Secure handling of health data
+- Proper CORS configuration
+
+## Performance
+
+### Optimization Strategies
+- Database indexing for optimized queries
+- Redis caching layer for frequently accessed data
+- Lazy loading for on-demand components
+- Image optimization with compression
+
+## Testing
+
+### Test Coverage
+- Unit tests for backend services
+- Integration tests for API endpoints
+- Frontend component testing
+- End-to-end tests for user journeys
+
+## Documentation
+
+### Additional Resources
+- API documentation available at `/docs` endpoint
+- Comprehensive inline code comments
+- System design documentation
+- Production deployment instructions
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Add tests if applicable
+5. Submit a pull request
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## Acknowledgments
+
+- OpenAI for GPT-4 API
+- Supabase for authentication and database
+- Chakra UI for component library
+- Recharts for data visualization
+- SentenceTransformers for vector embeddings

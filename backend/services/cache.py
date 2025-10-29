@@ -1,5 +1,5 @@
 """
-Enhanced caching service for AI recommendations and insights
+Caching service for AI recommendations and insights
 """
 import time
 import json
@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 import os
 
 class RecommendationCache:
-    """Enhanced cache for AI recommendations with fallback support"""
+    """Cache for AI recommendations with fallback support"""
     
     def __init__(self):
         self.cache = {}
@@ -115,16 +115,15 @@ class RecommendationCache:
     
     def get_fallback_insights(self, user_id: int, language: str, fitness_goal: str = "general_fitness") -> Dict[str, Any]:
         """Get fallback insights when AI service is unavailable"""
-        # First, try to get any cached AI insights (even if expired, within grace period)
         # Check if cached insights are still relevant for the current goal
         cached_ai_insights = self.get_any_cached_ai_insights(user_id, language, fitness_goal)
         
         if cached_ai_insights:
-            print(f"🌐 Internet down - Using cached AI insights for user {user_id} (grace period active)")
+            print(f"🌐 Internet down - Using cached insights for user {user_id} (grace period active)")
             return cached_ai_insights
         
         # If no relevant cached insights, generate mock insights for the current goal
-        print(f"🤖 No relevant cached AI insights found for user {user_id} (goal: {fitness_goal}), generating mock insights")
+        print(f"🤖 No relevant cached insights found for user {user_id} (goal: {fitness_goal}), generating mock insights")
         from ai.insights import generate_mock_insights
         return generate_mock_insights(language, fitness_goal)
     

@@ -8,6 +8,7 @@ class UserSettingsBase(BaseModel):
     data_sharing: bool = Field(default=False, alias="dataSharing")
     measurement_system: str = Field(default="metric", pattern="^(metric|imperial)$", alias="measurementSystem")
     language: str = Field(default="en", min_length=2, max_length=5)
+    timezone: str = Field(default="UTC", description="Timezone in ISO format (e.g., UTC, America/New_York, Europe/London)")
 
     class Config:
         populate_by_name = True  # Allow both field names and aliases
@@ -22,6 +23,7 @@ class UserSettingsUpdate(BaseModel):
     data_sharing: Optional[bool] = Field(None, alias="dataSharing")
     measurement_system: Optional[str] = Field(None, pattern="^(metric|imperial)$", alias="measurementSystem")
     language: Optional[str] = Field(None, min_length=2, max_length=5)
+    timezone: Optional[str] = Field(None, description="Timezone in ISO format (e.g., UTC, America/New_York, Europe/London)")
 
     class Config:
         populate_by_name = True  # Allow both field names and aliases

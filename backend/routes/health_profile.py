@@ -286,7 +286,7 @@ async def get_health_insights(
         
     except Exception as e:
         # Fallback to basic insights if AI fails
-        print(f"AI insights failed: {e}")
+        print(f"Insights failed: {e}")
         
         # Calculate basic metrics
         bmi = calculate_bmi(profile.weight, profile.height)

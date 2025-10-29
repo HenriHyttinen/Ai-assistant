@@ -99,6 +99,9 @@ const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({ isOpen, onClose
               <Text fontSize="sm">• All health data and metrics</Text>
               <Text fontSize="sm">• Activity logs and progress</Text>
               <Text fontSize="sm">• Goals and achievements</Text>
+              <Text fontSize="sm">• All nutrition data and meal plans</Text>
+              <Text fontSize="sm">• Daily logging and nutritional analysis</Text>
+              <Text fontSize="sm">• Shopping lists and preferences</Text>
               <Text fontSize="sm">• All settings and preferences</Text>
             </VStack>
 

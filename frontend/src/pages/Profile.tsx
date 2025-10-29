@@ -23,6 +23,8 @@ import * as Yup from 'yup';
 import { useState, useEffect } from 'react';
 import { healthProfile, analytics } from '../services/api';
 import ConsentModal from '../components/ConsentModal';
+import NutritionPreferencesSummary from '../components/profile/NutritionPreferencesSummary';
+import UserRatingHistory from '../components/profile/UserRatingHistory';
 import { getErrorMessage } from '../utils/errorUtils';
 import { 
   convertWeightForDisplay, 
@@ -800,6 +802,36 @@ const Profile = () => {
     },
   });
 
+  const loadNutritionPreferences = async () => {
+    try {
+      const { supabase } = await import('../lib/supabase');
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session?.access_token) {
+        throw new Error('No authentication session found');
+      }
+      
+      const response = await fetch('http://localhost:8000/nutrition/preferences', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        }
+      });
+      
+      if (response.ok) {
+        return await response.json();
+      } else if (response.status === 404) {
+        return null; // No preferences set yet
+      } else {
+        throw new Error('Failed to load nutrition preferences');
+      }
+    } catch (error) {
+      console.error('Error loading nutrition preferences:', error);
+      throw error;
+    }
+  };
+
   // Reload form when measurement system changes
   useEffect(() => {
     if (profileData) {
@@ -1187,6 +1219,14 @@ const Profile = () => {
               </VStack>
             </CardBody>
           </Card>
+
+          {/* Nutrition Preferences Summary */}
+          <NutritionPreferencesSummary
+            onLoad={loadNutritionPreferences}
+          />
+
+          {/* User Rating History */}
+          <UserRatingHistory />
         </SimpleGrid>
 
         <Box mt={8} textAlign="center">
