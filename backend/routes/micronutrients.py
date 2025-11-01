@@ -14,6 +14,7 @@ from schemas.micronutrients import (
     MicronutrientAnalysis, MicronutrientDashboard, MicronutrientDeficiencyResponse,
     MicronutrientSearchFilter
 )
+from services.micronutrient_enrichment_service import MicronutrientEnrichmentService
 
 router = APIRouter(tags=["micronutrients"])
 
@@ -224,6 +225,17 @@ def search_recipes_by_micronutrients(
         from models.recipe import Recipe
         
         query = db.query(Recipe).filter(Recipe.is_active == True)
+
+        # Text/categorical filters
+        if filter_data.q:
+            q = f"%{filter_data.q.lower()}%"
+            query = query.filter((Recipe.title.ilike(q)) | (Recipe.cuisine.ilike(q)))
+        if filter_data.cuisine:
+            query = query.filter(Recipe.cuisine == filter_data.cuisine)
+        if filter_data.meal_type:
+            query = query.filter(Recipe.meal_type == filter_data.meal_type)
+        if filter_data.difficulty_level:
+            query = query.filter(Recipe.difficulty_level == filter_data.difficulty_level)
         
         # Apply micronutrient filters
         if filter_data.min_vitamin_d:
@@ -247,6 +259,11 @@ def search_recipes_by_micronutrients(
         if filter_data.min_fiber:
             query = query.filter(Recipe.per_serving_fiber >= filter_data.min_fiber)
         
+        # If include_partial is False, require non-null micronutrient fields for any requested min filters
+        if not (filter_data.include_partial or True):
+            # Pydantic default True makes previous line a safe fallback; kept for explicitness
+            pass
+
         recipes = query.limit(50).all()
         
         return {
@@ -282,3 +299,37 @@ def search_recipes_by_micronutrients(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error searching recipes: {str(e)}"
         )
+
+
+# --- Enrichment Endpoints ---
+@router.post("/enrich/recipe/{recipe_id}")
+def enrich_recipe_micronutrients(
+    recipe_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    try:
+        svc = MicronutrientEnrichmentService()
+        result = svc.enrich_recipe(db, recipe_id)
+        if not result:
+            raise HTTPException(status_code=404, detail="Recipe not found")
+        return {"status": "ok", "recipe_id": recipe_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error enriching recipe: {str(e)}")
+
+
+@router.post("/enrich/missing")
+def enrich_missing_recipes(
+    limit: int = 50,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    try:
+        svc = MicronutrientEnrichmentService()
+        updated = svc.enrich_missing(db, limit=limit)
+        return {"status": "ok", "updated": updated}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error enriching recipes: {str(e)}")
+

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Box,
   Grid,
@@ -33,7 +33,8 @@ import {
   FiActivity,
   FiCoffee,
   FiPieChart,
-  FiZap
+  FiZap,
+  FiPlus
 } from 'react-icons/fi';
 import MicronutrientAnalysis from '../../components/nutrition/MicronutrientAnalysis';
 import MacronutrientVisualization from '../../components/nutrition/MacronutrientVisualization';
@@ -82,6 +83,95 @@ const NutritionDashboard: React.FC<NutritionDashboardProps> = ({ user = null }) 
     fats: 65
   });
   const [activeTab, setActiveTab] = useState<'overview' | 'micronutrients'>('overview');
+  const [showAllMeals, setShowAllMeals] = useState(false);
+
+  // (moved todayTotals below gridAssignments to avoid temporal dead zone)
+
+  // Build a 7x4 assignment for weekly plans (same logic as MealPlanning)
+  const gridAssignments = useMemo(() => {
+    if (!mealPlan || mealPlan.plan_type !== 'weekly') return {};
+    
+    const start = new Date(mealPlan.start_date || mealPlan.date);
+    const weekDates: string[] = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(start);
+      d.setDate(start.getDate() + i);
+      weekDates.push(d.toISOString().split('T')[0]);
+    }
+    
+    const result: Record<string, Record<'breakfast'|'lunch'|'dinner'|'snack', any | null>> = {};
+    weekDates.forEach(d => {
+      result[d] = { breakfast: null, lunch: null, dinner: null, snack: null };
+    });
+    
+    const all = (mealPlan?.meals || []) as any[];
+    // First pass: honor explicit dates
+    all.forEach(m => {
+      const d = m.meal_date || m.date;
+      const t = (m.meal_type || m.type) as 'breakfast'|'lunch'|'dinner'|'snack';
+      if (d && result[d] && t && !result[d][t]) {
+        result[d][t] = m;
+      }
+    });
+    
+    // Second pass: assign remaining by round-robin per type
+    const remainingByType: Record<string, any[]> = { breakfast: [], lunch: [], dinner: [], snack: [] } as any;
+    all.forEach(m => {
+      const d = m.meal_date || m.date;
+      const t = (m.meal_type || m.type) as keyof typeof remainingByType;
+      if (!t) return;
+      const alreadyPlaced = d && result[d] && Object.values(result[d]).includes(m);
+      if (!alreadyPlaced) remainingByType[t].push(m);
+    });
+    
+    (['breakfast','lunch','dinner','snack'] as const).forEach(slot => {
+      let idx = 0;
+      remainingByType[slot].forEach(m => {
+        for (let i = 0; i < weekDates.length; i++) {
+          const day = weekDates[(idx + i) % weekDates.length];
+          if (!result[day][slot]) {
+            result[day][slot] = m;
+            idx = (idx + i + 1) % weekDates.length;
+            break;
+          }
+        }
+      });
+    });
+    
+    return result;
+  }, [mealPlan]);
+
+  // Derive today's totals from the current meal plan to guarantee DAILY values
+  const todayTotals = useMemo(() => {
+    const fallback = {
+      calories: nutritionalData?.calories || 0,
+      protein: nutritionalData?.protein || 0,
+      carbs: nutritionalData?.carbs || 0,
+      fats: nutritionalData?.fats || 0,
+    };
+    if (!mealPlan) return fallback;
+    const today = new Date().toISOString().split('T')[0];
+    let meals: any[] = [];
+    if (mealPlan.plan_type === 'weekly' && Object.keys(gridAssignments).length > 0) {
+      const todayMeals = gridAssignments[today] || {};
+      meals = Object.values(todayMeals).filter(Boolean);
+    } else {
+      const all = (mealPlan.meals || []) as any[];
+      meals = all.filter((m: any) => {
+        const d = m.meal_date || m.date || mealPlan.date;
+        return d?.slice(0, 10) === today;
+      });
+    }
+    if (!meals.length) return fallback;
+    const sum = (arr: any[], key: 'calories'|'protein'|'carbs'|'fats') =>
+      arr.reduce((s, m) => s + (m[key] || m.recipe?.nutrition?.[key] || 0), 0);
+    return {
+      calories: sum(meals, 'calories'),
+      protein: sum(meals, 'protein'),
+      carbs: sum(meals, 'carbs'),
+      fats: sum(meals, 'fats'),
+    };
+  }, [mealPlan, gridAssignments, nutritionalData]);
 
   const cardBg = useColorModeValue('white', 'gray.800');
   const borderColor = useColorModeValue('gray.200', 'gray.600');
@@ -198,9 +288,33 @@ const NutritionDashboard: React.FC<NutritionDashboardProps> = ({ user = null }) 
       });
       
       if (mealPlanResponse.ok) {
-        const mealPlans = await mealPlanResponse.json();
-        if (mealPlans.length > 0) {
-          setMealPlan(mealPlans[0]);
+        const byDate = await mealPlanResponse.json();
+        const todayStr = today;
+        const pickMealsForToday = (plan: any) => {
+          const meals = (plan?.meals || []).filter((m: any) => {
+            const d = m?.meal_date || m?.date || plan?.date;
+            return (d || '').slice(0, 10) === todayStr;
+          });
+          return { plan, meals };
+        };
+
+        if (byDate.length > 0) {
+          const chosen = pickMealsForToday(byDate[0]);
+          if (chosen.meals.length > 0) {
+            setMealPlan(byDate[0]);
+          } else {
+            // Fallback: fetch latest weekly and filter today's meals
+            const weeklyResp = await fetch('http://localhost:8000/nutrition/meal-plans?plan_type=weekly&limit=1', {
+              method: 'GET',
+              headers: { 'Content-Type': 'application/json', ...headers }
+            });
+            if (weeklyResp.ok) {
+              const weekly = await weeklyResp.json();
+              if (weekly.length > 0) {
+                setMealPlan(weekly[0]);
+              }
+            }
+          }
         }
       }
       
@@ -334,14 +448,14 @@ const NutritionDashboard: React.FC<NutritionDashboardProps> = ({ user = null }) 
             <CardBody>
               <Stat>
                 <StatLabel>{t('nutrition.calories', 'en')}</StatLabel>
-                <StatNumber>{nutritionalData?.calories || 0}</StatNumber>
+                <StatNumber>{todayTotals.calories}</StatNumber>
                 <StatHelpText>
                   <Progress 
-                    value={getCalorieProgress()} 
-                    colorScheme={getProgressColor(getCalorieProgress())}
+                    value={Math.min((todayTotals.calories / goals.calories) * 100, 100)} 
+                    colorScheme={getProgressColor(Math.min((todayTotals.calories / goals.calories) * 100, 100))}
                     size="sm"
                   />
-                  {Math.round(getCalorieProgress())}% of {goals.calories}
+                  {Math.round(Math.min((todayTotals.calories / goals.calories) * 100, 100))}% of {goals.calories}
                 </StatHelpText>
               </Stat>
             </CardBody>
@@ -351,14 +465,14 @@ const NutritionDashboard: React.FC<NutritionDashboardProps> = ({ user = null }) 
             <CardBody>
               <Stat>
                 <StatLabel>{t('nutrition.protein', 'en')}</StatLabel>
-                <StatNumber>{nutritionalData?.protein || 0}g</StatNumber>
+                <StatNumber>{todayTotals.protein}g</StatNumber>
                 <StatHelpText>
                   <Progress 
-                    value={getMacroProgress(nutritionalData?.protein || 0, goals.protein)} 
-                    colorScheme={getProgressColor(getMacroProgress(nutritionalData?.protein || 0, goals.protein))}
+                    value={getMacroProgress(todayTotals.protein, goals.protein)} 
+                    colorScheme={getProgressColor(getMacroProgress(todayTotals.protein, goals.protein))}
                     size="sm"
                   />
-                  {Math.round(getMacroProgress(nutritionalData?.protein || 0, goals.protein))}% of {goals.protein}g
+                  {Math.round(getMacroProgress(todayTotals.protein, goals.protein))}% of {goals.protein}g
                 </StatHelpText>
               </Stat>
             </CardBody>
@@ -368,14 +482,14 @@ const NutritionDashboard: React.FC<NutritionDashboardProps> = ({ user = null }) 
             <CardBody>
               <Stat>
                 <StatLabel>{t('nutrition.carbs', 'en')}</StatLabel>
-                <StatNumber>{nutritionalData?.carbs || 0}g</StatNumber>
+                <StatNumber>{todayTotals.carbs}g</StatNumber>
                 <StatHelpText>
                   <Progress 
-                    value={getMacroProgress(nutritionalData?.carbs || 0, goals.carbs)} 
-                    colorScheme={getProgressColor(getMacroProgress(nutritionalData?.carbs || 0, goals.carbs))}
+                    value={getMacroProgress(todayTotals.carbs, goals.carbs)} 
+                    colorScheme={getProgressColor(getMacroProgress(todayTotals.carbs, goals.carbs))}
                     size="sm"
                   />
-                  {Math.round(getMacroProgress(nutritionalData?.carbs || 0, goals.carbs))}% of {goals.carbs}g
+                  {Math.round(getMacroProgress(todayTotals.carbs, goals.carbs))}% of {goals.carbs}g
                 </StatHelpText>
               </Stat>
             </CardBody>
@@ -385,100 +499,303 @@ const NutritionDashboard: React.FC<NutritionDashboardProps> = ({ user = null }) 
             <CardBody>
               <Stat>
                 <StatLabel>{t('nutrition.fats', 'en')}</StatLabel>
-                <StatNumber>{nutritionalData?.fats || 0}g</StatNumber>
+                <StatNumber>{todayTotals.fats}g</StatNumber>
                 <StatHelpText>
                   <Progress 
-                    value={getMacroProgress(nutritionalData?.fats || 0, goals.fats)} 
-                    colorScheme={getProgressColor(getMacroProgress(nutritionalData?.fats || 0, goals.fats))}
+                    value={getMacroProgress(todayTotals.fats, goals.fats)} 
+                    colorScheme={getProgressColor(getMacroProgress(todayTotals.fats, goals.fats))}
                     size="sm"
                   />
-                  {Math.round(getMacroProgress(nutritionalData?.fats || 0, goals.fats))}% of {goals.fats}g
+                  {Math.round(getMacroProgress(todayTotals.fats, goals.fats))}% of {goals.fats}g
                 </StatHelpText>
               </Stat>
             </CardBody>
           </Card>
         </Grid>
 
-        {/* Today's Meal Plan */}
+        {/* Today's Meal Plan (compact, collapsible) */}
         <Card bg={cardBg} borderColor={borderColor}>
           <CardHeader>
-            <Heading size="md">{t('nutrition.todaysMeals', 'en')}</Heading>
+            <HStack justify="space-between">
+              <Heading size="md">Today's Meals</Heading>
+              {!mealPlan && (
+                <Button
+                  size="sm"
+                  colorScheme="blue"
+                  leftIcon={<FiCoffee />}
+                  onClick={() => {
+                    // Navigate to Meal Planning tab
+                    const event = new CustomEvent('navigateToTab', { detail: { tabIndex: 2 } });
+                    window.dispatchEvent(event);
+                  }}
+                >
+                  Create Meal Plan
+                </Button>
+              )}
+            </HStack>
           </CardHeader>
           <CardBody>
             {mealPlan ? (
               <VStack spacing={4} align="stretch">
-                {mealPlan.meals.map((meal, index) => (
-                  <Box key={meal.id} p={4} borderWidth={1} borderRadius="md" borderColor={borderColor}>
-                    <HStack justify="space-between" mb={2}>
-                      <VStack align="start" spacing={1}>
-                        <Text fontWeight="bold">{meal.name}</Text>
-                        <Badge colorScheme="blue" size="sm">{meal.type}</Badge>
-                      </VStack>
-                      <Text fontSize="sm" color="gray.600">
-                        {meal.calories} {t('nutrition.calories', 'en')}
-                      </Text>
-                    </HStack>
-                    <HStack spacing={4} fontSize="sm" color="gray.600">
-                      <Text>{meal.protein}g {t('nutrition.protein', 'en')}</Text>
-                      <Text>{meal.carbs}g {t('nutrition.carbs', 'en')}</Text>
-                      <Text>{meal.fats}g {t('nutrition.fats', 'en')}</Text>
-                    </HStack>
-                  </Box>
-                ))}
+                {(() => {
+                  const today = new Date().toISOString().split('T')[0];
+                  
+                  // Use grid assignments for weekly plans, fallback to old logic for daily
+                  let meals: any[] = [];
+                  if (mealPlan.plan_type === 'weekly' && Object.keys(gridAssignments).length > 0) {
+                    // Get today's meals from grid assignments
+                    const todayMeals = gridAssignments[today] || {};
+                    meals = Object.values(todayMeals).filter(Boolean);
+                  } else {
+                    // Fallback to old logic for daily plans
+                    const all = mealPlan.meals || [];
+                    meals = all.filter((m: any) => {
+                      const d = m.meal_date || m.date || mealPlan.date;
+                      return d?.slice(0, 10) === today;
+                    });
+                  }
+                  
+                  const visible = showAllMeals ? meals : meals.slice(0, 6);
+                  return (
+                    <Grid templateColumns={{ base: '1fr', md: 'repeat(2, 1fr)' }} gap={3}>
+                      {visible.map((meal: any) => {
+                        const title = meal.name || meal.meal_name || meal.recipe?.title || 'Meal';
+                        const type = meal.type || meal.meal_type || 'meal';
+                        const calories = meal.calories || meal.recipe?.nutrition?.calories || 0;
+                        const protein = meal.protein || meal.recipe?.nutrition?.protein || 0;
+                        const carbs = meal.carbs || meal.recipe?.nutrition?.carbs || 0;
+                        const fats = meal.fats || meal.recipe?.nutrition?.fats || 0;
+                        return (
+                          <Box key={(meal.id ?? `${meal.meal_plan_id || 'mp'}_${(meal.meal_type || type)}_${(meal.meal_date || meal.date || new Date().toISOString().split('T')[0])}_${title}`)} p={3} borderWidth={1} borderRadius="md" borderColor={borderColor} _hover={{ bg: 'gray.50' }}>
+                            <HStack justify="space-between" mb={1}>
+                              <VStack align="start" spacing={0}>
+                                <Text fontWeight="semibold" noOfLines={1}>{title}</Text>
+                                <Badge colorScheme="blue" size="xs" textTransform="capitalize">{type}</Badge>
+                              </VStack>
+                              <Text fontSize="sm" color="gray.600" fontWeight="bold">{calories} cal</Text>
+                            </HStack>
+                            <HStack spacing={3} fontSize="xs" color="gray.600">
+                              <Text>{protein}g protein</Text>
+                              <Text>{carbs}g carbs</Text>
+                              <Text>{fats}g fats</Text>
+                            </HStack>
+                          </Box>
+                        );
+                      })}
+                    </Grid>
+                  );
+                })()}
                 <Divider />
-                <HStack justify="space-between" fontWeight="bold">
-                  <Text>{t('nutrition.total', 'en')}</Text>
-                  <Text>{mealPlan.totalCalories} {t('nutrition.calories', 'en')}</Text>
+                <HStack justify="space-between" fontWeight="bold" p={2} bg="gray.50" borderRadius="md">
+                  <Text>Total</Text>
+                  <HStack>
+                  <Text>{(() => {
+                    const today = new Date().toISOString().split('T')[0];
+                    
+                    // Always show today's total calories
+                    let meals: any[] = [];
+                    if (mealPlan.plan_type === 'weekly' && Object.keys(gridAssignments).length > 0) {
+                      const todayMeals = gridAssignments[today] || {};
+                      meals = Object.values(todayMeals).filter(Boolean);
+                    } else {
+                      const all = mealPlan.meals || [];
+                      meals = all.filter((m: any) => {
+                        const d = m.meal_date || m.date || mealPlan.date;
+                        return d?.slice(0, 10) === today;
+                      });
+                    }
+                    
+                    return meals.reduce((s: number, m: any) => s + (m.calories || m.recipe?.nutrition?.calories || 0), 0);
+                  })()} calories</Text>
+                  {(() => {
+                    const total = (() => {
+                      const today = new Date().toISOString().split('T')[0];
+                      let meals: any[] = [];
+                      if (mealPlan.plan_type === 'weekly' && Object.keys(gridAssignments).length > 0) {
+                        const todayMeals = gridAssignments[today] || {};
+                        meals = Object.values(todayMeals).filter(Boolean);
+                      } else {
+                        const all = mealPlan.meals || [];
+                        meals = all.filter((m: any) => {
+                          const d = m.meal_date || m.date || mealPlan.date;
+                          return d?.slice(0, 10) === today;
+                        });
+                      }
+                      return meals.reduce((s: number, m: any) => s + (m.calories || m.recipe?.nutrition?.calories || 0), 0);
+                    })();
+                    const target = goals.calories || 2000;
+                    return total < target * 0.95 ? (
+                      <Button size="xs" variant="outline" colorScheme="green"
+                        onClick={async () => {
+                          try {
+                            const { supabase } = await import('../../lib/supabase');
+                            const { data: { session } } = await supabase.auth.getSession();
+                            if (!session?.access_token || !mealPlan?.id) return;
+                            const today = new Date().toISOString().split('T')[0];
+                            await fetch(`http://localhost:8000/nutrition/meal-plans/${mealPlan.id}/top-up?meal_date=${today}`, {
+                              method: 'POST',
+                              headers: { 'Authorization': `Bearer ${session.access_token}` }
+                            });
+                            // reload latest weekly plan
+                            const weeklyResp = await fetch('http://localhost:8000/nutrition/meal-plans?plan_type=weekly&limit=1', { headers: { 'Authorization': `Bearer ${session.access_token}` }});
+                            if (weeklyResp.ok) {
+                              const weekly = await weeklyResp.json();
+                              if (weekly.length > 0) setMealPlan(weekly[0]);
+                            }
+                          } catch {}
+                        }}
+                      >Top up to target</Button>
+                    ) : null;
+                  })()}
+                  </HStack>
                 </HStack>
+                {(() => {
+                  const today = new Date().toISOString().split('T')[0];
+                  
+                  // Use same logic as above for consistency
+                  let meals: any[] = [];
+                  if (mealPlan.plan_type === 'weekly' && Object.keys(gridAssignments).length > 0) {
+                    const todayMeals = gridAssignments[today] || {};
+                    meals = Object.values(todayMeals).filter(Boolean);
+                  } else {
+                    const all = mealPlan.meals || [];
+                    meals = all.filter((m: any) => {
+                      const d = m.meal_date || m.date || mealPlan.date;
+                      return d?.slice(0, 10) === today;
+                    });
+                  }
+                  
+                  return meals.length > 6;
+                })() && (
+                  <Button size="sm" variant="outline" onClick={() => setShowAllMeals(!showAllMeals)}>
+                    {showAllMeals ? 'Show Less' : (() => {
+                      const today = new Date().toISOString().split('T')[0];
+                      
+                      // Use same logic as above for consistency
+                      let meals: any[] = [];
+                      if (mealPlan.plan_type === 'weekly' && Object.keys(gridAssignments).length > 0) {
+                        const todayMeals = gridAssignments[today] || {};
+                        meals = Object.values(todayMeals).filter(Boolean);
+                      } else {
+                        const all = mealPlan.meals || [];
+                        meals = all.filter((m: any) => {
+                          const d = m.meal_date || m.date || mealPlan.date;
+                          return d?.slice(0, 10) === today;
+                        });
+                      }
+                      
+                      return `Show All (${meals.length})`;
+                    })()}
+                  </Button>
+                )}
               </VStack>
             ) : (
-              <Text color="gray.500">{t('nutrition.noMealPlan', 'en')}</Text>
+              <VStack spacing={4} py={8}>
+                <FiCoffee size={48} color="#CBD5E0" />
+                <Text color="gray.500" textAlign="center">
+                  No meal plan available for today
+                </Text>
+                <Text fontSize="sm" color="gray.400" textAlign="center">
+                  Create a meal plan to get started with your nutrition journey
+                </Text>
+                <HStack spacing={2}>
+                  <Button
+                    size="sm"
+                    colorScheme="blue"
+                    leftIcon={<FiCoffee />}
+                    onClick={() => {
+                      const event = new CustomEvent('navigateToTab', { detail: { tabIndex: 2 } });
+                      window.dispatchEvent(event);
+                    }}
+                  >
+                    Create Meal Plan
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    leftIcon={<FiPlus />}
+                    onClick={() => {
+                    const event = new CustomEvent('navigateToTab', { detail: { tabIndex: 7 } });
+                      window.dispatchEvent(event);
+                    }}
+                  >
+                    Add Food Entry
+                  </Button>
+                </HStack>
+              </VStack>
             )}
           </CardBody>
         </Card>
 
         {/* Quick Actions */}
         <Grid templateColumns={{ base: '1fr', md: 'repeat(3, 1fr)' }} gap={4}>
-          <Card bg={cardBg} borderColor={borderColor}>
+          <Card bg={cardBg} borderColor={borderColor} _hover={{ shadow: 'md' }} transition="all 0.2s">
             <CardBody>
               <VStack spacing={3}>
-                <FiTarget size={24} />
-                <Text fontWeight="bold">{t('nutrition.setGoals', 'en')}</Text>
+                <FiTarget size={24} color="#38A169" />
+                <Text fontWeight="bold" color="green.600">Set Goals</Text>
                 <Text fontSize="sm" color="gray.600" textAlign="center">
-                  {t('nutrition.setGoalsDescription', 'en')}
+                  Set your daily nutrition targets
                 </Text>
-                <Button size="sm" colorScheme="green" width="full">
-                  {t('nutrition.setGoals', 'en')}
+                <Button 
+                  size="sm" 
+                  colorScheme="green" 
+                  width="full"
+                  onClick={() => {
+                    // Navigate to Goals tab
+                    const event = new CustomEvent('navigateToTab', { detail: { tabIndex: 3 } });
+                    window.dispatchEvent(event);
+                  }}
+                >
+                  Set Goals
                 </Button>
               </VStack>
             </CardBody>
           </Card>
 
-          <Card bg={cardBg} borderColor={borderColor}>
+          <Card bg={cardBg} borderColor={borderColor} _hover={{ shadow: 'md' }} transition="all 0.2s">
             <CardBody>
               <VStack spacing={3}>
-                <FiShoppingCart size={24} />
-                <Text fontWeight="bold">{t('nutrition.shoppingList', 'en')}</Text>
+                <FiShoppingCart size={24} color="#DD6B20" />
+                <Text fontWeight="bold" color="orange.600">Shopping List</Text>
                 <Text fontSize="sm" color="gray.600" textAlign="center">
-                  {t('nutrition.shoppingListDescription', 'en')}
+                  Generate shopping list from meal plans
                 </Text>
-                <Button size="sm" colorScheme="orange" width="full">
-                  {t('nutrition.generateShoppingList', 'en')}
+                <Button 
+                  size="sm" 
+                  colorScheme="orange" 
+                  width="full"
+                  onClick={() => {
+                    // Navigate to Shopping tab
+                    const event = new CustomEvent('navigateToTab', { detail: { tabIndex: 6 } });
+                    window.dispatchEvent(event);
+                  }}
+                >
+                  Generate Shopping List
                 </Button>
               </VStack>
             </CardBody>
           </Card>
 
-          <Card bg={cardBg} borderColor={borderColor}>
+          <Card bg={cardBg} borderColor={borderColor} _hover={{ shadow: 'md' }} transition="all 0.2s">
             <CardBody>
               <VStack spacing={3}>
-                <FiPieChart size={24} />
-                <Text fontWeight="bold">{t('nutrition.analysis', 'en')}</Text>
+                <FiPieChart size={24} color="#805AD5" />
+                <Text fontWeight="bold" color="purple.600">Analysis</Text>
                 <Text fontSize="sm" color="gray.600" textAlign="center">
-                  {t('nutrition.analysisDescription', 'en')}
+                  View detailed nutritional analysis
                 </Text>
-                <Button size="sm" colorScheme="purple" width="full">
-                  {t('nutrition.viewAnalysis', 'en')}
+                <Button 
+                  size="sm" 
+                  colorScheme="purple" 
+                  width="full"
+                  onClick={() => {
+                    // Navigate to Analysis tab
+                    const event = new CustomEvent('navigateToTab', { detail: { tabIndex: 8 } });
+                    window.dispatchEvent(event);
+                  }}
+                >
+                  View Analysis
                 </Button>
               </VStack>
             </CardBody>

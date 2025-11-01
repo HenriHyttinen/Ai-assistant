@@ -23,3 +23,9 @@ echo "🏥 Starting backend health monitor..."
 cd backend
 python health_monitor.py
 
+
+
+
+
+
+

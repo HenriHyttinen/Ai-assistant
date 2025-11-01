@@ -33,7 +33,17 @@ class DietaryTagAnalyzer:
             'fish', 'salmon', 'tuna', 'cod', 'halibut', 'mackerel', 'sardines',
             'shrimp', 'prawns', 'crab', 'lobster', 'scallops', 'mussels', 'clams',
             'oysters', 'squid', 'octopus', 'anchovies', 'caviar', 'roe',
-            'seafood', 'shellfish', 'crustacean', 'mollusk'
+            'seafood', 'shellfish', 'crustacean', 'mollusk',
+            # Common fish names
+            'mahi-mahi', 'mahi mahi', 'dolphinfish', 'swordfish', 'tilapia',
+            'trout', 'bass', 'perch', 'snapper', 'grouper', 'redfish',
+            'flounder', 'sole', 'carp', 'catfish', 'pollock', 'haddock',
+            'monkfish', 'sea bass', 'striped bass', 'bluefish', 'herring',
+            'whiting', 'rockfish', 'sea bream', 'bream', 'pike', 'walleye',
+            # Shellfish and seafood
+            'lobster', 'shrimp', 'prawn', 'crab', 'lobster tail', 'crab legs',
+            'scallop', 'mussel', 'clam', 'oyster', 'abalone', 'conch',
+            'cuttlefish', 'calamari', 'langoustine', 'crayfish', 'crawfish'
         }
         
         self.dairy_ingredients = {
@@ -66,6 +76,22 @@ class DietaryTagAnalyzer:
             'soy', 'soybean', 'tofu', 'tempeh', 'miso', 'soy sauce', 'tamari',
             'soy milk', 'soy yogurt', 'soy cheese', 'edamame', 'soy protein',
             'soy flour', 'soy lecithin'
+        }
+        
+        # Nightshade vegetables (tomatoes, potatoes, peppers, eggplants)
+        self.nightshade_ingredients = {
+            'tomato', 'tomatoes', 'tomatillo', 'tomatillos',
+            'potato', 'potatoes', 'sweet potato', 'sweet potatoes',
+            'pepper', 'peppers', 'bell pepper', 'bell peppers', 'jalapeño', 'jalapeños',
+            'chili pepper', 'chili peppers', 'habanero', 'habaneros', 'poblano', 'poblanos',
+            'cayenne', 'paprika', 'red pepper', 'red peppers',
+            'eggplant', 'eggplants', 'aubergine', 'aubergines'
+        }
+        
+        # Peanuts and tree nuts (more comprehensive)
+        self.peanut_ingredients = {
+            'peanut', 'peanuts', 'peanut butter', 'groundnut', 'groundnuts',
+            'peanut oil', 'peanut flour', 'peanut paste'
         }
         
         self.vegetarian_safe = {
@@ -105,6 +131,12 @@ class DietaryTagAnalyzer:
         # Check for soy
         has_soy = any(any(soy in ing for soy in self.soy_ingredients) for ing in ingredients)
         
+        # Check for nightshades
+        has_nightshades = any(any(nightshade in ing for nightshade in self.nightshade_ingredients) for ing in ingredients)
+        
+        # Check for peanuts (separate from other nuts)
+        has_peanuts = any(any(peanut in ing for peanut in self.peanut_ingredients) for ing in ingredients)
+        
         # Determine dietary categories
         if not has_meat and not has_fish:
             dietary_tags.append('vegetarian')
@@ -114,11 +146,14 @@ class DietaryTagAnalyzer:
         if not has_gluten:
             dietary_tags.append('gluten-free')
         
-        if not has_nuts:
+        if not has_nuts and not has_peanuts:
             dietary_tags.append('nut-free')
         
         if not has_soy:
             dietary_tags.append('soy-free')
+        
+        if not has_nightshades:
+            dietary_tags.append('nightshade-free')
         
         # Add allergen warnings
         if has_dairy:
@@ -128,21 +163,20 @@ class DietaryTagAnalyzer:
         if has_gluten:
             allergens.append('gluten')
         if has_nuts:
-            allergens.append('nuts')
+            allergens.append('tree-nuts')
+        if has_peanuts:
+            allergens.append('peanuts')
         if has_soy:
             allergens.append('soy')
         if has_fish:
             allergens.append('fish')
+        if has_nightshades:
+            dietary_tags.append('contains-nightshades')  # Add as dietary info too
         
-        # Add health-focused tags
-        if any('low' in ing or 'reduced' in ing for ing in ingredients):
-            dietary_tags.append('low-sodium')
-        
-        if any('sugar' not in ing and 'honey' not in ing and 'syrup' not in ing for ing in ingredients):
-            dietary_tags.append('low-sugar')
-        
-        if any('oil' in ing or 'fat' in ing for ing in ingredients):
-            dietary_tags.append('contains-oils')
+        # Combine allergens into dietary_tags for visibility
+        # Add important allergen warnings as tags too
+        if allergens:
+            dietary_tags.extend([f"contains-{a}" for a in allergens])
         
         return dietary_tags, allergens
     
@@ -215,5 +249,10 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+
+
+
 
 

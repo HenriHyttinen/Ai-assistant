@@ -30,6 +30,7 @@ import {
   Spinner,
 } from '@chakra-ui/react';
 import { t } from '../../utils/translations';
+import { FiPlus } from 'react-icons/fi';
 
 interface NutritionPreferencesProps {
   preferences: any;
@@ -91,6 +92,14 @@ const NutritionPreferences: React.FC<NutritionPreferencesProps> = ({
     'heart-healthy', 'anti-inflammatory', 'raw', 'pescatarian'
   ];
 
+  // Conflict detection for dietary preferences
+  const dietaryConflicts = {
+    'vegan': ['pescatarian', 'keto'],
+    'pescatarian': ['vegan'],
+    'keto': ['vegan', 'low-carb'],
+    'low-carb': ['keto']
+  };
+
   const allergyOptions = [
     'dairy', 'eggs', 'gluten', 'wheat', 'nuts', 'tree-nuts', 'peanuts', 
     'fish', 'shellfish', 'soy', 'sesame', 'mustard', 'sulfites', 'nightshades'
@@ -116,6 +125,57 @@ const NutritionPreferences: React.FC<NutritionPreferencesProps> = ({
     }));
   };
 
+  // Check for dietary preference conflicts
+  const checkDietaryConflicts = (selectedPreferences: string[]) => {
+    const conflicts = [];
+    for (const preference of selectedPreferences) {
+      if (dietaryConflicts[preference]) {
+        for (const conflict of dietaryConflicts[preference]) {
+          if (selectedPreferences.includes(conflict)) {
+            conflicts.push(`${preference} and ${conflict} may be restrictive together`);
+          }
+        }
+      }
+    }
+    return conflicts;
+  };
+
+  // Validate form data
+  const validateForm = () => {
+    const errors = [];
+    
+    // Check dietary conflicts
+    const conflicts = checkDietaryConflicts(formData.dietary_preferences);
+    if (conflicts.length > 0) {
+      errors.push(...conflicts);
+    }
+    
+    // Check nutritional targets
+    if (formData.daily_calorie_target < 800 || formData.daily_calorie_target > 5000) {
+      errors.push('Daily calorie target must be between 800 and 5000');
+    }
+    
+    if (formData.protein_target < 20 || formData.protein_target > 300) {
+      errors.push('Protein target must be between 20g and 300g');
+    }
+    
+    if (formData.carbs_target < 50 || formData.carbs_target > 500) {
+      errors.push('Carbs target must be between 50g and 500g');
+    }
+    
+    if (formData.fats_target < 20 || formData.fats_target > 200) {
+      errors.push('Fats target must be between 20g and 200g');
+    }
+    
+    // Check macro ratios
+    const totalMacros = formData.protein_target + formData.carbs_target + formData.fats_target;
+    if (totalMacros < 100 || totalMacros > 1000) {
+      errors.push('Total macro targets should be reasonable (100-1000g total)');
+    }
+    
+    return errors;
+  };
+
   const handleMealTimeChange = (meal: string, time: string) => {
     setFormData(prev => ({
       ...prev,
@@ -130,10 +190,39 @@ const NutritionPreferences: React.FC<NutritionPreferencesProps> = ({
     try {
       setSaving(true);
       
+      // Validate form before saving
+      const validationErrors = validateForm();
+      if (validationErrors.length > 0) {
+        toast({
+          title: 'Validation Error',
+          description: validationErrors.join(', '),
+          status: 'error',
+          duration: 5000,
+          isClosable: true,
+        });
+        return;
+      }
+      
+      // Get Supabase session token for authentication
+      const { supabase } = await import('../../lib/supabase');
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session?.access_token) {
+        toast({
+          title: 'Authentication Required',
+          description: 'Please log in to save preferences.',
+          status: 'error',
+          duration: 5000,
+          isClosable: true,
+        });
+        return;
+      }
+      
       const response = await fetch('http://localhost:8000/nutrition/preferences', {
         method: preferences ? 'PUT' : 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
         },
         body: JSON.stringify(formData),
       });
@@ -141,19 +230,21 @@ const NutritionPreferences: React.FC<NutritionPreferencesProps> = ({
       if (response.ok) {
         toast({
           title: 'Preferences saved successfully!',
+          description: 'Your dietary preferences have been updated.',
           status: 'success',
           duration: 3000,
           isClosable: true,
         });
         onUpdate();
       } else {
-        throw new Error('Failed to save preferences');
+        const errorData = await response.json();
+        throw new Error(errorData.detail || 'Failed to save preferences');
       }
     } catch (error) {
       console.error('Error saving preferences:', error);
       toast({
         title: 'Error saving preferences',
-        description: 'Please try again.',
+        description: error.message || 'Please try again.',
         status: 'error',
         duration: 5000,
         isClosable: true,
@@ -204,6 +295,17 @@ const NutritionPreferences: React.FC<NutritionPreferencesProps> = ({
                   ))}
                 </SimpleGrid>
               </CheckboxGroup>
+              {checkDietaryConflicts(formData.dietary_preferences).length > 0 && (
+                <Alert status="warning" mt={2}>
+                  <AlertIcon />
+                  <Box>
+                    <Text fontSize="sm" fontWeight="bold">Conflicting preferences detected:</Text>
+                    {checkDietaryConflicts(formData.dietary_preferences).map((conflict, index) => (
+                      <Text key={index} fontSize="sm">• {conflict}</Text>
+                    ))}
+                  </Box>
+                </Alert>
+              )}
             </FormControl>
           </CardBody>
         </Card>
@@ -275,6 +377,60 @@ const NutritionPreferences: React.FC<NutritionPreferencesProps> = ({
           </CardHeader>
           <CardBody>
             <VStack spacing={4}>
+              {/* Presets */}
+              <FormControl>
+                <FormLabel>Quick Presets</FormLabel>
+                <HStack spacing={2} wrap="wrap">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      setFormData(prev => ({
+                        ...prev,
+                        daily_calorie_target: 1500,
+                        protein_target: 120,
+                        carbs_target: 150,
+                        fats_target: 50
+                      }));
+                    }}
+                  >
+                    Weight Loss
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      setFormData(prev => ({
+                        ...prev,
+                        daily_calorie_target: 2000,
+                        protein_target: 150,
+                        carbs_target: 250,
+                        fats_target: 65
+                      }));
+                    }}
+                  >
+                    Maintenance
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      setFormData(prev => ({
+                        ...prev,
+                        daily_calorie_target: 2500,
+                        protein_target: 180,
+                        carbs_target: 300,
+                        fats_target: 80
+                      }));
+                    }}
+                  >
+                    Muscle Gain
+                  </Button>
+                </HStack>
+              </FormControl>
+
+              <Divider />
+
               <FormControl>
                 <FormLabel>{t('calorieTarget', 'en')}</FormLabel>
                 <NumberInput
@@ -282,6 +438,7 @@ const NutritionPreferences: React.FC<NutritionPreferencesProps> = ({
                   onChange={(value) => handleInputChange('daily_calorie_target', parseInt(value) || 0)}
                   min={800}
                   max={5000}
+                  step={50}
                 >
                   <NumberInputField />
                   <NumberInputStepper>
@@ -289,6 +446,9 @@ const NutritionPreferences: React.FC<NutritionPreferencesProps> = ({
                     <NumberDecrementStepper />
                   </NumberInputStepper>
                 </NumberInput>
+                <Text fontSize="sm" color="gray.500">
+                  Range: 800-5000 calories
+                </Text>
               </FormControl>
 
               <FormControl>
@@ -330,6 +490,7 @@ const NutritionPreferences: React.FC<NutritionPreferencesProps> = ({
                   onChange={(value) => handleInputChange('fats_target', parseInt(value) || 0)}
                   min={20}
                   max={200}
+                  step={5}
                 >
                   <NumberInputField />
                   <NumberInputStepper>
@@ -337,7 +498,35 @@ const NutritionPreferences: React.FC<NutritionPreferencesProps> = ({
                     <NumberDecrementStepper />
                   </NumberInputStepper>
                 </NumberInput>
+                <Text fontSize="sm" color="gray.500">
+                  Range: 20-200g
+                </Text>
               </FormControl>
+
+              {/* Macro Split Visualization */}
+              <Box w="full" p={4} bg="gray.50" borderRadius="md">
+                <Text fontSize="sm" fontWeight="bold" mb={2}>Macro Split</Text>
+                <VStack spacing={2}>
+                  <HStack w="full" justify="space-between">
+                    <Text fontSize="sm">Protein:</Text>
+                    <Text fontSize="sm" fontWeight="bold">
+                      {Math.round((formData.protein_target * 4 / formData.daily_calorie_target) * 100)}%
+                    </Text>
+                  </HStack>
+                  <HStack w="full" justify="space-between">
+                    <Text fontSize="sm">Carbs:</Text>
+                    <Text fontSize="sm" fontWeight="bold">
+                      {Math.round((formData.carbs_target * 4 / formData.daily_calorie_target) * 100)}%
+                    </Text>
+                  </HStack>
+                  <HStack w="full" justify="space-between">
+                    <Text fontSize="sm">Fats:</Text>
+                    <Text fontSize="sm" fontWeight="bold">
+                      {Math.round((formData.fats_target * 9 / formData.daily_calorie_target) * 100)}%
+                    </Text>
+                  </HStack>
+                </VStack>
+              </Box>
             </VStack>
           </CardBody>
         </Card>
@@ -382,32 +571,55 @@ const NutritionPreferences: React.FC<NutritionPreferencesProps> = ({
 
               <Text fontWeight="semibold">{t('preferredMealTimes', 'en')}</Text>
               
-              <FormControl>
-                <FormLabel>{t('breakfast', 'en')}</FormLabel>
-                <Input
-                  type="time"
-                  value={formData.preferred_meal_times.breakfast}
-                  onChange={(e) => handleMealTimeChange('breakfast', e.target.value)}
-                />
-              </FormControl>
-
-              <FormControl>
-                <FormLabel>{t('lunch', 'en')}</FormLabel>
-                <Input
-                  type="time"
-                  value={formData.preferred_meal_times.lunch}
-                  onChange={(e) => handleMealTimeChange('lunch', e.target.value)}
-                />
-              </FormControl>
-
-              <FormControl>
-                <FormLabel>{t('dinner', 'en')}</FormLabel>
-                <Input
-                  type="time"
-                  value={formData.preferred_meal_times.dinner}
-                  onChange={(e) => handleMealTimeChange('dinner', e.target.value)}
-                />
-              </FormControl>
+              <VStack spacing={3} align="stretch">
+                {Object.entries(formData.preferred_meal_times).map(([meal, time]) => (
+                  <HStack key={meal} spacing={3}>
+                    <FormControl flex={1}>
+                      <FormLabel textTransform="capitalize">{meal}</FormLabel>
+                      <Input
+                        type="time"
+                        value={time}
+                        onChange={(e) => handleMealTimeChange(meal, e.target.value)}
+                      />
+                    </FormControl>
+                    {Object.keys(formData.preferred_meal_times).length > 1 && (
+                      <Button
+                        size="sm"
+                        colorScheme="red"
+                        variant="outline"
+                        onClick={() => {
+                          const newTimes = { ...formData.preferred_meal_times };
+                          delete newTimes[meal];
+                          setFormData(prev => ({
+                            ...prev,
+                            preferred_meal_times: newTimes
+                          }));
+                        }}
+                      >
+                        Remove
+                      </Button>
+                    )}
+                  </HStack>
+                ))}
+                
+                <Button
+                  size="sm"
+                  variant="outline"
+                  leftIcon={<FiPlus />}
+                  onClick={() => {
+                    const newMeal = `meal_${Date.now()}`;
+                    setFormData(prev => ({
+                      ...prev,
+                      preferred_meal_times: {
+                        ...prev.preferred_meal_times,
+                        [newMeal]: '12:00'
+                      }
+                    }));
+                  }}
+                >
+                  Add Meal Time
+                </Button>
+              </VStack>
             </VStack>
           </CardBody>
         </Card>

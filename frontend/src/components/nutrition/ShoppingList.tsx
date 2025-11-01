@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Box,
   VStack,
@@ -28,6 +28,12 @@ import {
   ModalCloseButton,
   IconButton,
   Input,
+  Select,
+  Switch,
+  FormControl,
+  FormLabel,
+  CheckboxGroup,
+  Stack,
 } from '@chakra-ui/react';
 import { FiShoppingCart, FiPlus, FiTrash2, FiCheck, FiEye, FiEdit, FiSave, FiX } from 'react-icons/fi';
 import { t } from '../../utils/translations';
@@ -39,6 +45,12 @@ interface ShoppingListItemProps {
   onRemove: (itemId: string) => void;
   onUpdateQuantity: (itemId: string, quantity: number) => void;
 }
+
+const toHumanName = (raw: string) => {
+  if (!raw) return '';
+  const cleaned = raw.replace(/^ing[_-]/i, '').replace(/[_-]+/g, ' ');
+  return cleaned.replace(/\b\w/g, (c) => c.toUpperCase());
+};
 
 const ShoppingListItem: React.FC<ShoppingListItemProps> = ({
   item,
@@ -69,7 +81,7 @@ const ShoppingListItem: React.FC<ShoppingListItemProps> = ({
           onChange={() => onTogglePurchased(item.id)}
         />
         <VStack align="start" spacing={0} flex={1}>
-          <Text fontWeight="medium">{item.name || item.ingredient_id}</Text>
+          <Text fontWeight="medium">{item.name || toHumanName(item.ingredient_id)}</Text>
           <HStack spacing={2}>
             <Badge size="sm" colorScheme="blue">{item.category}</Badge>
             {item.notes && (
@@ -152,19 +164,26 @@ const ShoppingList: React.FC<ShoppingListProps> = ({
   const { isOpen, onOpen, onClose } = useDisclosure();
   const toast = useToast();
 
+  // Smart list wizard state
+  const [mealPlans, setMealPlans] = useState<any[]>([]);
+  const [selectedMealPlanId, setSelectedMealPlanId] = useState<string>('');
+  const [selectedMealTypes, setSelectedMealTypes] = useState<string[]>(['breakfast','lunch','dinner','snack']);
+  const [mergeDuplicates, setMergeDuplicates] = useState<boolean>(true);
+  const [normalizeUnits, setNormalizeUnits] = useState<boolean>(true);
+  const [excludePantry, setExcludePantry] = useState<string>('salt, pepper, water');
+
   // Load shopping lists on component mount
   useEffect(() => {
     loadShoppingLists();
+    loadRecentMealPlans();
   }, []);
 
   const loadShoppingLists = async () => {
+    const attemptFetch = async (attempt: number): Promise<void> => {
     try {
       setLoading(true);
-      
-      // Get Supabase session token
       const { supabase } = await import('../../lib/supabase');
       const { data: { session } } = await supabase.auth.getSession();
-      
       const response = await fetch('http://localhost:8000/nutrition/shopping-lists', {
         method: 'GET',
         headers: {
@@ -172,17 +191,50 @@ const ShoppingList: React.FC<ShoppingListProps> = ({
           'Authorization': `Bearer ${session?.access_token || ''}`,
         },
       });
-
       if (response.ok) {
         const data = await response.json();
         setLists(data);
-      } else {
-        console.error('Failed to load shopping lists:', response.status);
+          return;
       }
+        throw new Error(`HTTP ${response.status}`);
     } catch (error) {
-      console.error('Error loading shopping lists:', error);
+        if (attempt < 3) {
+          toast({ title: 'Shopping lists unavailable', description: `Retrying... (${attempt}/3)`, status: 'warning', duration: 1500, isClosable: true });
+          await new Promise(res => setTimeout(res, attempt * 1000));
+          return attemptFetch(attempt + 1);
+        }
+        toast({ title: 'Failed to load shopping lists', description: 'Please try again later.', status: 'error', duration: 3000, isClosable: true });
     } finally {
       setLoading(false);
+    }
+    };
+    await attemptFetch(1);
+  };
+
+  const loadRecentMealPlans = async () => {
+    try {
+      const { supabase } = await import('../../lib/supabase');
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token || '';
+      const today = new Date();
+      const dates: string[] = [];
+      for (let i = 0; i < 7; i++) {
+        const d = new Date(today);
+        d.setDate(today.getDate() - i);
+        dates.push(d.toISOString().split('T')[0]);
+      }
+      // Fetch in parallel for last 7 days; combine unique ids
+      const results = await Promise.all(
+        dates.map(d => fetch(`http://localhost:8000/nutrition/meal-plans?date=${d}&limit=1`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        }).then(r => r.ok ? r.json() : [])
+        )
+      );
+      const combined = Array.from(new Map(results.flat().map((mp: any) => [mp.id, mp])).values());
+      setMealPlans(combined);
+      if (combined && combined.length) setSelectedMealPlanId(combined[0].id);
+    } catch (e) {
+      // noop
     }
   };
 
@@ -193,20 +245,48 @@ const ShoppingList: React.FC<ShoppingListProps> = ({
       // Get Supabase session token
       const { supabase } = await import('../../lib/supabase');
       const { data: { session } } = await supabase.auth.getSession();
-      
-      const response = await fetch('http://localhost:8000/nutrition/shopping-lists', {
+      if (!selectedMealPlanId) {
+        toast({ title: 'Select a meal plan first', status: 'info', duration: 2500, isClosable: true });
+        return;
+      }
+
+      // Use meal-type aware endpoint
+      const response = await fetch(`http://localhost:8000/nutrition/meal-plans/${selectedMealPlanId}/generate-shopping-list-by-types`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${session?.access_token || ''}`,
         },
         body: JSON.stringify({
-          list_name: 'Weekly Shopping List',
-          items: []
+          meal_types: selectedMealTypes,
+          list_name: 'Smart Shopping List'
         }),
       });
 
       if (response.ok) {
+        let result = await response.json();
+        // Client-side post-processing
+        if (result && result.items && Array.isArray(result.items)) {
+          const pantry = excludePantry.split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+          let items = result.items.filter((it: any) => !pantry.some(p => (it.name || it.ingredient_id || '').toLowerCase().includes(p)));
+          if (normalizeUnits) {
+            const map: any = { milliliter: 'ml', liter: 'l', kilograms: 'kg', gram: 'g', grams: 'g' };
+            items = items.map((it: any) => ({ ...it, unit: map[it.unit] || it.unit }));
+          }
+          if (mergeDuplicates) {
+            const merged: Record<string, any> = {};
+            items.forEach((it: any) => {
+              const key = `${(it.name || it.ingredient_id).toLowerCase()}|${it.unit || ''}`;
+              if (!merged[key]) merged[key] = { ...it };
+              else merged[key].quantity = (parseFloat(merged[key].quantity) || 0) + (parseFloat(it.quantity) || 0);
+            });
+            result.items = Object.values(merged);
+            result.total_items = result.items.length;
+          } else {
+            result.items = items;
+            result.total_items = items.length;
+          }
+        }
         toast({
           title: 'Shopping list generated successfully!',
           status: 'success',
@@ -417,6 +497,39 @@ const ShoppingList: React.FC<ShoppingListProps> = ({
     }
   };
 
+  const handleTogglePurchased = async (listId: string, itemId: string) => {
+    try {
+      const { supabase } = await import('../../lib/supabase');
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      const response = await fetch(`http://localhost:8000/nutrition/shopping-lists/items/${itemId}/purchased`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token || ''}`,
+        },
+      });
+
+      if (response.ok) {
+        // Update local state
+        setLists(prev => prev.map(list => 
+          list.id === listId 
+            ? {
+                ...list,
+                items: list.items?.map((item: any) => 
+                  item.id === itemId 
+                    ? { ...item, is_purchased: !item.is_purchased }
+                    : item
+                ) || []
+              }
+            : list
+        ));
+      }
+    } catch (error) {
+      console.error('Error toggling purchased status:', error);
+    }
+  };
+
   return (
     <VStack spacing={6} align="stretch">
       <Box>
@@ -431,24 +544,64 @@ const ShoppingList: React.FC<ShoppingListProps> = ({
       {/* Generate Shopping List */}
       <Card>
         <CardHeader>
-          <Heading size="md">{t('shoppingList.generateNew')}</Heading>
+          <Heading size="md">Smart Shopping List Generator</Heading>
         </CardHeader>
         <CardBody>
-          <VStack spacing={4}>
-            <Text color="gray.600">
-              Create a shopping list from your meal plans or add items manually
-            </Text>
-            
-            <Button
-              colorScheme="blue"
-              size="lg"
-              onClick={handleGenerateShoppingList}
-              isLoading={generating}
-              loadingText="Generating..."
-              leftIcon={<Icon as={FiPlus} />}
-            >
-              {t('shoppingList.generateNew')}
-            </Button>
+          <VStack spacing={4} align="stretch">
+            <Text color="gray.600">Generate intelligent shopping lists with advanced filtering and customization.</Text>
+
+            <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
+              <FormControl>
+                <FormLabel>Select Meal Plan</FormLabel>
+                <Select value={selectedMealPlanId} onChange={(e) => setSelectedMealPlanId(e.target.value)}>
+                  {mealPlans.length === 0 && <option value="">No meal plans available</option>}
+                  {mealPlans.map(mp => (
+                    <option key={mp.id} value={mp.id}>{mp.plan_type} • {mp.start_date}</option>
+                  ))}
+                </Select>
+              </FormControl>
+
+              <FormControl>
+                <FormLabel>Exclude Pantry Items (comma separated)</FormLabel>
+                <Input value={excludePantry} onChange={(e) => setExcludePantry(e.target.value)} placeholder="salt, pepper, water" />
+              </FormControl>
+            </SimpleGrid>
+
+            <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
+              <FormControl>
+                <FormLabel>Include Meal Types</FormLabel>
+                <CheckboxGroup value={selectedMealTypes} onChange={(vals) => setSelectedMealTypes(vals as string[])}>
+                  <Stack direction="row" spacing={4} wrap="wrap">
+                    {['breakfast','lunch','dinner','snack'].map(t => (
+                      <Checkbox key={t} value={t} defaultChecked>{t.charAt(0).toUpperCase()+t.slice(1)}</Checkbox>
+                    ))}
+                  </Stack>
+                </CheckboxGroup>
+              </FormControl>
+              <FormControl>
+                <FormLabel>Options</FormLabel>
+                <HStack>
+                  <Switch isChecked={mergeDuplicates} onChange={(e)=>setMergeDuplicates(e.target.checked)} />
+                  <Text>Merge Duplicates</Text>
+                  <Switch ml={6} isChecked={normalizeUnits} onChange={(e)=>setNormalizeUnits(e.target.checked)} />
+                  <Text>Normalize Units</Text>
+                </HStack>
+              </FormControl>
+            </SimpleGrid>
+
+            <HStack>
+              <Button
+                colorScheme="blue"
+                onClick={handleGenerateShoppingList}
+                isLoading={generating}
+                loadingText="Generating..."
+                leftIcon={<Icon as={FiPlus} />}
+                variant="solid"
+              >
+                Generate from Meal Plan
+              </Button>
+              <Button colorScheme="green" onClick={onOpen} leftIcon={<Icon as={FiPlus} />}>Add Items Manually</Button>
+            </HStack>
           </VStack>
         </CardBody>
       </Card>
@@ -497,24 +650,31 @@ const ShoppingList: React.FC<ShoppingListProps> = ({
 
                     <Divider />
 
-                    {/* Sample items - in real implementation, these would come from the API */}
+                    {/* Shopping List Items */}
                     <VStack spacing={2} align="stretch">
-                      <Text fontSize="sm" fontWeight="semibold">Sample Items:</Text>
-                      <HStack>
-                        <Checkbox size="sm" />
-                        <Text fontSize="sm">Chicken breast (500g)</Text>
-                        <Badge size="sm" colorScheme="blue">Protein</Badge>
-                      </HStack>
-                      <HStack>
-                        <Checkbox size="sm" />
-                        <Text fontSize="sm">Brown rice (1kg)</Text>
-                        <Badge size="sm" colorScheme="green">Grains</Badge>
-                      </HStack>
-                      <HStack>
-                        <Checkbox size="sm" />
-                        <Text fontSize="sm">Olive oil (30ml)</Text>
-                        <Badge size="sm" colorScheme="orange">Fats</Badge>
-                      </HStack>
+                      <Text fontSize="sm" fontWeight="semibold">Items:</Text>
+                      {list.items && list.items.length > 0 ? (
+                        list.items.slice(0, 3).map((item: any, index: number) => (
+                          <HStack key={index}>
+                            <Checkbox 
+                              size="sm" 
+                              isChecked={item.is_purchased || false}
+                              onChange={() => handleTogglePurchased(list.id, item.id)}
+                            />
+                            <Text fontSize="sm">
+                              {toHumanName(item.ingredient_id)} ({item.quantity} {item.unit})
+                            </Text>
+                            <Badge size="sm" colorScheme="blue">{item.category}</Badge>
+                          </HStack>
+                        ))
+                      ) : (
+                        <Text fontSize="sm" color="gray.500">No items in this list</Text>
+                      )}
+                      {list.items && list.items.length > 3 && (
+                        <Text fontSize="xs" color="gray.500">
+                          +{list.items.length - 3} more items
+                        </Text>
+                      )}
                     </VStack>
 
                     <HStack justify="space-between">

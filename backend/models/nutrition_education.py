@@ -237,3 +237,8 @@ class NutritionFact(Base, TimestampMixin):
     verified_by = Column(String, nullable=True)
 
 
+
+
+
+
+

@@ -345,3 +345,8 @@ class LearningAnalytics(BaseModel):
     achievements: List[str]
 
 
+
+
+
+
+

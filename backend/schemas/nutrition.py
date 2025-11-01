@@ -1,7 +1,7 @@
 from pydantic import BaseModel, Field, field_validator
 from typing import List, Optional, Dict, Any
 from datetime import datetime, date
-from backend.constants.dietary import DIETARY_PREFERENCES, ALLERGIES_INTOLERANCES
+from constants.dietary import DIETARY_PREFERENCES, ALLERGIES_INTOLERANCES
 from enum import Enum
 
 # Enums for better type safety

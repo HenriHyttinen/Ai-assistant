@@ -100,6 +100,8 @@ interface RecipeRecommendation {
   trending_score?: number;
   context_score?: number;
   total_score?: number;
+  ingredients?: (string | { name?: string; quantity?: number | string; unit?: string; notes?: string })[];
+  instructions?: (string | { step?: number; step_number?: number; description?: string; title?: string; time_required?: number })[];
 }
 
 interface RecommendationResponse {
@@ -602,17 +604,55 @@ const RecipeRecommendations: React.FC = () => {
 
           <SimpleGrid columns={{ base: 1, md: 2, lg: 3 }} spacing={4}>
             {recommendations.map((recipe, index) => (
-              <Card key={recipe.id} maxW="sm" mx="auto" w="full">
+              <Card key={recipe.id} maxW="sm" mx="auto" w="full" overflow="hidden">
                 <CardHeader pb={2}>
-                  <HStack justify="space-between" align="start">
-                    <VStack align="start" spacing={1} flex={1}>
-                      <Heading size="sm" noOfLines={2}>
+                  <HStack justify="space-between" align="start" spacing={2}>
+                    <VStack align="start" spacing={1} flex={1} minW={0}>
+                      <Heading size="sm" noOfLines={2} wordBreak="break-word" width="100%">
                         {recipe.title}
                       </Heading>
-                      <HStack spacing={2}>
-                        <Badge colorScheme="purple" size="sm">
-                          {recipe.cuisine}
+                      {/* Dietary Tags - Prominently displayed */}
+                      {recipe.dietary_tags && recipe.dietary_tags.length > 0 && (
+                        <HStack spacing={1} wrap="wrap" maxW="100%" overflow="hidden">
+                          {recipe.dietary_tags
+                            .filter((tag: string) => 
+                              ['vegetarian', 'vegan', 'contains-peanuts', 'contains-tree-nuts', 
+                               'contains-nightshades', 'contains-dairy', 'contains-eggs', 
+                               'contains-gluten', 'contains-soy', 'contains-fish'].includes(tag.toLowerCase())
+                            )
+                            .slice(0, 5)
+                            .map((tag: string, idx: number) => {
+                              const tagLower = tag.toLowerCase();
+                              let colorScheme = "gray";
+                              
+                              if (tagLower === 'vegetarian') colorScheme = "green";
+                              else if (tagLower === 'vegan') colorScheme = "teal";
+                              else if (tagLower.includes('peanut')) colorScheme = "red";
+                              else if (tagLower.includes('tree-nut')) colorScheme = "orange";
+                              else if (tagLower.includes('nightshade')) colorScheme = "purple";
+                              else if (tagLower.includes('dairy') || tagLower.includes('eggs') || 
+                                       tagLower.includes('gluten') || tagLower.includes('soy') || 
+                                       tagLower.includes('fish')) colorScheme = "red";
+                              
+                              return (
+                                <Badge 
+                                  key={idx} 
+                                  colorScheme={colorScheme} 
+                                  size="sm" 
+                                  fontSize="xs"
+                                  noOfLines={1}
+                                  textTransform="capitalize"
+                                >
+                                  {tag.replace('contains-', '').replace('-', ' ')}
                         </Badge>
+                              );
+                            })}
+                          {recipe.dietary_tags.length > 5 && (
+                            <Text fontSize="xs" color="gray.500">+{recipe.dietary_tags.length - 5}</Text>
+                          )}
+                        </HStack>
+                      )}
+                      <HStack spacing={2}>
                         <Badge
                           colorScheme={getDifficultyColor(recipe.difficulty_level)}
                           size="sm"
@@ -659,27 +699,71 @@ const RecipeRecommendations: React.FC = () => {
                     </HStack>
 
                     {/* Nutrition Info */}
+                    {/* Total Recipe */}
                     <Box>
-                      <Text fontSize="sm" fontWeight="semibold" mb={2}>
-                        Per Serving
+                      <Text fontSize="xs" color="gray.500" mb={1}>
+                        Total Recipe ({recipe.servings || 1} {recipe.servings === 1 ? 'serving' : 'servings'})
                       </Text>
-                      <SimpleGrid columns={2} spacing={2}>
+                      <SimpleGrid columns={2} spacing={2} mb={3}>
                         <Stat size="sm">
                           <StatLabel>Calories</StatLabel>
-                          <StatNumber fontSize="sm">{recipe.per_serving_calories.toFixed(0)}</StatNumber>
+                          <StatNumber fontSize="sm">
+                            {Math.round(recipe.total_calories || (recipe.per_serving_calories || 0) * (recipe.servings || 1))}
+                          </StatNumber>
                         </Stat>
                         <Stat size="sm">
                           <StatLabel>Protein</StatLabel>
-                          <StatNumber fontSize="sm">{recipe.per_serving_protein.toFixed(1)}g</StatNumber>
+                          <StatNumber fontSize="sm">
+                            {((recipe.total_protein || (recipe.per_serving_protein || 0) * (recipe.servings || 1))).toFixed(1)}g
+                          </StatNumber>
                         </Stat>
                         <Stat size="sm">
                           <StatLabel>Carbs</StatLabel>
-                          <StatNumber fontSize="sm">{recipe.per_serving_carbs.toFixed(1)}g</StatNumber>
+                          <StatNumber fontSize="sm">
+                            {((recipe.total_carbs || (recipe.per_serving_carbs || 0) * (recipe.servings || 1))).toFixed(1)}g
+                          </StatNumber>
                         </Stat>
                         <Stat size="sm">
                           <StatLabel>Fat</StatLabel>
-                          <StatNumber fontSize="sm">{recipe.per_serving_fat.toFixed(1)}g</StatNumber>
+                          <StatNumber fontSize="sm">
+                            {((recipe.total_fat || recipe.total_fats || (recipe.per_serving_fat || recipe.per_serving_fats || 0) * (recipe.servings || 1))).toFixed(1)}g
+                          </StatNumber>
                         </Stat>
+                      </SimpleGrid>
+                    </Box>
+                    
+                    {/* Per Serving */}
+                    <Box width="100%" overflow="hidden">
+                      <Text fontSize="xs" color="gray.500" mb={1}>Per Serving</Text>
+                      <SimpleGrid columns={2} spacing={2}>
+                        <Box overflow="hidden">
+                          <Text fontSize="xs" color="gray.600" mb={0.5}>Calories</Text>
+                          <Text fontWeight="bold" color="blue.600" fontSize="sm" noOfLines={1}>
+                            {(recipe.per_serving_calories || (recipe.total_calories && recipe.servings ? recipe.total_calories / recipe.servings : 0) || 0).toFixed(0)}
+                          </Text>
+                        </Box>
+                        <Box overflow="hidden">
+                          <Text fontSize="xs" color="gray.600" mb={0.5}>Protein</Text>
+                          <Text fontWeight="bold" color="blue.600" fontSize="sm" noOfLines={1}>
+                            {((recipe.per_serving_protein || (recipe.total_protein && recipe.servings ? recipe.total_protein / recipe.servings : 0) || 0)).toFixed(1)}g
+                          </Text>
+                        </Box>
+                        <Box overflow="hidden">
+                          <Text fontSize="xs" color="gray.600" mb={0.5}>Carbs</Text>
+                          <Text color="blue.600" fontSize="sm" noOfLines={1}>
+                            {((recipe.per_serving_carbs || (recipe.total_carbs && recipe.servings ? recipe.total_carbs / recipe.servings : 0) || 0)).toFixed(1)}g
+                          </Text>
+                        </Box>
+                        <Box overflow="hidden">
+                          <Text fontSize="xs" color="gray.600" mb={0.5}>Fat</Text>
+                          <Text color="blue.600" fontSize="sm" noOfLines={1}>
+                            {(() => {
+                              const perServing = recipe.per_serving_fat || recipe.per_serving_fats || 
+                                ((recipe.total_fat || recipe.total_fats) && recipe.servings ? (recipe.total_fat || recipe.total_fats) / recipe.servings : 0) || 0;
+                              return perServing.toFixed(1);
+                            })()}g
+                          </Text>
+                        </Box>
                       </SimpleGrid>
                     </Box>
 
@@ -720,23 +804,6 @@ const RecipeRecommendations: React.FC = () => {
                       )}
                     </Box>
 
-                    {/* Dietary Tags */}
-                    {recipe.dietary_tags && recipe.dietary_tags.length > 0 && (
-                      <Box>
-                        <HStack spacing={1} wrap="wrap">
-                          {recipe.dietary_tags.slice(0, 3).map((tag, idx) => (
-                            <Badge key={idx} colorScheme="green" size="sm">
-                              {tag}
-                            </Badge>
-                          ))}
-                          {recipe.dietary_tags.length > 3 && (
-                            <Badge colorScheme="gray" size="sm">
-                              +{recipe.dietary_tags.length - 3}
-                            </Badge>
-                          )}
-                        </HStack>
-                      </Box>
-                    )}
 
                     {/* Recommendation Reason */}
                     {recipe.recommendation_reason && (
@@ -798,9 +865,9 @@ const RecipeRecommendations: React.FC = () => {
       <Modal isOpen={isOpen} onClose={onClose} size="xl">
         <ModalOverlay />
         <ModalContent maxW="800px">
-          <ModalHeader>
-            <VStack align="start" spacing={2}>
-              <Heading size="lg">{selectedRecipe?.title}</Heading>
+          <ModalHeader pr={8}>
+            <VStack align="start" spacing={2} flex={1} minW={0}>
+              <Heading size="lg" noOfLines={2} wordBreak="break-word">{selectedRecipe?.title}</Heading>
               <HStack spacing={2}>
                 <Badge colorScheme="purple">{selectedRecipe?.cuisine}</Badge>
                 <Badge colorScheme={getDifficultyColor(selectedRecipe?.difficulty_level || '')}>
@@ -942,19 +1009,25 @@ const RecipeRecommendations: React.FC = () => {
                   <Box>
                     <Text fontWeight="semibold" mb={3}>Ingredients</Text>
                     <List spacing={2}>
-                      {selectedRecipe.ingredients.map((ingredient, idx) => (
+                      {selectedRecipe.ingredients.map((ingredient: any, idx: number) => (
                         <ListItem key={idx}>
                           <HStack align="start">
                             <ListIcon as={FiCheck} color="green.500" />
                             <Text>
+                              {typeof ingredient === 'string' ? (
+                                ingredient
+                              ) : (
+                                <>
                               <Text as="span" fontWeight="semibold">
-                                {ingredient.quantity} {ingredient.unit}
+                                    {ingredient.quantity || ''} {ingredient.unit || ''}
                               </Text>
-                              {' '}{ingredient.name}
+                                  {' '}{ingredient.name || ''}
                               {ingredient.notes && (
                                 <Text as="span" color="gray.600" fontSize="sm">
                                   {' '}({ingredient.notes})
                                 </Text>
+                                  )}
+                                </>
                               )}
                             </Text>
                           </HStack>
@@ -969,11 +1042,15 @@ const RecipeRecommendations: React.FC = () => {
                   <Box>
                     <Text fontWeight="semibold" mb={3}>Instructions</Text>
                     <VStack spacing={4} align="stretch">
-                      {selectedRecipe.instructions.map((instruction, idx) => (
+                      {selectedRecipe.instructions.map((instruction: any, idx: number) => (
                         <Box key={idx} p={4} bg="gray.50" borderRadius="md">
+                          {typeof instruction === 'string' ? (
+                            <Text>{instruction}</Text>
+                          ) : (
+                            <>
                           <HStack mb={2}>
                             <Badge colorScheme="blue" size="sm">
-                              Step {instruction.step_number}
+                                  Step {instruction.step || instruction.step_number || idx + 1}
                             </Badge>
                             {instruction.time_required && (
                               <Badge colorScheme="gray" size="sm">
@@ -981,10 +1058,14 @@ const RecipeRecommendations: React.FC = () => {
                               </Badge>
                             )}
                           </HStack>
+                              {instruction.title && (
                           <Text fontWeight="semibold" mb={1}>
                             {instruction.title}
                           </Text>
-                          <Text>{instruction.description}</Text>
+                              )}
+                              <Text>{instruction.description || ''}</Text>
+                            </>
+                          )}
                         </Box>
                       ))}
                     </VStack>

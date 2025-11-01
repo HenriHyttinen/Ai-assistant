@@ -471,3 +471,9 @@ const DailyNutritionTips: React.FC = () => {
 
 export default DailyNutritionTips;
 
+
+
+
+
+
+

@@ -15,7 +15,8 @@ class PortionAdjustmentService:
     """Service for adjusting portion sizes and recalculating ingredient quantities"""
     
     def __init__(self):
-        pass
+        from services.measurement_standardization_service import MeasurementStandardizationService
+        self.measurement_service = MeasurementStandardizationService()
     
     def adjust_meal_portion(self, db: Session, meal_id: str, new_servings: float) -> Dict[str, Any]:
         """
@@ -40,6 +41,7 @@ class PortionAdjustmentService:
             multiplier = new_servings / original_servings
             
             # Adjust ingredients if recipe details exist
+            # Automatically recalculate quantities using standardized measurements
             adjusted_ingredients = []
             if meal.recipe_details and isinstance(meal.recipe_details, dict):
                 ingredients = meal.recipe_details.get('ingredients', [])
@@ -47,13 +49,26 @@ class PortionAdjustmentService:
                 for ingredient in ingredients:
                     if isinstance(ingredient, dict) and 'quantity' in ingredient:
                         original_quantity = float(ingredient.get('quantity', 0))
+                        original_unit = ingredient.get('unit', 'g')
+                        
+                        # Calculate adjusted quantity
                         adjusted_quantity = original_quantity * multiplier
+                        
+                        # Standardize measurement (ensures grams/ml/piece)
+                        standardized = self.measurement_service.standardize_ingredient_measurement(
+                            ingredient.get('name', ''),
+                            adjusted_quantity,
+                            original_unit
+                        )
                         
                         adjusted_ingredient = {
                             **ingredient,
-                            'quantity': round(adjusted_quantity, 2),
+                            'quantity': round(standardized['standardized_quantity'], 2),
+                            'unit': standardized['standardized_unit'],  # Standardized unit
                             'original_quantity': original_quantity,
-                            'multiplier': round(multiplier, 2)
+                            'original_unit': original_unit,
+                            'multiplier': round(multiplier, 2),
+                            'measurement_type': standardized.get('measurement_type', 'weight')
                         }
                         adjusted_ingredients.append(adjusted_ingredient)
             
@@ -128,17 +143,31 @@ class PortionAdjustmentService:
             original_servings = recipe.servings or 1.0
             multiplier = new_servings / original_servings
             
-            # Adjust ingredients
+            # Adjust ingredients with automatic standardization
             adjusted_ingredients = []
             for ri in recipe.ingredients:
-                adjusted_quantity = ri.quantity * multiplier
+                original_qty = ri.quantity
+                original_unit = ri.unit or 'g'
+                
+                # Calculate adjusted quantity
+                adjusted_quantity = original_qty * multiplier
+                
+                # Standardize measurement (ensures grams/ml/piece)
+                standardized = self.measurement_service.standardize_ingredient_measurement(
+                    ri.ingredient.name if ri.ingredient else "Unknown",
+                    adjusted_quantity,
+                    original_unit
+                )
+                
                 adjusted_ingredients.append({
                     "ingredient_id": ri.ingredient_id,
                     "name": ri.ingredient.name if ri.ingredient else "Unknown",
-                    "quantity": round(adjusted_quantity, 2),
-                    "unit": ri.unit,
-                    "original_quantity": ri.quantity,
-                    "multiplier": round(multiplier, 2)
+                    "quantity": round(standardized['standardized_quantity'], 2),
+                    "unit": standardized['standardized_unit'],  # Standardized unit
+                    "original_quantity": original_qty,
+                    "original_unit": original_unit,
+                    "multiplier": round(multiplier, 2),
+                    "measurement_type": standardized.get('measurement_type', 'weight')
                 })
             
             # Adjust nutrition (if calculated)

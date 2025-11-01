@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, and_, desc, or_
 from models.nutrition import NutritionalLog, UserNutritionPreferences, MealPlan, MealPlanMeal
 from models.recipe import Recipe
+from models.recipe_rating import RecipeRating
 from models.user import User
 import json
 import numpy as np
@@ -126,13 +127,13 @@ class RecipeRecommendationService:
         try:
             user_prefs = self._get_user_preferences(user_id, db)
             
-            # Query recipes for specific meal type
+            # Query recipes for specific meal type - fetch more to account for filtering
             recipes = db.query(Recipe).filter(
                 and_(
                     Recipe.is_active == True,
                     Recipe.meal_type == meal_type
                 )
-            ).limit(limit * 3).all()
+            ).limit(max(limit * 5, 200)).all()
             
             if not recipes:
                 return []
@@ -140,7 +141,7 @@ class RecipeRecommendationService:
             # Convert to recommendation format
             recommendations = []
             for recipe in recipes:
-                rec = self._recipe_to_recommendation(recipe)
+                rec = self._recipe_to_recommendation(recipe, db)
                 rec["meal_type_score"] = 1.0  # Perfect match for meal type
                 rec["recommendation_reason"] = f"Perfect for {meal_type}"
                 recommendations.append(rec)
@@ -265,14 +266,15 @@ class RecipeRecommendationService:
         db: Session, 
         limit: int
     ) -> List[Dict[str, Any]]:
-        """Get recommendations based on nutritional needs"""
+        """Get recommendations based on nutritional needs, prioritizing highly-rated recipes"""
         recommendations = []
         
-        # Find recipes that help fill nutritional gaps
-        recipes = db.query(Recipe).filter(Recipe.is_active == True).limit(200).all()
+        # Find recipes that help fill nutritional gaps - fetch more to account for filtering
+        # Use limit * 5 to ensure we have enough after dietary preference filtering
+        recipes = db.query(Recipe).filter(Recipe.is_active == True).limit(max(limit * 5, 500)).all()
         
         for recipe in recipes:
-            rec = self._recipe_to_recommendation(recipe)
+            rec = self._recipe_to_recommendation(recipe, db)
             
             # Calculate nutritional fit score
             nutrition_score = self._calculate_nutrition_score(rec, nutritional_gaps)
@@ -282,7 +284,14 @@ class RecipeRecommendationService:
             if self._matches_dietary_preferences(rec, user_prefs):
                 recommendations.append(rec)
         
-        # Sort by nutrition score
+        # Sort by nutrition score + rating (boost highly-rated recipes)
+        for rec in recommendations:
+            rating_boost = 0.0
+            if rec.get("avg_rating"):
+                # Boost by rating (0-0.2 boost for 4-5 star recipes)
+                rating_boost = max(0.0, (rec["avg_rating"] - 3.0) / 10.0)  # 0 for 3-star, 0.2 for 5-star
+            rec["nutrition_score"] = rec.get("nutrition_score", 0) + rating_boost
+        
         recommendations.sort(key=lambda x: x.get("nutrition_score", 0), reverse=True)
         
         return recommendations[:limit]
@@ -309,12 +318,16 @@ class RecipeRecommendationService:
             )
             
             for recipe in similar_recipes:
-                rec = self._recipe_to_recommendation(recipe)
-                rec["similarity_score"] = recipe.get("similarity", 0)
-                rec["based_on"] = meal["title"]
-                
-                if self._matches_dietary_preferences(rec, user_prefs):
-                    recommendations.append(rec)
+                # recipe is already a dict from _vector_similarity_search
+                if isinstance(recipe, dict):
+                    recipe_obj = db.query(Recipe).filter(Recipe.id == recipe.get('id')).first()
+                    if recipe_obj:
+                        rec = self._recipe_to_recommendation(recipe_obj, db)
+                        rec["similarity_score"] = recipe.get("similarity", 0)
+                        rec["based_on"] = meal["title"]
+                        
+                        if self._matches_dietary_preferences(rec, user_prefs):
+                            recommendations.append(rec)
         
         # Remove duplicates and sort
         unique_recipes = {}
@@ -334,25 +347,56 @@ class RecipeRecommendationService:
         db: Session, 
         limit: int
     ) -> List[Dict[str, Any]]:
-        """Get trending/popular recommendations"""
-        # For now, return random high-quality recipes
-        # In a real system, this would be based on popularity metrics
-        recipes = db.query(Recipe).filter(
+        """Get trending/popular recommendations based on ratings"""
+        # Get recipes with ratings, sorted by average rating and total ratings
+        from sqlalchemy import func
+        from sqlalchemy.orm import aliased
+        
+        # Query recipes with their average ratings and rating counts
+        recipes_with_ratings = db.query(
+            Recipe,
+            func.avg(RecipeRating.rating).label('avg_rating'),
+            func.count(RecipeRating.id).label('rating_count')
+        ).outerjoin(
+            RecipeRating, Recipe.id == RecipeRating.recipe_id
+        ).filter(
             and_(
                 Recipe.is_active == True,
                 Recipe.per_serving_calories >= 100,  # Quality filter
                 Recipe.per_serving_calories <= 800
             )
-        ).order_by(func.random()).limit(limit * 2).all()
+        ).group_by(
+            Recipe.id
+        ).order_by(
+            func.avg(RecipeRating.rating).desc().nullslast(),
+            func.count(RecipeRating.id).desc().nullslast(),
+            func.random()
+        ).limit(limit * 5).all()  # Fetch more to account for filtering
         
         recommendations = []
-        for recipe in recipes:
+        for recipe, avg_rating, rating_count in recipes_with_ratings:
             rec = self._recipe_to_recommendation(recipe)
-            rec["trending_score"] = random.uniform(0.7, 1.0)  # Simulate trending score
+            
+            # Calculate trending score based on ratings
+            # Higher ratings = higher score, more ratings = more reliable
+            avg_rating_val = float(avg_rating) if avg_rating else 3.0  # Default to 3/5 if no ratings
+            rating_count_val = int(rating_count) if rating_count else 0
+            
+            # Normalize rating to 0-1 scale (3-5 stars = 0.6-1.0)
+            rating_score = max(0.0, (avg_rating_val - 1.0) / 4.0)  # Maps 1-5 to 0-1
+            
+            # Boost for recipes with more ratings (popularity)
+            popularity_boost = min(0.3, rating_count_val / 50.0)  # Cap at 0.3 for 50+ ratings
+            
+            # Trending score combines rating quality and popularity
+            rec["trending_score"] = rating_score + popularity_boost
+            rec["avg_rating"] = round(avg_rating_val, 2)
+            rec["rating_count"] = rating_count_val
             
             if self._matches_dietary_preferences(rec, user_prefs):
                 recommendations.append(rec)
         
+        # Sort by trending score (already sorted but re-sort after filtering)
         recommendations.sort(key=lambda x: x.get("trending_score", 0), reverse=True)
         return recommendations[:limit]
 
@@ -370,11 +414,11 @@ class RecipeRecommendationService:
         recent_cuisines = set(meal.get("cuisine") for meal in recent_meals)
         recent_meal_types = set(meal.get("meal_type") for meal in recent_meals)
         
-        # Query for diverse recipes
-        recipes = db.query(Recipe).filter(Recipe.is_active == True).limit(100).all()
+        # Query for diverse recipes - fetch more to account for filtering
+        recipes = db.query(Recipe).filter(Recipe.is_active == True).limit(max(limit * 5, 200)).all()
         
         for recipe in recipes:
-            rec = self._recipe_to_recommendation(recipe)
+            rec = self._recipe_to_recommendation(recipe, db)
             
             # Calculate diversity score
             diversity_score = 0.0
@@ -502,7 +546,7 @@ class RecipeRecommendationService:
         
         return " ".join(filter(None, text_parts))
 
-    def _recipe_to_recommendation(self, recipe: Recipe) -> Dict[str, Any]:
+    def _recipe_to_recommendation(self, recipe: Recipe, db: Session = None) -> Dict[str, Any]:
         """Convert Recipe model to recommendation format with FULL recipe details from our database"""
         # Get ingredients with quantities
         ingredients = []
@@ -528,6 +572,20 @@ class RecipeRecommendationService:
                     "time_required": inst.time_required
                 })
         
+        # Get rating stats if database session is available
+        avg_rating = None
+        rating_count = 0
+        if db:
+            from sqlalchemy import func
+            rating_stats = db.query(
+                func.avg(RecipeRating.rating).label('avg_rating'),
+                func.count(RecipeRating.id).label('rating_count')
+            ).filter(RecipeRating.recipe_id == recipe.id).first()
+            
+            if rating_stats:
+                avg_rating = float(rating_stats.avg_rating) if rating_stats.avg_rating else None
+                rating_count = int(rating_stats.rating_count) if rating_stats.rating_count else 0
+        
         return {
             "id": recipe.id,
             "title": recipe.title,
@@ -550,6 +608,9 @@ class RecipeRecommendationService:
             "total_carbs": recipe.total_carbs or 0,
             "total_fat": recipe.total_fat or 0,
             "total_sodium": recipe.total_sodium or 0,
+            # Rating information
+            "avg_rating": round(avg_rating, 2) if avg_rating else None,
+            "rating_count": rating_count,
             # FULL RECIPE DETAILS FROM OUR DATABASE
             "ingredients": ingredients,
             "instructions": instructions,
@@ -585,7 +646,9 @@ class RecipeRecommendationService:
         # Check allergies (recipes should NOT contain allergens)
         if allergies:
             for allergy in allergies:
-                if allergy in recipe_tags:
+                # Check for contains-{allergy} tag (e.g., contains-fish, contains-peanuts)
+                allergen_tag = f"contains-{allergy}"
+                if allergen_tag in recipe_tags or allergy in recipe_tags:
                     return False
         
         # Check disliked ingredients (basic check)
@@ -627,29 +690,38 @@ class RecipeRecommendationService:
         return overlap / total_words if total_words > 0 else 0.0
 
     def _score_recommendations(self, recommendations: List[Dict[str, Any]], user_prefs: Dict[str, Any], nutritional_gaps: Dict[str, float]):
-        """Score recommendations based on multiple factors"""
+        """Score recommendations based on multiple factors including ratings"""
         for rec in recommendations:
             scores = []
             
             # Nutrition score
             if "nutrition_score" in rec:
-                scores.append(rec["nutrition_score"] * 0.3)
+                scores.append(rec["nutrition_score"] * 0.25)
             
             # Similarity score
             if "similarity_score" in rec:
-                scores.append(rec["similarity_score"] * 0.25)
+                scores.append(rec["similarity_score"] * 0.2)
             
             # Diversity score
             if "diversity_score" in rec:
-                scores.append(rec["diversity_score"] * 0.2)
+                scores.append(rec["diversity_score"] * 0.15)
             
-            # Trending score
+            # Trending score (includes ratings)
             if "trending_score" in rec:
-                scores.append(rec["trending_score"] * 0.15)
+                scores.append(rec["trending_score"] * 0.2)
             
             # Context score
             if "context_score" in rec:
                 scores.append(rec["context_score"] * 0.1)
+            
+            # Rating score (prioritize highly-rated recipes)
+            if rec.get("avg_rating"):
+                # Normalize rating to 0-0.1 scale (maps 1-5 stars)
+                rating_normalized = (rec["avg_rating"] - 1.0) / 40.0  # 0.0 for 1-star, 0.1 for 5-star
+                # Boost for recipes with more ratings (reliability)
+                reliability_boost = min(0.05, rec.get("rating_count", 0) / 100.0)
+                rating_score = (rating_normalized + reliability_boost) * 0.1  # 0-0.1 weight
+                scores.append(rating_score)
             
             # Calculate total score
             rec["total_score"] = sum(scores) if scores else 0.0
@@ -687,19 +759,36 @@ class RecipeRecommendationService:
         return f"Recommended because it {', '.join(reasons)}"
 
     def _get_fallback_recommendations(self, db: Session, limit: int) -> List[Dict[str, Any]]:
-        """Get fallback recommendations when other methods fail"""
-        recipes = db.query(Recipe).filter(
+        """Get fallback recommendations when other methods fail - prioritize highly-rated recipes"""
+        # Query recipes with ratings, sorted by average rating
+        recipes_with_ratings = db.query(
+            Recipe,
+            func.avg(RecipeRating.rating).label('avg_rating'),
+            func.count(RecipeRating.id).label('rating_count')
+        ).outerjoin(
+            RecipeRating, Recipe.id == RecipeRating.recipe_id
+        ).filter(
             and_(
                 Recipe.is_active == True,
                 Recipe.per_serving_calories >= 100,
                 Recipe.per_serving_calories <= 800
             )
-        ).order_by(func.random()).limit(limit).all()
+        ).group_by(
+            Recipe.id
+        ).order_by(
+            func.avg(RecipeRating.rating).desc().nullslast(),
+            func.random()
+        ).limit(max(limit * 2, 100)).all()
         
         recommendations = []
-        for recipe in recipes:
-            rec = self._recipe_to_recommendation(recipe)
+        for recipe, avg_rating, rating_count in recipes_with_ratings:
+            rec = self._recipe_to_recommendation(recipe, db)
+            # Override with query results for accuracy
+            if avg_rating:
+                rec["avg_rating"] = round(float(avg_rating), 2)
+            if rating_count:
+                rec["rating_count"] = int(rating_count)
             rec["recommendation_reason"] = "Popular choice"
             recommendations.append(rec)
         
-        return recommendations
+        return recommendations[:limit]

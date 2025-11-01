@@ -36,7 +36,6 @@ import {
   FiClock, 
   FiPlus,
   FiBarChart,
-  FiAward,
   FiCalendar,
   FiRefreshCw
 } from 'react-icons/fi';
@@ -255,7 +254,6 @@ const GoalsDashboard: React.FC = () => {
           <Tab>Active Goals</Tab>
           <Tab>Progress Charts</Tab>
           <Tab>Insights</Tab>
-          <Tab>Recent Achievements</Tab>
         </TabList>
 
         <TabPanels>
@@ -295,52 +293,7 @@ const GoalsDashboard: React.FC = () => {
             <GoalInsights dashboardData={dashboardData} />
           </TabPanel>
 
-          {/* Recent Achievements Tab */}
-          <TabPanel px={0}>
-            <VStack spacing={6} align="stretch">
-              <Heading size="md">Recent Achievements</Heading>
-              
-              {dashboardData.recent_achievements.length === 0 ? (
-                <Alert status="info" borderRadius="lg">
-                  <AlertIcon />
-                  <Text>No recent achievements yet. Keep working toward your goals!</Text>
-                </Alert>
-              ) : (
-                <VStack spacing={4} align="stretch">
-                  {dashboardData.recent_achievements.map((achievement) => (
-                    <Card key={achievement.id}>
-                      <CardBody>
-                        <HStack justify="space-between" align="start">
-                          <VStack align="start" spacing={2}>
-                            <HStack spacing={2}>
-                              <Icon as={FiAward} color="green.500" />
-                              <Text fontWeight="semibold">
-                                Goal Achieved!
-                              </Text>
-                            </HStack>
-                            <Text fontSize="sm" color={textColor}>
-                              {new Date(achievement.date).toLocaleDateString()}
-                            </Text>
-                            <Text fontSize="sm">
-                              Achieved {achievement.achieved_value} {achievement.target_value > 0 ? `of ${achievement.target_value}` : ''}
-                            </Text>
-                            {achievement.notes && (
-                              <Text fontSize="sm" color={textColor} fontStyle="italic">
-                                "{achievement.notes}"
-                              </Text>
-                            )}
-                          </VStack>
-                          <Badge colorScheme="green" size="lg">
-                            {achievement.progress_percentage.toFixed(0)}%
-                          </Badge>
-                        </HStack>
-                      </CardBody>
-                    </Card>
-                  ))}
-                </VStack>
-              )}
-            </VStack>
-          </TabPanel>
+          {/* Recent Achievements removed per requirements */}
         </TabPanels>
       </Tabs>
 
@@ -355,3 +308,5 @@ const GoalsDashboard: React.FC = () => {
 };
 
 export default GoalsDashboard;
+
+

@@ -79,3 +79,9 @@ done
 echo -e "${RED}❌ Backend failed to start properly${NC}"
 echo -e "${YELLOW}📝 Check backend.log for details${NC}"
 exit 1
+
+
+
+
+
+

@@ -92,13 +92,82 @@ const CreateGoalModal: React.FC<CreateGoalModalProps> = ({
     }
   }, [isOpen]);
 
+  const defaultTemplates: GoalTemplate[] = [
+    {
+      id: 1,
+      name: 'Daily Calories',
+      description: 'Stay within a steady calorie target each day.',
+      goal_type: 'calories',
+      default_target_value: 2200,
+      default_unit: 'cal',
+      default_frequency: 'daily',
+      default_duration_days: 30,
+      category: 'Basics',
+      difficulty_level: 2,
+      is_public: true,
+      usage_count: 0,
+      created_at: '',
+      updated_at: ''
+    },
+    {
+      id: 2,
+      name: 'Protein Intake',
+      description: 'Hit a consistent daily protein target.',
+      goal_type: 'protein',
+      default_target_value: 120,
+      default_unit: 'g',
+      default_frequency: 'daily',
+      default_duration_days: 30,
+      category: 'Macros',
+      difficulty_level: 2,
+      is_public: true,
+      usage_count: 0,
+      created_at: '',
+      updated_at: ''
+    },
+    {
+      id: 3,
+      name: 'Fiber Goal',
+      description: 'Increase daily fiber for gut health.',
+      goal_type: 'fiber',
+      default_target_value: 30,
+      default_unit: 'g',
+      default_frequency: 'daily',
+      default_duration_days: 21,
+      category: 'Micros',
+      difficulty_level: 3,
+      is_public: true,
+      usage_count: 0,
+      created_at: '',
+      updated_at: ''
+    },
+    {
+      id: 4,
+      name: 'Water Intake',
+      description: 'Stay hydrated throughout the day.',
+      goal_type: 'water',
+      default_target_value: 2.5,
+      default_unit: 'l',
+      default_frequency: 'daily',
+      default_duration_days: 14,
+      category: 'Wellness',
+      difficulty_level: 1,
+      is_public: true,
+      usage_count: 0,
+      created_at: '',
+      updated_at: ''
+    }
+  ];
+
   const loadTemplates = async () => {
     try {
       setLoadingTemplates(true);
       const data = await nutritionGoalsService.getGoalTemplates();
-      setTemplates(data);
+      setTemplates(data && data.length ? data : defaultTemplates);
     } catch (error) {
       console.error('Error loading templates:', error);
+      // Fallback to built-in templates when API is unavailable (e.g., CORS)
+      setTemplates(defaultTemplates);
     } finally {
       setLoadingTemplates(false);
     }
@@ -461,3 +530,5 @@ const CreateGoalModal: React.FC<CreateGoalModalProps> = ({
 };
 
 export default CreateGoalModal;
+
+

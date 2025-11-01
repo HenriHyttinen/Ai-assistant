@@ -69,6 +69,27 @@ class NutritionAI:
             # Add snacks if calorie target isn't met
             meal_plan = self._add_snacks_if_needed(meal_plan, user_preferences)
             
+            # ROOT CAUSE FIX: Validate generated meals for duplicates (prevent duplicates across meal plans for at least a month)
+            existing_meal_names = user_preferences.get('existing_meal_names', [])
+            if existing_meal_names:
+                # Extract all meal names from generated meal plan
+                generated_meal_names = []
+                meal_plan_list = meal_plan.get('meal_plan', []) or meal_plan.get('weekly_plan', [])
+                for day_data in meal_plan_list:
+                    meals = day_data.get('meals', [])
+                    for meal_data in meals:
+                        meal_name = meal_data.get('meal_name') or meal_data.get('recipe', {}).get('title')
+                        if meal_name:
+                            generated_meal_names.append(meal_name)
+                
+                # Check for duplicates
+                duplicates = [name for name in generated_meal_names if name in existing_meal_names]
+                if duplicates:
+                    logger.warning(f"⚠️ AI generated {len(duplicates)} duplicate meal names in bulk generation: {duplicates[:5]}")
+                    # Log warning but don't fail - the prompt should prevent this, but if it happens, at least we log it
+                    # In production, you might want to retry or reject the meal plan
+                    logger.warning(f"⚠️ Generated meal plan contains duplicates - prompt was supposed to prevent this. Duplicates: {duplicates[:5]}")
+            
             return {
                 "strategy": strategy,
                 "structure": meal_structure,
@@ -131,6 +152,26 @@ class NutritionAI:
             if "weekly_plan" in weekly_meal_plan:
                 for i, day_plan in enumerate(weekly_meal_plan["weekly_plan"]):
                     weekly_meal_plan["weekly_plan"][i] = self._add_snacks_if_needed(day_plan, user_preferences)
+            
+            # ROOT CAUSE FIX: Validate generated meals for duplicates (prevent duplicates across meal plans for at least a month)
+            existing_meal_names = user_preferences.get('existing_meal_names', [])
+            if existing_meal_names:
+                # Extract all meal names from generated weekly meal plan
+                generated_meal_names = []
+                if "weekly_plan" in weekly_meal_plan:
+                    for day_data in weekly_meal_plan["weekly_plan"]:
+                        meals = day_data.get('meals', [])
+                        for meal_data in meals:
+                            meal_name = meal_data.get('meal_name') or meal_data.get('recipe', {}).get('title')
+                            if meal_name:
+                                generated_meal_names.append(meal_name)
+                
+                # Check for duplicates
+                duplicates = [name for name in generated_meal_names if name in existing_meal_names]
+                if duplicates:
+                    logger.warning(f"⚠️ AI generated {len(duplicates)} duplicate meal names in weekly bulk generation: {duplicates[:5]}")
+                    # Log warning but don't fail - the prompt should prevent this, but if it happens, at least we log it
+                    logger.warning(f"⚠️ Generated weekly meal plan contains duplicates - prompt was supposed to prevent this. Duplicates: {duplicates[:5]}")
             
             return {
                 "weekly_strategy": weekly_strategy,
@@ -391,6 +432,13 @@ class NutritionAI:
         
         VARIETY REQUIREMENT: Create unique, diverse recipes with different cuisines, cooking methods, and ingredients. Avoid repeating the same dishes.
         
+        ROOT CAUSE FIX: CRITICAL - Prevent duplicates across meal plans for at least a month
+        - **NEVER create recipes with the same name as these recent recipes (last 30 days): {', '.join(preferences.get('existing_meal_names', [])[:20]) if preferences.get('existing_meal_names') else 'none'}**
+        - **NEVER create recipes with similar names to recent recipes** (e.g., if "Savory Tofu Wraps" exists, do NOT create "Tofu Wraps" or "Savory Tofu Wrap" or any variation)
+        - **NEVER repeat the same recipe name from previous meal plans**
+        - Each recipe must have a completely unique name that doesn't match any existing recipe name
+        - If you need inspiration, look at the recent recipes above but create something completely different
+        
         IMPORTANT: Respond with ONLY valid JSON. No explanations, no markdown, no extra text.
         For each meal, provide this exact JSON format:
         {{
@@ -454,8 +502,8 @@ class NutritionAI:
             recipe_response = self._call_openai(rag_prompt, self.parameters["recipe_generation"]["temperature"])
             recipe = json.loads(recipe_response)
             
-            # Calculate nutrition using function calling
-            nutrition = self._calculate_recipe_nutrition(recipe.get('ingredients', []))
+            # Calculate nutrition using function calling (with database for accuracy)
+            nutrition = self._calculate_recipe_nutrition(recipe.get('ingredients', []), db)
             recipe['nutrition'] = nutrition
             
             return recipe
@@ -477,8 +525,8 @@ class NutritionAI:
             return np.zeros(384)  # Default embedding size for all-MiniLM-L6-v2
         return self.embedding_model.encode([preference_text])[0]
     
-    def _retrieve_similar_recipes(self, query: str, user_embedding: np.ndarray, db: Session, limit: int = 5) -> List[Dict[str, Any]]:
-        """Retrieve similar recipes using vector similarity"""
+    def _retrieve_similar_recipes(self, query: str, user_embedding: np.ndarray, db: Session, limit: int = 5, meal_type: str = None) -> List[Dict[str, Any]]:
+        """Retrieve similar recipes using vector similarity, optionally filtered by meal_type"""
         try:
             # Get query embedding
             if self.embedding_model is None:
@@ -486,18 +534,29 @@ class NutritionAI:
                 return []
             query_embedding = self.embedding_model.encode([query])[0]
             
-            # Retrieve recipes from database
-            recipes = db.query(Recipe).filter(Recipe.is_active == True).limit(100).all()
+            # Retrieve recipes from database (filter by meal_type if specified)
+            query_filter = db.query(Recipe).filter(Recipe.is_active == True)
+            if meal_type:
+                query_filter = query_filter.filter(Recipe.meal_type == meal_type)
+            recipes = query_filter.limit(100).all()
+            
+            if not recipes:
+                logger.warning(f"No recipes found for RAG retrieval (meal_type={meal_type})")
+                return []
             
             similarities = []
             for recipe in recipes:
                 if recipe.embedding:
-                    recipe_embedding = np.array(recipe.embedding)
-                    # Calculate cosine similarity
-                    similarity = np.dot(query_embedding, recipe_embedding) / (
-                        np.linalg.norm(query_embedding) * np.linalg.norm(recipe_embedding)
-                    )
-                    similarities.append((recipe, similarity))
+                    try:
+                        recipe_embedding = np.array(recipe.embedding)
+                        # Calculate cosine similarity
+                        similarity = np.dot(query_embedding, recipe_embedding) / (
+                            np.linalg.norm(query_embedding) * np.linalg.norm(recipe_embedding)
+                        )
+                        similarities.append((recipe, similarity))
+                    except Exception as e:
+                        logger.warning(f"Error calculating similarity for recipe {recipe.id}: {e}")
+                        continue
             
             # Sort by similarity and return top results
             similarities.sort(key=lambda x: x[1], reverse=True)
@@ -638,10 +697,14 @@ class NutritionAI:
                 "is_fallback": True
             }
     
-    def _calculate_recipe_nutrition(self, ingredients: List[Dict[str, Any]]) -> Dict[str, float]:
-        """Call the function-calling registry to compute nutrition totals per serving (servings=1)."""
+    def _calculate_recipe_nutrition(self, ingredients: List[Dict[str, Any]], db: Optional[Any] = None) -> Dict[str, float]:
+        """Call the function-calling registry to compute nutrition totals per serving (servings=1).
+        Uses ingredient database if available, falls back to estimates otherwise.
+        """
         try:
-            from .functions import registry
+            from .functions import NutritionFunctionRegistry
+            # Create registry with database session for accurate nutrition
+            registry = NutritionFunctionRegistry(db_session=db)
             args = {"ingredients": ingredients, "servings": 1}
             result = registry.execute("calculate_nutrition", args)
             if isinstance(result, dict) and "error" not in result:
@@ -966,6 +1029,14 @@ class NutritionAI:
         - ALLERGIES: NEVER include: {preferences.get('allergies', [])}
         - VARIETY: Each day should have different cuisines and flavors
         - NUTRITION: Balance macronutrients across the week
+        
+        ROOT CAUSE FIX: CRITICAL - Prevent duplicates across meal plans for at least a month
+        - **NEVER create recipes with the same name as these recent recipes (last 30 days): {', '.join(preferences.get('existing_meal_names', [])[:20]) if preferences.get('existing_meal_names') else 'none'}**
+        - **NEVER create recipes with similar names to recent recipes** (e.g., if "Savory Tofu Wraps" exists, do NOT create "Tofu Wraps" or "Savory Tofu Wrap" or any variation)
+        - **NEVER repeat the same recipe name from previous meal plans**
+        - Each recipe must have a completely unique name that doesn't match any existing recipe name
+        - If you need inspiration, look at the recent recipes above but create something completely different
+        - Ensure variety across the week - no two meals should have similar names or ingredients
 
         Respond with a JSON object:
         {{
@@ -1306,3 +1377,560 @@ Generate specific recipes that are inspired by these database recipes but tailor
 """
         
         return enhanced_prompt
+    
+    def _generate_single_meal_fast(self, meal_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Fast single-step meal generation (fallback method - not task.md compliant)"""
+        try:
+            meal_type = meal_data.get('meal_type', 'breakfast')
+            target_calories = meal_data.get('target_calories', 500)
+            target_cuisine = meal_data.get('target_cuisine', 'International')
+            user_preferences = meal_data.get('user_preferences', {})
+            existing_meals = meal_data.get('existing_meals', [])
+            
+            existing_names = [meal.get('meal_name', '') for meal in existing_meals if meal.get('meal_name')]
+            avoid_names = ', '.join(existing_names[:5]) if existing_names else 'none'
+            
+            meal_type_guidelines = {
+                'breakfast': 'light, energizing foods like eggs, oatmeal, yogurt, smoothies, toast, pancakes, or cereal',
+                'lunch': 'balanced meals like salads, sandwiches, soups, pasta, rice bowls, or wraps',
+                'dinner': 'substantial main courses like roasted meats, fish, casseroles, curries, or hearty pasta dishes',
+                'snack': 'small portions like nuts, fruits, crackers, yogurt, or light bites'
+            }
+            
+            meal_guidance = meal_type_guidelines.get(meal_type, 'appropriate for the meal type')
+            
+            prompt = f"""Generate a single {meal_type} recipe: {target_calories} calories, {target_cuisine} cuisine.
+
+MEAL TYPE REQUIREMENTS:
+- This MUST be a proper {meal_type} food: {meal_guidance}
+- Appropriate portion size for {meal_type}
+
+IMPORTANT JSON RULES (STRICT):
+- Output ONLY valid minified JSON (one line). No markdown, no prose, no comments.
+- Use ONLY double quotes.
+- NO trailing commas anywhere.
+- Servings must be a single integer (not "1-2").
+- All quantities must be numbers, no ranges or fractions.
+- Times in minutes as integers.
+- Units only "g" or "ml" where applicable.
+
+CRITICAL: Create a UNIQUE recipe that is completely different from these existing recipes: {avoid_names}
+
+Create a detailed recipe with:
+- Title: creative and unique
+- Cuisine: {target_cuisine}
+- Prep time: 10-30 minutes (integer)
+- Cook time: 15-45 minutes (integer)
+- Servings: 1 or 2 (integer)
+- Difficulty: easy or medium
+- Summary: short description
+- Ingredients: 4-8 items with quantities in grams/ml
+- Instructions: 3-6 clear steps (array of strings)
+- Dietary tags: based on ingredients
+- Nutrition per serving: calories, protein, carbs, fats (integers)
+
+Return ONLY minified JSON (no markdown):
+{{"meal_name":"Unique Recipe Name","recipe":{{"title":"Unique Recipe Name","cuisine":"{target_cuisine}","prep_time":15,"cook_time":25,"servings":1,"difficulty":"easy","summary":"Description","ingredients":[{{"name":"ingredient","quantity":100,"unit":"g"}}],"instructions":["Step 1","Step 2","Step 3"],"dietary_tags":["vegetarian"],"nutrition":{{"calories":{target_calories},"protein":20,"carbs":30,"fats":15}},"ai_generated":true}}}}"""
+
+            response = self._call_openai_fast(prompt, 0.6)
+            result = self._parse_json_response(response, "meal")
+            
+            if result:
+                result['meal_type'] = meal_type
+                if 'recipe' not in result:
+                    result['recipe'] = {}
+                result['recipe']['ai_generated'] = True
+                result['recipe']['database_source'] = False
+                result['ai_generated'] = True
+                
+                # ROOT CAUSE FIX: Calculate nutrition from ingredients (same as sequential RAG)
+                # Replace AI's placeholder values with calculated values from ingredients
+                # Note: Fast generation doesn't have db access, will use estimates
+                try:
+                    if result.get('recipe', {}).get('ingredients'):
+                        calculated_nutrition = self._calculate_recipe_nutrition(result['recipe']['ingredients'], db=None)
+                        if calculated_nutrition and calculated_nutrition.get('calories', 0) > 0:
+                            # REPLACE (not update) nutrition with calculated values
+                            result['recipe']['nutrition'] = {
+                                "calories": int(calculated_nutrition.get('calories', 0)),
+                                "protein": int(calculated_nutrition.get('protein', 0)),
+                                "carbs": int(calculated_nutrition.get('carbs', 0)),
+                                "fats": int(calculated_nutrition.get('fats', 0)),
+                                "per_serving_calories": int(calculated_nutrition.get('calories', 0)),
+                                "per_serving_protein": int(calculated_nutrition.get('protein', 0)),
+                                "per_serving_carbs": int(calculated_nutrition.get('carbs', 0)),
+                                "per_serving_fats": int(calculated_nutrition.get('fats', 0))
+                            }
+                            result['calories'] = int(calculated_nutrition.get('calories', 0))
+                            result['per_serving_calories'] = int(calculated_nutrition.get('calories', 0))
+                            result['protein'] = int(calculated_nutrition.get('protein', 0))
+                            result['carbs'] = int(calculated_nutrition.get('carbs', 0))
+                            result['fats'] = int(calculated_nutrition.get('fats', 0))
+                            logger.info(f"✅ Fast generation: Calculated nutrition from ingredients: {calculated_nutrition.get('calories', 0)} cal")
+                        else:
+                            logger.warning(f"⚠️ Fast generation: Failed to calculate nutrition, using target calories")
+                            result['recipe']['nutrition'] = {
+                                "calories": target_calories,
+                                "protein": int(target_calories * 0.25 / 4),
+                                "carbs": int(target_calories * 0.45 / 4),
+                                "fats": int(target_calories * 0.30 / 9)
+                            }
+                    else:
+                        logger.warning(f"⚠️ Fast generation: No ingredients found, using target calories")
+                        result['recipe']['nutrition'] = {
+                            "calories": target_calories,
+                            "protein": int(target_calories * 0.25 / 4),
+                            "carbs": int(target_calories * 0.45 / 4),
+                            "fats": int(target_calories * 0.30 / 9)
+                        }
+                except Exception as e:
+                    logger.error(f"❌ Fast generation: Error calculating nutrition: {e}")
+                    result['recipe']['nutrition'] = {
+                        "calories": target_calories,
+                        "protein": int(target_calories * 0.25 / 4),
+                        "carbs": int(target_calories * 0.45 / 4),
+                        "fats": int(target_calories * 0.30 / 9)
+                    }
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error generating single meal: {str(e)}")
+            from .fallback_recipes import fallback_generator
+            existing_names = [meal.get('meal_name', '') for meal in meal_data.get('existing_meals', [])]
+            return fallback_generator.generate_unique_recipe(
+                meal_data.get('meal_type', 'breakfast'),
+                meal_data.get('target_calories', 500),
+                meal_data.get('target_cuisine', 'International'),
+                existing_names
+            )
+    
+    def _call_openai_fast(self, prompt: str, temperature: float = 0.7) -> str:
+        """Fast OpenAI call using gpt-3.5-turbo for speed"""
+        try:
+            response = self.openai_client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {"role": "system", "content": "You are a culinary assistant. Output ONLY valid minified JSON matching the requested schema. No markdown, no extra text."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=temperature,
+                max_tokens=2000
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            logger.error(f"Fast OpenAI call failed: {e}")
+            raise
+    
+    def _generate_single_meal_with_sequential_rag(
+        self, 
+        meal_data: Dict[str, Any], 
+        db: Session
+    ) -> Dict[str, Any]:
+        """
+        Generate a single meal using Sequential Prompting + RAG per task.md requirements:
+        Step 1: Initial Assessment - Analyze meal type requirements + RAG retrieval
+        Step 2: Recipe Generation - Generate recipe with RAG guidance
+        Step 3: Nutritional Analysis - Validate nutrition using function calling
+        Step 4: Refinement - Adjust recipe if calorie count is off
+        """
+        try:
+            meal_type = meal_data.get('meal_type', 'breakfast')
+            target_calories = meal_data.get('target_calories', 500)
+            target_cuisine = meal_data.get('target_cuisine', 'International')
+            user_preferences = meal_data.get('user_preferences', {})
+            existing_meals = meal_data.get('existing_meals', [])
+            
+            # STEP 1: INITIAL ASSESSMENT - Analyze meal type requirements and retrieve similar recipes
+            logger.info(f"🔍 STEP 1: Initial Assessment for {meal_type} meal ({target_calories} cal)")
+            
+            existing_names = [meal.get('meal_name', '') for meal in existing_meals if meal.get('meal_name')]
+            # ROOT CAUSE FIX: Check for explicit_avoid_names from retry attempts
+            explicit_avoid_names = meal_data.get('explicit_avoid_names', [])
+            if explicit_avoid_names:
+                existing_names.extend(explicit_avoid_names)
+                existing_names = list(set(existing_names))  # Remove duplicates
+                logger.info(f"🚫 Explicitly avoiding these meal names: {explicit_avoid_names}")
+            
+            # RAG: Retrieve similar recipes from database to avoid duplicates AND guide generation
+            similar_recipes = []
+            if db:
+                try:
+                    query = f"{meal_type} {target_cuisine} {target_calories} calories"
+                    user_embedding = self._get_user_embedding(user_preferences)
+                    # Filter by meal_type directly in query for efficiency
+                    similar_recipes = self._retrieve_similar_recipes(query, user_embedding, db, limit=10, meal_type=meal_type)
+                    logger.info(f"📚 RAG: Retrieved {len(similar_recipes)} similar {meal_type} recipes from database")
+                except Exception as e:
+                    logger.warning(f"⚠️ RAG retrieval failed: {e}")
+            
+            # Meal type constraints with explicit forbidden items
+            # CRITICAL: Handle snack timing context (morning/afternoon/evening snacks are all stored as 'snack' but can have different contexts)
+            meal_type_constraints = {
+                'breakfast': {
+                    'allowed': ['eggs', 'oatmeal', 'yogurt', 'smoothies', 'toast', 'pancakes', 'cereal', 'fruits', 'nuts', 'breakfast bowls'],
+                    'forbidden': ['heavy meat dishes', 'large pasta portions', 'curries', 'stews', 'soups as main', 'guacamole bowls', 'dips'],
+                    'description': 'light, energizing foods like eggs, oatmeal, yogurt, smoothies, toast, pancakes, or cereal'
+                },
+                'lunch': {
+                    'allowed': ['salads', 'sandwiches', 'soups', 'pasta', 'rice bowls', 'wraps', 'light protein dishes'],
+                    'forbidden': ['heavy roasted meats', 'large casseroles', 'desserts', 'heavy fried foods'],
+                    'description': 'balanced meals like salads, sandwiches, soups, pasta, rice bowls, or wraps'
+                },
+                'dinner': {
+                    'allowed': ['roasted meats', 'fish', 'casseroles', 'curries', 'hearty pasta dishes', 'stews', 'main courses'],
+                    'forbidden': ['guacamole bowls', 'light salads', 'snacks', 'breakfast foods', 'simple dips', 'appetizers'],
+                    'description': 'substantial main courses like roasted meats, fish, casseroles, curries, or hearty pasta dishes'
+                },
+                'snack': {
+                    'allowed': ['nuts', 'fruits', 'crackers', 'yogurt', 'light bites', 'trail mix', 'veggie sticks', 'cheese', 'protein bars', 'small portions'],
+                    'forbidden': ['full meals', 'large portions', 'heavy dishes', 'main courses', 'dinners', 'breakfast dishes'],
+                    'description': 'small portions like nuts, fruits, crackers, yogurt, cheese, or light bites - appropriate for between-meal snacking'
+                }
+            }
+            
+            constraints = meal_type_constraints.get(meal_type, meal_type_constraints['breakfast'])
+            
+            # STEP 2: RECIPE GENERATION - Generate recipe with RAG guidance and strict meal type enforcement
+            logger.info(f"🎨 STEP 2: Recipe Generation with RAG guidance")
+            
+            similar_recipes_text = ""
+            if similar_recipes:
+                similar_recipes_text = "\nSimilar recipes to AVOID duplicating (use as inspiration but create something DIFFERENT):\n"
+                for i, recipe in enumerate(similar_recipes[:5], 1):
+                    recipe_title = recipe.get('title', 'N/A')
+                    ingredients_list = recipe.get('ingredients', [])
+                    # Handle both dict format (from RAG) and direct access
+                    if ingredients_list:
+                        ingredient_names = []
+                        for ing in ingredients_list[:3]:
+                            if isinstance(ing, dict):
+                                ingredient_names.append(str(ing.get('name', ''))[:20])
+                            else:
+                                ingredient_names.append(str(ing)[:20])
+                        recipe_ingredients = ', '.join(ingredient_names)
+                    else:
+                        recipe_ingredients = 'N/A'
+                    similar_recipes_text += f"{i}. {recipe_title}: {recipe_ingredients}\n"
+            
+            # Add snack timing context if this is a snack (morning/afternoon/evening context from slot position)
+            snack_context = ""
+            if meal_type == 'snack':
+                # Infer timing from slot position in meals_per_day (if available)
+                # Morning snacks: typically before lunch, Afternoon: between lunch and dinner, Evening: after dinner
+                # Default to "light snack" if context unknown
+                snack_context = "Create a light, healthy snack appropriate for between-meal consumption. "
+            
+            prompt = f"""Generate a single {meal_type} recipe: {target_calories} calories, {target_cuisine} cuisine.
+{snack_context}
+CRITICAL MEAL TYPE ENFORCEMENT (STRICTLY FOLLOW):
+- This MUST be a proper {meal_type} food: {constraints['description']}
+- ALLOWED examples: {', '.join(constraints['allowed'])}
+- FORBIDDEN (DO NOT CREATE): {', '.join(constraints['forbidden'])}
+- If meal_type is 'dinner': MUST be a substantial main course, NOT a dip/bowl/snack/guacamole
+- If meal_type is 'breakfast': MUST be light and energizing, NOT a heavy dinner dish
+- If meal_type is 'snack': MUST be small portion, light, quick to eat, NOT a full meal
+- Appropriate portion size for {meal_type}: 
+  * Snacks: VERY small portions (50-100g total, {target_calories} calories max)
+  * Breakfast/Lunch/Dinner: Moderate portions (150-300g total, {target_calories} calories)
+
+{similar_recipes_text}
+
+ROOT CAUSE FIX: CRITICAL - Prevent duplicates across meal plans for at least a month
+- **These are recent recipes (last 30 days) that you must NEVER duplicate: {', '.join(existing_names[:20]) if existing_names else 'none'}**
+- **NEVER use the exact same title as any existing recipe above (last 30 days)**
+- **NEVER create a recipe with a similar name to existing recipes** (e.g., if "Savory Tofu Wraps" exists, do NOT create "Savory Tofu Wraps" or "Tofu Wraps" or "Savory Tofu Wrap" or any variation)
+- **NEVER repeat the same recipe name from previous meal plans**
+- Each recipe must have a completely unique name that doesn't match any existing recipe name
+- Use different main ingredients
+- Use different cooking methods  
+- Use different flavor profiles
+- Make the title distinctive and appealing - choose a completely unique name that doesn't match any existing recipe name from the last 30 days
+
+DIETARY REQUIREMENTS:
+- Dietary preferences: {', '.join(user_preferences.get('dietary_preferences', [])) if user_preferences.get('dietary_preferences') else 'NONE'}
+- CRITICAL: If dietary_preferences is EMPTY or NONE, the user has NO dietary restrictions.
+- **DO NOT ASSUME VEGAN OR VEGETARIAN** when dietary_preferences is empty.
+- **MUST INCLUDE ANIMAL PROTEINS** (meat, fish, poultry, dairy, eggs) when dietary_preferences is empty.
+- For {meal_type} in {target_cuisine} cuisine, typical ingredients include:
+  * Breakfast: eggs, bacon, sausage, milk, yogurt, cheese (NOT vegan unless specified)
+  * Lunch: chicken, fish, beef, pork, cheese, eggs in sandwiches/bowls/salads (NOT vegan unless specified)
+  * Dinner: roasted meats (chicken, beef, pork, lamb), fish, seafood, dairy sauces (NOT vegan unless specified)
+  * Snack: cheese, yogurt, eggs, nuts with dairy (NOT vegan unless specified)
+- Only use plant-based ingredients if dietary_preferences explicitly contains "vegan" or "vegetarian".
+- Allergies (NEVER include): {', '.join(user_preferences.get('allergies', [])) if user_preferences.get('allergies') else 'NONE'}
+- Disliked ingredients: {', '.join(user_preferences.get('disliked_ingredients', [])) if user_preferences.get('disliked_ingredients') else 'NONE'}
+
+IMPORTANT JSON RULES (STRICT):
+- Output ONLY valid minified JSON (one line). No markdown, no prose, no comments.
+- Use ONLY double quotes.
+- NO trailing commas anywhere.
+- Servings must be a single integer (not "1-2").
+- All quantities must be numbers, no ranges or fractions.
+- Times in minutes as integers.
+- Units only "g" or "ml" where applicable.
+
+CRITICAL CALORIE TARGET: **This meal MUST be EXACTLY {target_calories} calories (±20 cal). NO EXCEPTIONS.**
+**You MUST create a recipe that fits this calorie target PRECISELY. Even small overages (e.g., +87 cal for lunch, +29 cal for snack) add up to exceed daily calorie limits.**
+- For breakfast ({target_calories} cal): Use smaller portions (100-150g protein, 50-75g carbs, 10-15ml oil)
+- For lunch ({target_calories} cal): Use moderate portions (150-200g protein, 75-100g carbs, 15-20ml oil) - **DO NOT exceed {target_calories + 50} cal**
+- For dinner ({target_calories} cal): Use moderate portions (150-200g protein, 75-100g carbs, 15-20ml oil) - **DO NOT exceed {target_calories + 50} cal**
+- For snacks ({target_calories} cal): Use EXTREMELY SMALL portions (30-50g total ingredients, minimal oil/fats)
+  **CRITICAL: SNACKS ARE ONLY {target_calories} CALORIES - USE MINIMAL PORTIONS (25-40g protein max, 15-30g carbs max, 2-5ml oil max)**
+  **DO NOT EXCEED {target_calories + 20} CALORIES - SNACKS MUST BE LIGHT AND SMALL - EVEN 29 CALORIES OVER IS TOO MUCH**
+
+Create a detailed recipe with:
+- Title: creative and unique (NOT similar to existing recipes above)
+- Cuisine: {target_cuisine}
+- Prep time: 10-30 minutes (integer)
+- Cook time: 15-45 minutes (integer) 
+- Servings: 1 or 2 (integer)
+- Difficulty: easy or medium
+- Summary: short description
+- Ingredients: 4-8 items with quantities in grams/ml. **QUANTITIES MUST CREATE A RECIPE THAT FITS EXACTLY {target_calories} CALORIES PER SERVING (±20 cal).**
+  **CALCULATE CAREFULLY: Even small overages add up across meals and exceed daily limits.**
+  - For snacks: Use VERY small quantities (50-75g protein MAX, 25-50g vegetables MAX, 5-10g fats MAX) - **Total recipe should be {target_calories} cal, NOT {target_calories + 29} cal**
+  - For main meals: Use moderate quantities (100-200g protein, 75-100g carbs, 10-20ml oil) - **Total recipe should be {target_calories} cal, NOT {target_calories + 87} cal**
+  - **MUST include animal proteins (meat/fish/dairy/eggs) unless dietary_preferences explicitly restricts them.**
+- Instructions: 3-6 clear steps (array of strings) that include cooking meat/fish/dairy/eggs when appropriate
+- Dietary tags: based on ACTUAL ingredients used (do NOT add vegan/vegetarian tags unless recipe contains NO animal products)
+- Nutrition per serving: calories, protein, carbs, fats (integers) - NOTE: These will be recalculated from ingredients, but they should be close to {target_calories}
+
+Return ONLY minified JSON (no markdown):
+{{"meal_name":"Unique Recipe Name","recipe":{{"title":"Unique Recipe Name","cuisine":"{target_cuisine}","prep_time":15,"cook_time":25,"servings":1,"difficulty":"easy","summary":"Description","ingredients":[{{"name":"chicken/beef/fish/dairy/egg","quantity":150,"unit":"g"}},{{"name":"vegetable","quantity":200,"unit":"g"}}],"instructions":["Step 1: Cook protein","Step 2: Add vegetables","Step 3: Season"],"dietary_tags":["contains-meat"] if no dietary restrictions else ["vegetarian"],"nutrition":{{"calories":{target_calories},"protein":25,"carbs":30,"fats":18}},"ai_generated":true}}}}"
+
+CRITICAL REMINDER: If dietary_preferences is empty, use animal proteins (meat/fish/dairy/eggs) in ingredients and set dietary_tags to ["contains-meat"], ["contains-dairy"], or ["contains-eggs"], NOT ["vegetarian"] or ["vegan"]. The example shows meat - follow this unless user explicitly has dietary restrictions.
+"""
+
+            response = self._call_openai_fast(prompt, 0.6)
+            result = self._parse_json_response(response, "meal")
+            
+            if not result:
+                raise ValueError("Failed to parse AI response")
+            
+            # STEP 3: NUTRITIONAL ANALYSIS - Calculate nutrition from ingredients (REPLACE AI placeholder values)
+            logger.info(f"📊 STEP 3: Nutritional Analysis using function calling")
+            
+            # ROOT CAUSE FIX: Always calculate nutrition from ingredients and REPLACE AI's placeholder values
+            # The AI provides placeholder values (e.g., protein:25, carbs:30, fats:18) which are NOT accurate
+            # We MUST calculate from actual ingredients to get real nutrition values
+            # Uses ingredient database for accurate nutrition (not estimates)
+            try:
+                if result.get('recipe', {}).get('ingredients'):
+                    calculated_nutrition = self._calculate_recipe_nutrition(result['recipe']['ingredients'], db)
+                    if calculated_nutrition and calculated_nutrition.get('calories', 0) > 0:
+                        # REPLACE (not update) nutrition with calculated values - ignore AI's placeholder values
+                        result['recipe']['nutrition'] = {
+                            "calories": int(calculated_nutrition.get('calories', 0)),
+                            "protein": int(calculated_nutrition.get('protein', 0)),
+                            "carbs": int(calculated_nutrition.get('carbs', 0)),
+                            "fats": int(calculated_nutrition.get('fats', 0)),
+                            "per_serving_calories": int(calculated_nutrition.get('calories', 0)),
+                            "per_serving_protein": int(calculated_nutrition.get('protein', 0)),
+                            "per_serving_carbs": int(calculated_nutrition.get('carbs', 0)),
+                            "per_serving_fats": int(calculated_nutrition.get('fats', 0))
+                        }
+                        # Update top-level fields
+                        result['calories'] = int(calculated_nutrition.get('calories', 0))
+                        result['per_serving_calories'] = int(calculated_nutrition.get('calories', 0))
+                        result['protein'] = int(calculated_nutrition.get('protein', 0))
+                        result['carbs'] = int(calculated_nutrition.get('carbs', 0))
+                        result['fats'] = int(calculated_nutrition.get('fats', 0))
+                        logger.info(f"✅ Nutrition calculated from ingredients: {calculated_nutrition.get('calories', 0)} cal, P:{calculated_nutrition.get('protein', 0)}g C:{calculated_nutrition.get('carbs', 0)}g F:{calculated_nutrition.get('fats', 0)}g")
+                    else:
+                        logger.error(f"❌ Failed to calculate nutrition from ingredients: {calculated_nutrition}")
+                        # If calculation fails, use fallback but log error
+                        result['recipe']['nutrition'] = {
+                            "calories": target_calories,
+                            "protein": int(target_calories * 0.25 / 4),
+                            "carbs": int(target_calories * 0.45 / 4),
+                            "fats": int(target_calories * 0.30 / 9)
+                        }
+                else:
+                    logger.warning(f"⚠️ No ingredients found in recipe - using target calories as fallback")
+                    result['recipe']['nutrition'] = {
+                        "calories": target_calories,
+                        "protein": int(target_calories * 0.25 / 4),
+                        "carbs": int(target_calories * 0.45 / 4),
+                        "fats": int(target_calories * 0.30 / 9)
+                    }
+            except Exception as e:
+                logger.error(f"❌ Error calculating nutrition from ingredients: {e}", exc_info=True)
+                # Fallback if calculation fails
+                result['recipe']['nutrition'] = {
+                    "calories": target_calories,
+                    "protein": int(target_calories * 0.25 / 4),
+                    "carbs": int(target_calories * 0.45 / 4),
+                    "fats": int(target_calories * 0.30 / 9)
+                }
+            
+            # STEP 4: REFINEMENT - Adjust portions if calorie count is significantly off (for snacks, be more strict)
+            logger.info(f"🔧 STEP 4: Refinement check")
+            
+            actual_calories = result.get('recipe', {}).get('nutrition', {}).get('calories') or result.get('calories') or target_calories
+            calorie_diff = actual_calories - target_calories  # Positive = over target, negative = under target
+            
+            # CRITICAL: Scale down ANY meal that exceeds target to keep daily total on track
+            # Even small overages (e.g., lunch +87 cal, snack +29 cal) add up to exceed daily target
+            # For snacks, be VERY strict (within 20 cal of target)
+            # For main meals, be more strict (within 50 cal of target)
+            max_allowed_diff = 20 if meal_type == 'snack' else 50  # Stricter thresholds
+            min_allowed_diff = 100  # Minimum calories - if way too low, scale up
+            
+            # Handle both too high AND too low calories
+            # ALWAYS scale down if over target (even by small amounts) to prevent daily overages
+            if actual_calories > target_calories:
+                # Calories are too high - scale down ingredients proportionally
+                logger.warning(f"⚠️ Calories too high: {actual_calories} cal (target: {target_calories}, over by {calorie_diff} cal)")
+                logger.info(f"🔧 Scaling down ingredients to fit target...")
+                
+                # Calculate scaling factor (target / actual)
+                scale_factor = target_calories / actual_calories
+                # CRITICAL FIX: For snacks, ALWAYS scale to target if over (even by 1 cal) to prevent daily overages
+                # For main meals:
+                # - If over by > 50% of target, scale all the way (large overages blow daily totals)
+                # - If over by < 50% but > 10% of target, allow full scaling (small overages add up)
+                # - If over by < 10% of target, allow full scaling (tiny overages are fine)
+                # - Only cap scaling if it would scale down more than 70% (very unrealistic portions)
+                if meal_type == 'snack':
+                    # Snacks must be scaled to target - no exceptions (they add up to exceed daily limits)
+                    min_scale_factor = 0.0  # No minimum, scale all the way to target
+                    logger.info(f"🍎 Snack over target - scaling to exact target (no minimum limit)")
+                elif calorie_diff > (target_calories * 0.5):  # Over by > 50% of target (e.g., 600 target, 1014 actual = 414 diff = 69% over)
+                    # Large overage (>50% over) - MUST scale to target or daily total will be way over
+                    min_scale_factor = 0.0  # No minimum, scale all the way to target
+                    logger.info(f"🚨 Large overage ({calorie_diff} cal, {calorie_diff/target_calories*100:.1f}% over) - scaling to exact target (prevents daily overage)")
+                elif calorie_diff < (target_calories * 0.1):  # Within 10% over target for main meals
+                    # Small overage - allow full scaling to target
+                    min_scale_factor = 0.0  # No minimum, scale all the way to target
+                    logger.info(f"📏 Small overage ({calorie_diff} cal) - scaling to exact target")
+                elif scale_factor < 0.3:  # Would scale down more than 70% (very unrealistic)
+                    # Very large overage that would require scaling below 30% - cap at 30% to keep realistic
+                    min_scale_factor = 0.3
+                    logger.info(f"⚠️ Very large overage - capping scale at 30% to keep portions realistic")
+                else:
+                    # Medium overage (10-50% over) - allow full scaling to target
+                    min_scale_factor = 0.0  # No minimum, scale all the way to target
+                    logger.info(f"📏 Medium overage ({calorie_diff} cal, {calorie_diff/target_calories*100:.1f}% over) - scaling to exact target")
+                scale_factor = max(scale_factor, min_scale_factor)
+                scale_factor = min(scale_factor, 1.0)  # Don't scale up
+                logger.info(f"🔧 Scale factor: {scale_factor:.3f} (target: {target_calories} cal, actual: {actual_calories} cal, min_scale: {min_scale_factor})")
+                
+                # Scale all ingredient quantities
+                if result.get('recipe', {}).get('ingredients'):
+                    for ing in result['recipe']['ingredients']:
+                        if 'quantity' in ing and isinstance(ing['quantity'], (int, float)):
+                            scaled_qty = ing['quantity'] * scale_factor
+                            
+                            # CRITICAL FIX: For snacks, be more aggressive with scaling - lower minimums
+                            # Snacks need to scale down significantly (e.g., 150→100 cal = 33% reduction)
+                            # Main meals can have higher minimums to keep portions realistic
+                            if meal_type == 'snack':
+                                # For snacks, allow smaller quantities to reach target
+                                # Minimum 1g/ml for non-pieces, 0.1 pieces for pieces
+                                if ing.get('unit', '').lower() in ('', 'piece', 'pieces', 'item', 'items'):
+                                    # For pieces in snacks, allow down to 0.1 (very small pieces)
+                                    ing['quantity'] = round(max(scaled_qty, 0.1), 2)  # At least 0.1 pieces
+                                else:
+                                    # For snacks, allow down to 1g/ml (very small quantities)
+                                    ing['quantity'] = round(max(scaled_qty, 1), 1)  # At least 1g/ml
+                            else:
+                                # For main meals, use more realistic minimums
+                                if ing.get('unit', '').lower() in ('', 'piece', 'pieces', 'item', 'items'):
+                                    # For pieces, ensure minimum of 0.5 pieces
+                                    if ing['quantity'] >= 1 and scaled_qty < 0.5:
+                                        ing['quantity'] = 1  # Keep at least 1 piece if original was at least 1
+                                    else:
+                                        ing['quantity'] = round(max(scaled_qty, 0.5), 1)  # At least 0.5 pieces
+                                else:
+                                    ing['quantity'] = round(max(scaled_qty, 5), 1)  # At least 5g/ml
+                    
+                    # Recalculate nutrition with scaled ingredients
+                    recalculated_nutrition = self._calculate_recipe_nutrition(result['recipe']['ingredients'], db)
+                    if recalculated_nutrition and recalculated_nutrition.get('calories', 0) > 0:
+                        result['recipe']['nutrition'] = {
+                            "calories": int(recalculated_nutrition.get('calories', 0)),
+                            "protein": int(recalculated_nutrition.get('protein', 0)),
+                            "carbs": int(recalculated_nutrition.get('carbs', 0)),
+                            "fats": int(recalculated_nutrition.get('fats', 0)),
+                            "per_serving_calories": int(recalculated_nutrition.get('calories', 0)),
+                            "per_serving_protein": int(recalculated_nutrition.get('protein', 0)),
+                            "per_serving_carbs": int(recalculated_nutrition.get('carbs', 0)),
+                            "per_serving_fats": int(recalculated_nutrition.get('fats', 0))
+                        }
+                        result['calories'] = int(recalculated_nutrition.get('calories', 0))
+                        result['per_serving_calories'] = int(recalculated_nutrition.get('calories', 0))
+                        new_calories = recalculated_nutrition.get('calories', 0)
+                        final_diff = new_calories - target_calories
+                        if abs(final_diff) > 20:
+                            logger.warning(f"⚠️ Scaled recipe still off target: {new_calories} cal (target: {target_calories}, diff: {final_diff} cal)")
+                        else:
+                            logger.info(f"✅ Scaled down recipe: {new_calories} cal (target: {target_calories}, scaled by {scale_factor:.2f}x, diff: {final_diff} cal)")
+                    else:
+                        logger.warning(f"⚠️ Failed to recalculate after scaling")
+                else:
+                    logger.warning(f"⚠️ No ingredients to scale")
+            elif actual_calories < target_calories and abs(calorie_diff) > min_allowed_diff:
+                # Calories are too low - scale up ingredients proportionally (but be careful not to go over)
+                logger.warning(f"⚠️ Calories too low: {actual_calories} cal (target: {target_calories}, under by {abs(calorie_diff)} cal)")
+                logger.info(f"🔧 Scaling up ingredients to fit target...")
+                
+                # Calculate scaling factor (target / actual), but cap at 2x to avoid unrealistic portions
+                scale_factor = target_calories / actual_calories
+                scale_factor = min(scale_factor, 2.0)  # Don't scale up more than 2x
+                scale_factor = max(scale_factor, 1.0)  # Don't scale down
+                
+                # Scale all ingredient quantities
+                if result.get('recipe', {}).get('ingredients'):
+                    for ing in result['recipe']['ingredients']:
+                        if 'quantity' in ing and isinstance(ing['quantity'], (int, float)):
+                            # For pieces (eggs, etc.), ensure minimum of 1 piece
+                            if ing.get('unit', '').lower() in ('', 'piece', 'pieces', 'item', 'items'):
+                                scaled_qty = ing['quantity'] * scale_factor
+                                # If it was a piece and scaled down too much, ensure at least 1
+                                if ing['quantity'] >= 1 and scaled_qty < 1:
+                                    ing['quantity'] = 1
+                                else:
+                                    ing['quantity'] = round(scaled_qty, 1)
+                            else:
+                                ing['quantity'] = round(ing['quantity'] * scale_factor, 1)
+                    
+                    # Recalculate nutrition with scaled ingredients
+                    recalculated_nutrition = self._calculate_recipe_nutrition(result['recipe']['ingredients'], db)
+                    if recalculated_nutrition and recalculated_nutrition.get('calories', 0) > 0:
+                        result['recipe']['nutrition'] = {
+                            "calories": int(recalculated_nutrition.get('calories', 0)),
+                            "protein": int(recalculated_nutrition.get('protein', 0)),
+                            "carbs": int(recalculated_nutrition.get('carbs', 0)),
+                            "fats": int(recalculated_nutrition.get('fats', 0)),
+                            "per_serving_calories": int(recalculated_nutrition.get('calories', 0)),
+                            "per_serving_protein": int(recalculated_nutrition.get('protein', 0)),
+                            "per_serving_carbs": int(recalculated_nutrition.get('carbs', 0)),
+                            "per_serving_fats": int(recalculated_nutrition.get('fats', 0))
+                        }
+                        result['calories'] = int(recalculated_nutrition.get('calories', 0))
+                        result['per_serving_calories'] = int(recalculated_nutrition.get('calories', 0))
+                        logger.info(f"✅ Scaled up recipe: {recalculated_nutrition.get('calories', 0)} cal (target: {target_calories}, scaled by {scale_factor:.2f}x)")
+                    else:
+                        logger.warning(f"⚠️ Failed to recalculate after scaling up")
+                else:
+                    logger.warning(f"⚠️ No ingredients to scale")
+            else:
+                logger.info(f"✅ Calories within target range: {actual_calories} cal (target: {target_calories}, difference: {calorie_diff} cal)")
+            
+            # Ensure meal_type and AI flags are set
+            result['meal_type'] = meal_type
+            if 'recipe' not in result:
+                result['recipe'] = {}
+            result['recipe']['meal_type'] = meal_type
+            result['recipe']['ai_generated'] = True
+            result['recipe']['database_source'] = False
+            result['ai_generated'] = True
+            
+            logger.info(f"✅ Sequential RAG generation complete: {result.get('meal_name', 'N/A')}")
+            return result
+            
+        except Exception as e:
+            logger.error(f"❌ Sequential RAG generation failed: {e}", exc_info=True)
+            # Fallback to fast generation
+            return self._generate_single_meal_fast(meal_data)

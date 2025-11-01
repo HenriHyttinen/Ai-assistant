@@ -1,19 +1,18 @@
 // Service Worker for Numbers Don't Lie Health App
 // Provides offline functionality and caching
 
-const CACHE_NAME = 'numbers-dont-lie-v1';
-const STATIC_CACHE = 'static-v1';
-const DYNAMIC_CACHE = 'dynamic-v1';
-const API_CACHE = 'api-v1';
+const CACHE_NAME = 'numbers-dont-lie-v2';
+const STATIC_CACHE = 'static-v2';
+const DYNAMIC_CACHE = 'dynamic-v2';
+const API_CACHE = 'api-v2';
 
 // Files to cache for offline functionality
+// Keep this list minimal and only include files that are guaranteed to exist across dev/prod
 const STATIC_FILES = [
   '/',
-  '/static/js/bundle.js',
-  '/static/css/main.css',
+  '/index.html',
   '/manifest.json',
-  '/favicon.ico',
-  // Add other static assets as needed
+  '/vite.svg'
 ];
 
 // API endpoints to cache
@@ -29,20 +28,34 @@ const API_ENDPOINTS = [
 // Install event - cache static files
 self.addEventListener('install', (event) => {
   console.log('Service Worker installing...');
-  event.waitUntil(
-    caches.open(STATIC_CACHE)
-      .then((cache) => {
-        console.log('Caching static files');
-        return cache.addAll(STATIC_FILES);
-      })
-      .then(() => {
-        console.log('Static files cached successfully');
-        return self.skipWaiting();
-      })
-      .catch((error) => {
-        console.error('Error caching static files:', error);
-      })
-  );
+  event.waitUntil((async () => {
+    try {
+      const cache = await caches.open(STATIC_CACHE);
+      console.log('Caching static files individually');
+      const results = await Promise.allSettled(
+        STATIC_FILES.map(async (url) => {
+          try {
+            const response = await fetch(url, { cache: 'no-cache' });
+            if (response && response.ok) {
+              await cache.put(url, response.clone());
+              return { url, cached: true };
+            }
+            console.warn('Skipping precache (non-OK response):', url, response && response.status);
+            return { url, cached: false };
+          } catch (e) {
+            console.warn('Skipping precache (fetch failed):', url, e);
+            return { url, cached: false };
+          }
+        })
+      );
+      const cachedCount = results.filter(r => r.status === 'fulfilled' && r.value.cached).length;
+      console.log(`Static files cached: ${cachedCount}/${STATIC_FILES.length}`);
+    } catch (error) {
+      console.error('Error during install caching:', error);
+    } finally {
+      await self.skipWaiting();
+    }
+  })());
 });
 
 // Activate event - clean up old caches
@@ -347,5 +360,7 @@ async function clearCache() {
     console.error('Error clearing cache:', error);
   }
 }
+
+
 
 

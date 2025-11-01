@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Body
 from sqlalchemy.orm import Session
 from typing import List, Optional, Any, Dict
 from datetime import datetime, date, timedelta
@@ -6,9 +6,9 @@ from datetime import datetime, date, timedelta
 from database import get_db
 from auth.supabase_auth import get_current_user_supabase as get_current_user
 from models.user import User
-from models.recipe import Recipe, Ingredient
+from models.recipe import Recipe, Ingredient, RecipeIngredient, RecipeInstruction
 from models.nutrition import (
-    UserNutritionPreferences, MealPlan, NutritionalLog, 
+    UserNutritionPreferences, MealPlan, MealPlanMeal, NutritionalLog, 
     ShoppingList
 )
 from schemas.nutrition import (
@@ -19,6 +19,7 @@ from schemas.nutrition import (
     NutritionalAnalysisRequest
 )
 from ai.nutrition_ai import NutritionAI
+from ai.functions import _convert_to_grams
 from services.nutrition_service import NutritionService
 from services.shopping_list_service import ShoppingListService
 from services.integration_service import IntegrationService
@@ -30,6 +31,9 @@ from services.measurement_standardization_service import MeasurementStandardizat
 from services.nutrition_analytics import NutritionAnalyticsService
 from services.recipe_recommendation_service import RecipeRecommendationService
 from services.meal_plan_versioning_service import meal_plan_versioning_service
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -312,9 +316,15 @@ def generate_enhanced_meal_plan(
 def generate_meal_plan(
     plan_request: MealPlanGenerationRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    progressive: bool = Query(False, description="If true, create empty meal plan structure for progressive generation (lighter)")
 ):
-    """Generate AI-powered meal plan with personalized targets"""
+    """Generate AI-powered meal plan with personalized targets
+    
+    If progressive=True, creates an empty meal plan structure that can be filled 
+    progressively using /generate-meal-slot endpoint (lighter approach).
+    Otherwise, generates all meals at once (heavier but complete).
+    """
     try:
         # Get user preferences
         preferences = db.query(UserNutritionPreferences).filter(
@@ -364,19 +374,87 @@ def generate_meal_plan(
         
         print(f"Final preferences (with personalization): {prefs_dict}")
         
-        # Generate meal plan using AI with personalized context and RAG
+        # PROGRESSIVE MODE: Create empty meal plan structure (lighter approach)
+        if progressive:
+            logger.info(f"🚀 PROGRESSIVE MODE: Creating empty meal plan structure (lighter - fill slots one by one)")
+            # Create empty meal plan structure
+            from datetime import timedelta
+            import time
+            unique_id = f"mp_{current_user.id}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}_{int(time.time() * 1000) % 10000}"
+            
+            # Normalize weekly plan dates to start on Monday
+            normalized_start = plan_request.start_date
+            normalized_end = plan_request.end_date
+            if plan_request.plan_type == 'weekly':
+                try:
+                    from datetime import datetime as _dt
+                    _sd = plan_request.start_date if isinstance(plan_request.start_date, _dt) else _dt.combine(plan_request.start_date, _dt.min.time())
+                    monday_date = (_sd + timedelta(days=-_sd.weekday())).date()
+                    normalized_start = monday_date
+                    normalized_end = monday_date + timedelta(days=6)
+                except Exception:
+                    pass
+
+            # Create empty meal plan (no meals - user fills progressively)
+            empty_meal_plan = MealPlan(
+                id=unique_id,
+                user_id=current_user.id,
+                plan_type=plan_request.plan_type,
+                start_date=normalized_start,
+                end_date=normalized_end,
+                version="1.0",
+                generation_strategy={"strategy": "progressive", "mode": "empty_structure"},
+                ai_model_used="progressive"
+            )
+            db.add(empty_meal_plan)
+            db.commit()
+            db.refresh(empty_meal_plan)
+            
+            logger.info(f"✅ Created empty meal plan structure: {unique_id} (0 meals - ready for progressive generation)")
+            return nutrition_service._convert_meal_plan_to_response(empty_meal_plan, db)
+        
+        # STANDARD MODE: Generate all meals at once (heavier but complete)
+        logger.info(f"⚡ STANDARD MODE: Generating all meals at once")
+        
+        # ROOT CAUSE FIX: Get recently used meal names (last 30 days) to prevent duplicates across meal plans
+        # This ensures users don't get the same recipes across meal plans for at least a month
+        existing_meal_names = []
+        existing_meals_context = []
+        if db:
+            from datetime import timedelta
+            recent_cutoff = datetime.utcnow().date() - timedelta(days=30)  # Check last 30 days (1 month)
+            recent_meals = db.query(MealPlanMeal).join(MealPlan).filter(
+                MealPlan.user_id == current_user.id,
+                MealPlan.start_date >= recent_cutoff,
+                MealPlanMeal.meal_name.isnot(None)
+            ).all()
+            existing_meal_names = [m.meal_name for m in recent_meals if m.meal_name]
+            existing_meals_context = [
+                {
+                    "meal_name": m.meal_name,
+                    "meal_type": m.meal_type,
+                    "meal_date": str(m.meal_date)
+                }
+                for m in recent_meals[:50]  # Limit to 50 for prompt size
+            ]
+            logger.info(f"🚫 Preventing duplicates: {len(existing_meal_names)} unique meal names from last 30 days")
+        
+        # Add existing meals to prefs_dict for AI to avoid duplicates
+        prefs_dict['existing_meals'] = existing_meals_context
+        prefs_dict['existing_meal_names'] = existing_meal_names
+        
         ai_meal_plan = nutrition_ai.generate_meal_plan_sequential(prefs_dict, plan_request, db)
         
         # Save meal plan to database
         meal_plan = nutrition_service.create_meal_plan(
-            db=db,
-            user_id=current_user.id,
-            plan_request=plan_request,
-            ai_meal_plan=ai_meal_plan
-        )
+                db=db,
+                user_id=current_user.id,
+                plan_request=plan_request,
+                ai_meal_plan=ai_meal_plan
+            )
         
         # Convert to response format
-        return nutrition_service._convert_meal_plan_to_response(meal_plan)
+        return nutrition_service._convert_meal_plan_to_response(meal_plan, db)
         
     except Exception as e:
         raise HTTPException(
@@ -394,6 +472,13 @@ def get_meal_alternatives(
 ):
     """Get alternative meal options for a specific meal type"""
     try:
+        # ROOT CAUSE FIX: Normalize meal_type (morning snack/afternoon snack/evening snack -> snack)
+        # Preserve original for response, but use normalized for DB lookup
+        meal_type_raw = meal_type.lower()
+        meal_type_normalized = meal_type_raw
+        if 'snack' in meal_type_raw and meal_type_raw != 'snack':
+            meal_type_normalized = 'snack'  # Normalize all snack variants to 'snack' for DB lookup
+        
         # Get user preferences
         preferences = db.query(UserNutritionPreferences).filter(
             UserNutritionPreferences.user_id == current_user.id
@@ -417,15 +502,16 @@ def get_meal_alternatives(
             "snacks_per_day": preferences.snacks_per_day
         }
         
-        # Generate alternatives
+        # Generate alternatives using normalized meal_type for DB lookup
+        # The service will find the original meal by normalized type, then generate alternatives
         alternatives_service = MealAlternativesService()
         alternatives = alternatives_service.generate_meal_alternatives(
-            db, meal_plan_id, meal_type, prefs_dict, count
+            db, meal_plan_id, meal_type_normalized, prefs_dict, count
         )
         
         return {
             "meal_plan_id": meal_plan_id,
-            "meal_type": meal_type,
+            "meal_type": meal_type_raw,  # Return original meal_type (e.g., "afternoon snack")
             "alternatives": alternatives,
             "count": len(alternatives)
         }
@@ -551,23 +637,47 @@ def add_custom_meal(
 @router.get("/meal-plans", response_model=List[MealPlanResponse])
 def get_meal_plans(
     date: Optional[str] = Query(None, description="Filter by date (YYYY-MM-DD)"),
+    plan_type: Optional[str] = Query(None, description="Filter by plan type (daily/weekly)"),
     limit: int = Query(10, ge=1, le=100),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """Get user's meal plans"""
-    query = db.query(MealPlan).filter(MealPlan.user_id == current_user.id)
+    from sqlalchemy.orm import joinedload
+    from datetime import datetime, timedelta
+    
+    # CRITICAL FIX: Use joinedload to eagerly load meals relationship
+    # Without this, meal_plan.meals will be empty when accessing in _convert_meal_plan_to_response
+    query = db.query(MealPlan).options(joinedload(MealPlan.meals)).filter(MealPlan.user_id == current_user.id)
     
     if date:
-        from datetime import datetime
         filter_date = datetime.strptime(date, "%Y-%m-%d").date()
-        query = query.filter(MealPlan.start_date == filter_date)
+        # For weekly plans, match if start_date is Monday of the week containing the query date
+        if plan_type == 'weekly':
+            # Calculate Monday of the week for the query date
+            day_of_week = filter_date.weekday()  # 0 = Monday, 6 = Sunday
+            monday_offset = timedelta(days=day_of_week)
+            week_monday = filter_date - monday_offset
+            # Match plans whose start_date falls within the week (Monday to Sunday)
+            week_sunday = week_monday + timedelta(days=6)
+            query = query.filter(
+                MealPlan.start_date >= week_monday,
+                MealPlan.start_date <= week_sunday,
+                MealPlan.plan_type == 'weekly'
+            )
+        else:
+            # For daily plans, exact match
+            query = query.filter(MealPlan.start_date == filter_date)
+    
+    if plan_type and not date:
+        # If plan_type is provided but not date, filter by plan_type
+        query = query.filter(MealPlan.plan_type == plan_type)
     
     meal_plans = query.order_by(MealPlan.created_at.desc()).offset(offset).limit(limit).all()
     
     # Convert to proper response format
-    return [nutrition_service._convert_meal_plan_to_response(meal_plan) for meal_plan in meal_plans]
+    return [nutrition_service._convert_meal_plan_to_response(meal_plan, db) for meal_plan in meal_plans]
 
 @router.get("/meal-plans/{meal_plan_id}", response_model=MealPlanResponse)
 def get_meal_plan(
@@ -576,18 +686,458 @@ def get_meal_plan(
     current_user: User = Depends(get_current_user)
 ):
     """Get specific meal plan"""
-    meal_plan = db.query(MealPlan).filter(
-        MealPlan.id == meal_plan_id,
-        MealPlan.user_id == current_user.id
-    ).first()
+    from sqlalchemy.orm import joinedload
+    
+    # CRITICAL FIX: Use joinedload to eagerly load meals relationship
+    # Without this, meal_plan.meals will be empty when accessing in _convert_meal_plan_to_response
+    meal_plan = db.query(MealPlan).options(joinedload(MealPlan.meals)).filter(
+            MealPlan.id == meal_plan_id,
+            MealPlan.user_id == current_user.id
+        ).first()
     
     if not meal_plan:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Meal plan not found"
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail="Meal plan not found"
         )
     
-    return nutrition_service._convert_meal_plan_to_response(meal_plan)
+    return nutrition_service._convert_meal_plan_to_response(meal_plan, db)
+
+@router.delete("/meal-plans/{meal_plan_id}")
+def delete_meal_plan(
+    meal_plan_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Delete a meal plan and all associated meals"""
+    try:
+        meal_plan = db.query(MealPlan).filter(
+            MealPlan.id == meal_plan_id,
+            MealPlan.user_id == current_user.id
+        ).first()
+        
+        if not meal_plan:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Meal plan not found"
+            )
+        
+        # Cascade delete will handle meals automatically due to relationship
+        db.delete(meal_plan)
+        db.commit()
+        
+        logger.info(f"✅ Deleted meal plan: {meal_plan_id}")
+        
+        return {
+            "message": "Meal plan deleted successfully",
+            "deleted_meal_plan_id": meal_plan_id
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error deleting meal plan: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error deleting meal plan: {str(e)}"
+        )
+
+@router.post("/meal-plans/{meal_plan_id}/meals")
+def add_recipe_to_meal_plan(
+    meal_plan_id: str,
+    request: Dict[str, Any] = Body(..., description="{ recipe_id, meal_date, meal_type }"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Add a recipe from the database to a meal plan slot"""
+    try:
+        # Verify meal plan ownership
+        meal_plan = db.query(MealPlan).filter(
+            MealPlan.id == meal_plan_id,
+            MealPlan.user_id == current_user.id
+        ).first()
+        
+        if not meal_plan:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Meal plan not found"
+            )
+        
+        # Extract request data
+        recipe_id = request.get('recipe_id')
+        meal_date_str = request.get('meal_date')
+        meal_type_raw = (request.get('meal_type') or '').lower()
+        
+        # ROOT CAUSE FIX: Normalize meal type (morning snack/afternoon snack/evening snack -> snack)
+        # But preserve original in recipe_details for frontend slot assignment
+        meal_type = meal_type_raw
+        if 'snack' in meal_type_raw and meal_type_raw != 'snack':
+            meal_type = 'snack'  # Normalize all snack variants to just 'snack' for DB
+        
+        # Validate meal_type - allow breakfast, lunch, dinner, snack (multiple snacks allowed for 5+ meals/day)
+        valid_meal_types = ['breakfast','lunch','dinner','snack']
+        if not recipe_id or not meal_date_str or meal_type not in valid_meal_types:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Missing or invalid fields: recipe_id, meal_date, meal_type required (meal_type must be one of {valid_meal_types})"
+            )
+
+        # Parse date
+        try:
+            meal_date = datetime.strptime(str(meal_date_str), "%Y-%m-%d").date()
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid date format. Use YYYY-MM-DD"
+            )
+        
+        # Get recipe with full details (ingredients, instructions)
+        recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
+        if not recipe:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Recipe not found"
+            )
+        
+        # ROOT CAUSE FIX: Check if meal already exists for this EXACT slot
+        # For snacks, we need to distinguish between morning/afternoon/evening snacks
+        # Store the original meal_type (e.g., "morning snack") in recipe_details to distinguish slots
+        existing_meal = None
+        all_existing_meals_for_date = db.query(MealPlanMeal).filter(
+            MealPlanMeal.meal_plan_id == meal_plan_id,
+            MealPlanMeal.meal_date == meal_date,
+            MealPlanMeal.meal_type == meal_type
+        ).all()
+        
+        if meal_type == 'snack' and 'snack' in meal_type_raw and meal_type_raw != 'snack':
+            # For snack variants (morning/afternoon/evening), match by recipe_details.meal_type
+            # This distinguishes between different snack slots even though DB column is "snack"
+            for snack_meal in all_existing_meals_for_date:
+                snack_details = snack_meal.recipe_details or {}
+                snack_preserved_type = snack_details.get('meal_type', 'snack')
+                if snack_preserved_type == meal_type_raw:
+                    existing_meal = snack_meal
+                    break
+        else:
+            # For non-snacks, simple match (meal_type is unique per date)
+            existing_meal = all_existing_meals_for_date[0] if all_existing_meals_for_date else None
+        
+        # Get recipe nutrition (per-serving)
+        per_serving_calories = recipe.per_serving_calories or 0
+        per_serving_protein = recipe.per_serving_protein or 0
+        per_serving_carbs = recipe.per_serving_carbs or 0
+        # Note: Recipe model uses 'per_serving_fat' (not 'per_serving_fats')
+        per_serving_fats = recipe.per_serving_fat or 0
+        
+        # Get ingredients and instructions for recipe_details
+        from sqlalchemy.orm import joinedload
+        recipe_with_details = db.query(Recipe).options(
+            joinedload(Recipe.ingredients).joinedload(RecipeIngredient.ingredient),
+            joinedload(Recipe.instructions)
+        ).filter(Recipe.id == recipe_id).first()
+        
+        # Fallback to original recipe if joinedload fails
+        if not recipe_with_details:
+            recipe_with_details = recipe
+            logger.warning(f"⚠️ Could not load recipe details with relationships for {recipe_id}, using basic recipe")
+        
+        # Serialize ingredients with standardized units per task.md (solids: g, liquids: ml)
+        ingredients_list = []
+        try:
+            if recipe_with_details and hasattr(recipe_with_details, 'ingredients') and recipe_with_details.ingredients:
+                for ri in recipe_with_details.ingredients:
+                    if ri and hasattr(ri, 'ingredient') and ri.ingredient:
+                        try:
+                            ingredient_name = ri.ingredient.name
+                            quantity = getattr(ri, 'quantity', 0)
+                            unit = (getattr(ri, 'unit', '') or '').lower().strip()
+                            
+                            # Per task.md: Standardized units for solids (g), liquids (ml)
+                            # Convert pieces to grams for solids, keep liquids in ml
+                            standardized_quantity = quantity
+                            standardized_unit = unit
+                            
+                            # Check if it's a liquid (from database unit or ingredient category)
+                            ingredient_category = getattr(ri.ingredient, 'category', None) if ri.ingredient else None
+                            is_liquid = (
+                                unit in ("ml", "milliliter", "milliliters", "l", "liter", "liters", "cup", "cups", "tbsp", "tablespoon", "tsp", "teaspoon") or
+                                (ingredient_category and ingredient_category.lower() in ("beverage", "liquid", "sauce", "broth", "soup"))
+                            )
+                            
+                            # Convert pieces to grams for solids
+                            if unit in ("piece", "pieces", "item", "items", "") and not is_liquid:
+                                # Use conversion function to get grams
+                                standardized_quantity = _convert_to_grams(quantity, unit, ingredient_name)
+                                standardized_unit = "g"
+                            elif unit in ("kg", "kilogram", "kilograms"):
+                                standardized_quantity = quantity * 1000.0
+                                standardized_unit = "g"
+                            elif unit in ("oz", "ounce", "ounces"):
+                                standardized_quantity = quantity * 28.35
+                                standardized_unit = "g"
+                            elif unit in ("lb", "pound", "pounds"):
+                                standardized_quantity = quantity * 453.59
+                                standardized_unit = "g"
+                            elif unit in ("l", "liter", "liters") and is_liquid:
+                                standardized_quantity = quantity * 1000.0
+                                standardized_unit = "ml"
+                            elif not unit or unit == "":
+                                # Unknown unit - assume grams for solids
+                                if not is_liquid:
+                                    standardized_unit = "g"
+                            
+                            ingredients_list.append({
+                                "name": ingredient_name,
+                                "quantity": standardized_quantity,
+                                "unit": standardized_unit
+                            })
+                        except Exception as ing_item_error:
+                            logger.warning(f"⚠️ Error serializing ingredient item: {ing_item_error}, skipping")
+                            continue
+        except Exception as ing_error:
+            logger.warning(f"⚠️ Error serializing ingredients: {ing_error}, continuing with empty list")
+            ingredients_list = []
+        
+        # Serialize instructions
+        instructions_list = []
+        try:
+            if recipe_with_details and hasattr(recipe_with_details, 'instructions') and recipe_with_details.instructions:
+                for instr in recipe_with_details.instructions:
+                    if instr:
+                        instructions_list.append({
+                            "step": getattr(instr, 'step_number', 1) or 1,
+                            "description": getattr(instr, 'description', '') or ""
+                        })
+        except Exception as instr_error:
+            logger.warning(f"⚠️ Error serializing instructions: {instr_error}, continuing with empty list")
+            instructions_list = []
+        
+        # Create recipe_details dict with full recipe data
+        recipe_details = {
+            "id": recipe.id,
+            "title": recipe.title,
+            "summary": recipe.summary or "",
+            "cuisine": recipe.cuisine or "",
+            "meal_type": meal_type_raw,  # ROOT CAUSE FIX: Store original meal_type (morning snack/afternoon snack) for frontend slot assignment
+            "prep_time": recipe.prep_time,
+            "cook_time": recipe.cook_time,
+            "difficulty_level": recipe.difficulty_level,
+            "dietary_tags": recipe.dietary_tags or [],
+            "ingredients": ingredients_list,
+            "instructions": instructions_list,
+            "nutrition": {
+                "calories": per_serving_calories,
+                "protein": per_serving_protein,
+                "carbs": per_serving_carbs,
+                "fats": per_serving_fats,
+                "per_serving_calories": per_serving_calories,
+                "per_serving_protein": per_serving_protein,
+                "per_serving_carbs": per_serving_carbs,
+                "per_serving_fats": per_serving_fats
+            },
+            "ai_generated": False,
+            "database_source": True
+        }
+        
+        if existing_meal:
+            # Update existing meal with new recipe
+            existing_meal.meal_name = recipe.title
+            existing_meal.calories = int(per_serving_calories)
+            existing_meal.protein = int(per_serving_protein)
+            existing_meal.carbs = int(per_serving_carbs)
+            existing_meal.fats = int(per_serving_fats)
+            existing_meal.recipe_details = recipe_details
+            existing_meal.cuisine = recipe.cuisine or ""
+            meal_plan_meal = existing_meal
+            db.commit()
+            db.refresh(meal_plan_meal)
+            logger.info(f"✅ Updated meal slot with recipe '{recipe.title}' for {meal_date} {meal_type}")
+        else:
+            # Create new meal
+            meal_plan_meal = MealPlanMeal(
+            meal_plan_id=meal_plan_id,
+                meal_date=meal_date,
+            meal_type=meal_type,
+                meal_name=recipe.title,
+                calories=int(per_serving_calories),
+                protein=int(per_serving_protein),
+                carbs=int(per_serving_carbs),
+                fats=int(per_serving_fats),
+                recipe_details=recipe_details,
+                cuisine=recipe.cuisine or ""
+            )
+            db.add(meal_plan_meal)
+            db.commit()
+            db.refresh(meal_plan_meal)
+            logger.info(f"✅ Added recipe '{recipe.title}' to meal plan for {meal_date} {meal_type}")
+
+        return {
+            "message": "Recipe added successfully",
+            "meal": {
+                "id": meal_plan_meal.id,
+                "meal_name": meal_plan_meal.meal_name,
+                "meal_date": meal_plan_meal.meal_date.isoformat(),
+                "meal_type": meal_plan_meal.meal_type,
+                "calories": meal_plan_meal.calories,
+                "protein": meal_plan_meal.protein,
+                "carbs": meal_plan_meal.carbs,
+                "fats": meal_plan_meal.fats,
+                "recipe": recipe_details,
+                "ai_generated": False
+            }
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"❌ Error adding recipe to meal plan: {type(e).__name__}: {str(e)}", exc_info=True)
+        import traceback
+        logger.error(f"❌ Full traceback:\n{traceback.format_exc()}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error adding recipe to meal plan: {str(e)}"
+        )
+
+@router.put("/meal-plans/{meal_plan_id}/meals/{meal_id}/move")
+def move_meal_to_date(
+    meal_plan_id: str,
+    meal_id: str,
+    target_date: str = Query(..., description="Target date (YYYY-MM-DD)"),
+    target_meal_type: Optional[str] = Query(None, description="Target meal type (breakfast, lunch, dinner, snack)"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Move a meal to a different date and optionally change meal type"""
+    try:
+        # Verify meal plan ownership
+        meal_plan = db.query(MealPlan).filter(
+        MealPlan.id == meal_plan_id,
+        MealPlan.user_id == current_user.id
+        ).first()
+    
+        if not meal_plan:
+            raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Meal plan not found"
+            )
+    
+        # Parse meal ID (can be int or string)
+        try:
+            meal_id_int = int(meal_id)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid meal ID format"
+            )
+        
+        # Get the meal
+        meal = db.query(MealPlanMeal).filter(
+            MealPlanMeal.id == meal_id_int,
+            MealPlanMeal.meal_plan_id == meal_plan_id
+        ).first()
+        
+        if not meal:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Meal not found"
+            )
+        
+        # Parse target date
+        try:
+            target_date_obj = datetime.strptime(str(target_date), "%Y-%m-%d").date()
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid date format. Use YYYY-MM-DD"
+            )
+        
+        # Validate target meal type if provided
+        if target_meal_type:
+            target_meal_type = target_meal_type.lower()
+            if target_meal_type not in ['breakfast', 'lunch', 'dinner', 'snack']:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid meal type. Must be breakfast, lunch, dinner, or snack"
+                )
+        else:
+            target_meal_type = meal.meal_type  # Keep current meal type
+        
+        # Check if there's already a meal in the target slot
+        existing_meal = db.query(MealPlanMeal).filter(
+            MealPlanMeal.meal_plan_id == meal_plan_id,
+            MealPlanMeal.meal_date == target_date_obj,
+            MealPlanMeal.meal_type == target_meal_type,
+            MealPlanMeal.id != meal_id_int  # Exclude the current meal
+        ).first()
+        
+        # If there's an existing meal, swap them instead of blocking
+        # NOTE: We don't validate calorie targets here - user is making a conscious decision to swap meals
+        # If one meal has 400 cal and another has 600 cal, that's the user's choice
+        if existing_meal:
+            # Swap the two meals
+            source_date = meal.meal_date
+            source_meal_type = meal.meal_type
+            
+            # Update the meal being moved to target slot
+            meal.meal_date = target_date_obj
+            meal.meal_type = target_meal_type
+            
+            # Update the existing meal to source slot
+            existing_meal.meal_date = source_date
+            existing_meal.meal_type = source_meal_type
+            
+            db.commit()
+            db.refresh(meal)
+            db.refresh(existing_meal)
+            
+            logger.info(f"✅ Swapped meal '{meal.meal_name}' (ID: {meal_id}) with '{existing_meal.meal_name}' (ID: {existing_meal.id}) - no calorie restrictions applied (user decision)")
+            
+            return {
+                "message": "Meals swapped successfully",
+                "source_meal": {
+                    "id": meal.id,
+                    "meal_name": meal.meal_name,
+                    "meal_date": meal.meal_date.isoformat(),
+                    "meal_type": meal.meal_type
+                },
+                "target_meal": {
+                    "id": existing_meal.id,
+                    "meal_name": existing_meal.meal_name,
+                    "meal_date": existing_meal.meal_date.isoformat(),
+                    "meal_type": existing_meal.meal_type
+                }
+            }
+        
+        # No existing meal, just move it
+        meal.meal_date = target_date_obj
+        meal.meal_type = target_meal_type
+        
+        db.commit()
+        db.refresh(meal)
+        
+        logger.info(f"✅ Moved meal '{meal.meal_name}' (ID: {meal_id}) to {target_date} {target_meal_type}")
+        
+        return {
+            "message": "Meal moved successfully",
+            "meal": {
+                "id": meal.id,
+                "meal_name": meal.meal_name,
+                "meal_date": meal.meal_date.isoformat(),
+                "meal_type": meal.meal_type
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error moving meal: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error moving meal: {str(e)}"
+        )
 
 @router.post("/recipes/search")
 def search_recipes(
@@ -1219,13 +1769,14 @@ async def update_item_notes(
 @router.put("/meals/{meal_id}/adjust-portions")
 async def adjust_meal_portion(
     meal_id: str,
-    new_servings: float,
+    request: Dict[str, Any] = Body(..., description="{ new_servings: float }"),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Adjust the portion size of a meal and recalculate ingredient quantities"""
     try:
-        if new_servings <= 0:
+        new_servings = request.get('new_servings')
+        if not new_servings or new_servings <= 0:
             raise HTTPException(status_code=400, detail="Servings must be greater than 0")
         
         # Verify meal belongs to user
@@ -1672,3 +2223,334 @@ async def delete_shopping_list(
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Error deleting shopping list: {str(e)}")
+
+@router.post("/meal-plans/{meal_plan_id}/generate-meal-slot")
+async def generate_meal_slot(
+    meal_plan_id: str,
+    request: Dict[str, Any] = Body(..., description="{ meal_date, meal_type }"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Generate a single AI meal for a specific meal plan slot using Sequential RAG (task.md compliant).
+    This allows progressive/on-demand meal generation instead of generating all 28 meals at once.
+    
+    Each meal uses:
+    - Step 1: Initial Assessment + RAG retrieval
+    - Step 2: Recipe Generation with RAG guidance
+    - Step 3: Nutrition validation via function calling
+    - Step 4: Refinement if needed
+    
+    This is lighter on the API while still meeting task.md requirements.
+    """
+    try:
+        # Verify meal plan ownership
+        meal_plan = db.query(MealPlan).filter(
+            MealPlan.id == meal_plan_id,
+            MealPlan.user_id == current_user.id
+        ).first()
+        if not meal_plan:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Meal plan not found")
+
+        # Extract and validate input
+        meal_date = request.get('meal_date')
+        meal_type_raw = (request.get('meal_type') or '').lower()
+        # CRITICAL FIX: Normalize meal type (morning snack/afternoon snack/evening snack -> snack)
+        meal_type = meal_type_raw
+        if 'snack' in meal_type_raw and meal_type_raw != 'snack':
+            meal_type = 'snack'  # Normalize all snack variants to just 'snack'
+        
+        # Validate meal_type - allow breakfast, lunch, dinner, snack (multiple snacks allowed for 5+ meals/day)
+        valid_meal_types = ['breakfast','lunch','dinner','snack']
+        if not meal_date or meal_type not in valid_meal_types:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Missing or invalid fields: meal_date required, meal_type must be one of {valid_meal_types}")
+
+        # Parse date
+        try:
+            target_date = datetime.strptime(str(meal_date), "%Y-%m-%d").date()
+        except ValueError:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid date format. Use YYYY-MM-DD")
+
+        # CRITICAL FIX: Check if meal already exists for this EXACT slot
+        # For snacks, we need to distinguish between morning/afternoon/evening snacks
+        # Store the original meal_type (e.g., "morning snack") in recipe_details to distinguish slots
+        existing_meal = None
+        all_existing_meals_for_date = db.query(MealPlanMeal).filter(
+            MealPlanMeal.meal_plan_id == meal_plan_id,
+            MealPlanMeal.meal_date == target_date,
+            MealPlanMeal.meal_type == meal_type
+        ).all()
+        
+        if meal_type == 'snack' and 'snack' in meal_type_raw and meal_type_raw != 'snack':
+            # For snack variants (morning/afternoon/evening), match by recipe_details.meal_type
+            # This distinguishes between different snack slots even though DB column is "snack"
+            for snack_meal in all_existing_meals_for_date:
+                snack_details = snack_meal.recipe_details or {}
+                snack_preserved_type = snack_details.get('meal_type', 'snack')
+                if snack_preserved_type == meal_type_raw:
+                    existing_meal = snack_meal
+                    break
+        else:
+            # For non-snacks, simple match (meal_type is unique per date)
+            existing_meal = all_existing_meals_for_date[0] if all_existing_meals_for_date else None
+
+        # Get user preferences
+        integration_service = IntegrationService()
+        user_preferences = integration_service.get_integrated_nutrition_preferences(db, current_user.id)
+        if isinstance(user_preferences, dict):
+            user_preferences["user_id"] = current_user.id
+
+        # Get existing meals in the plan to avoid duplicates
+        existing_meals_in_plan = db.query(MealPlanMeal).filter(
+            MealPlanMeal.meal_plan_id == meal_plan_id
+        ).all()
+        
+        existing_meal_names = [m.meal_name for m in existing_meals_in_plan if m.meal_name]
+        
+        # ROOT CAUSE FIX: Get recently used meal names from other meal plans (last 30 days) to prevent duplicates
+        # This ensures users don't get the same recipes across meal plans for at least a month
+        from datetime import timedelta
+        recent_cutoff = datetime.utcnow().date() - timedelta(days=30)  # Check last 30 days (1 month)
+        recent_meals = db.query(MealPlanMeal).join(MealPlan).filter(
+            MealPlan.user_id == current_user.id,
+            MealPlan.start_date >= recent_cutoff,
+            MealPlanMeal.meal_name.isnot(None)
+        ).all()
+        recent_names = [m.meal_name for m in recent_meals if m.meal_name]
+        existing_meal_names.extend(recent_names)
+        existing_meal_names = list(set(existing_meal_names))  # Remove duplicates
+        logger.info(f"🚫 Preventing duplicates: {len(existing_meal_names)} unique meal names from current plan + last 30 days")
+        
+        existing_meals_context = [
+            {
+                "meal_name": m.meal_name,
+                "meal_type": m.meal_type,
+                "meal_date": str(m.meal_date)
+            }
+            for m in existing_meals_in_plan[:30]  # Include more context for better duplicate detection
+        ]
+
+        # Calculate target calories based on meal type and daily target
+        daily_target = user_preferences.get('daily_calorie_target', 2000)
+        meals_per_day = user_preferences.get('meals_per_day', 4)
+        
+        # Nutritionist-recommended calorie distribution percentages
+        # Breakfast: 25%, Lunch: 35%, Dinner: 30%, Snacks: 10% total (5% each if 2 snacks)
+        calorie_percentages = {
+            'breakfast': 0.25,  # 25%
+            'lunch': 0.35,      # 35%
+            'dinner': 0.30,     # 30%
+            'snack': 0.10       # 10% for all snacks combined (will be split if multiple snacks)
+        }
+        
+        # Calculate target calories based on meal type and daily target
+        if meal_type == 'snack':
+            # For snacks, divide the 10% by number of snacks per day
+            snacks_per_day = user_preferences.get('snacks_per_day', 2)
+            snack_percentage = calorie_percentages['snack'] / max(snacks_per_day, 1)  # Split 10% across all snacks
+            target_calories = int(daily_target * snack_percentage)
+        else:
+            # Use the percentage for breakfast, lunch, dinner
+            percentage = calorie_percentages.get(meal_type, 0.25)  # Default to 25% if unknown
+            target_calories = int(daily_target * percentage)
+        
+        # Ensure minimum calories for meal type
+        min_cal_by_type = {'breakfast': 300, 'lunch': 400, 'dinner': 400, 'snack': 100}
+        min_cal = min_cal_by_type.get(meal_type, 200)
+        target_calories = max(target_calories, min_cal)
+        
+        logger.info(f"🎯 Calculated target calories for {meal_type}: {target_calories} cal (from daily target: {daily_target} cal)")
+
+        # Get target cuisine from preferences
+        cuisine_prefs = user_preferences.get('cuisine_preferences', [])
+        target_cuisine = cuisine_prefs[0] if cuisine_prefs else 'International'
+
+        # Use Sequential RAG to generate meal (task.md compliant)
+        from services.hybrid_meal_generator import HybridMealGenerator
+        hybrid_generator = HybridMealGenerator()
+        
+        # Prepare meal data for sequential RAG generation
+        meal_data = {
+            'meal_type': meal_type,
+            'target_calories': target_calories,
+            'target_cuisine': target_cuisine,
+            'user_preferences': user_preferences,
+            'existing_meals': existing_meals_context
+        }
+
+        # Generate using Sequential RAG (task.md compliant)
+        logger.info(f"🎯 Generating {meal_type} meal for {meal_date} using Sequential RAG (progressive generation)")
+        
+        generated_meal = hybrid_generator.nutrition_ai._generate_single_meal_with_sequential_rag(meal_data, db)
+        
+        if not generated_meal:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to generate meal")
+
+        # Extract recipe details
+        recipe_details = generated_meal.get('recipe', {})
+        meal_name = generated_meal.get('meal_name') or recipe_details.get('title', f'{meal_type.capitalize()} Meal')
+        
+        # ROOT CAUSE FIX: Check if generated meal name is a duplicate and reject/retry if needed
+        if meal_name and meal_name in existing_meal_names:
+            logger.warning(f"⚠️ AI generated duplicate meal name '{meal_name}' - rejecting and requesting retry")
+            # Try generating again with explicit duplicate prevention
+            meal_data['existing_meals'].append({"meal_name": meal_name})  # Add the duplicate to context
+            meal_data['explicit_avoid_names'] = existing_meal_names + [meal_name]  # Explicitly avoid these names
+            logger.info(f"🔄 Retrying meal generation with duplicate prevention (avoiding: {existing_meal_names})")
+            generated_meal = hybrid_generator.nutrition_ai._generate_single_meal_with_sequential_rag(meal_data, db)
+            
+            if not generated_meal:
+                raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to generate unique meal after retry")
+            
+            # Re-extract after retry
+            recipe_details = generated_meal.get('recipe', {})
+            meal_name = generated_meal.get('meal_name') or recipe_details.get('title', f'{meal_type.capitalize()} Meal')
+            
+            # Final check - if still duplicate, raise error
+            if meal_name and meal_name in existing_meal_names:
+                logger.error(f"❌ AI generated duplicate meal name '{meal_name}' even after retry - rejecting request")
+            raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"AI generated a duplicate meal name '{meal_name}'. Please try again or use 'Pick Recipe' instead."
+                )
+        
+        # Extract nutrition - prioritize calculated values from function calling
+        nutrition = recipe_details.get('nutrition', {})
+        
+        # Try multiple locations for nutrition values (function calling updates multiple places)
+        calories = (
+            nutrition.get('calories') or 
+            nutrition.get('per_serving_calories') or 
+            generated_meal.get('calories') or 
+            generated_meal.get('per_serving_calories') or 
+            target_calories
+        )
+        
+        protein = (
+            nutrition.get('protein') or 
+            nutrition.get('per_serving_protein') or 
+            generated_meal.get('protein') or 
+            0
+        )
+        
+        carbs = (
+            nutrition.get('carbs') or 
+            nutrition.get('per_serving_carbs') or 
+            generated_meal.get('carbs') or 
+            0
+        )
+        
+        fats = (
+            nutrition.get('fats') or 
+            nutrition.get('per_serving_fats') or 
+            generated_meal.get('fats') or 
+            0
+        )
+        
+        # CRITICAL FIX: If nutrition values are missing or invalid, calculate from ingredients
+        # Check if we got real nutrition values:
+        # - If protein/carbs/fats are all 0, nutrition wasn't calculated
+        # - If calories equals target_calories AND all macros are 0, we used fallback
+        # - If calories is 0, definitely missing
+        nutrition_from_function_calling = nutrition.get('calories') or nutrition.get('per_serving_calories')
+        has_real_nutrition = (
+            nutrition_from_function_calling and nutrition_from_function_calling > 0 and
+            (protein > 0 or carbs > 0 or fats > 0)
+        )
+        
+        if not has_real_nutrition and recipe_details.get('ingredients'):
+            logger.info(f"⚠️ Nutrition values missing or invalid - calculating from ingredients")
+            try:
+                from services.hybrid_meal_generator import HybridMealGenerator
+                hybrid_gen = HybridMealGenerator()
+                # ROOT CAUSE FIX: Pass database session for accurate nutrition calculation
+                calculated_nutrition = hybrid_gen.nutrition_ai._calculate_recipe_nutrition(recipe_details['ingredients'], db)
+                if calculated_nutrition and calculated_nutrition.get('calories', 0) > 0:
+                    calories = int(calculated_nutrition.get('calories', target_calories))
+                    protein = int(calculated_nutrition.get('protein', 0))
+                    carbs = int(calculated_nutrition.get('carbs', 0))
+                    fats = int(calculated_nutrition.get('fats', 0))
+                    # Update recipe_details with calculated values
+                    if 'nutrition' not in recipe_details:
+                        recipe_details['nutrition'] = {}
+                    recipe_details['nutrition'].update(calculated_nutrition)
+                    recipe_details['nutrition']['per_serving_calories'] = calories
+                    recipe_details['nutrition']['per_serving_protein'] = protein
+                    recipe_details['nutrition']['per_serving_carbs'] = carbs
+                    recipe_details['nutrition']['per_serving_fats'] = fats
+                    logger.info(f"✅ Recalculated nutrition from ingredients: {calories} cal, {protein}g protein, {carbs}g carbs, {fats}g fats")
+            except Exception as e:
+                logger.warning(f"⚠️ Failed to recalculate nutrition from ingredients: {e}")
+        
+        # Convert to ints
+        calories = int(calories)
+        protein = int(protein)
+        carbs = int(carbs)
+        fats = int(fats)
+
+        # Ensure recipe_details has all fields
+        recipe_details['ai_generated'] = True
+        recipe_details['database_source'] = False
+        # CRITICAL FIX: Store original meal_type (e.g., "morning snack") in recipe_details
+        # This distinguishes between different snack slots even though DB column stores "snack"
+        recipe_details['meal_type'] = meal_type_raw  # Store original: "morning snack", "afternoon snack", etc.
+
+        # Update existing meal or create new one
+        if existing_meal:
+            # Update existing meal
+            existing_meal.meal_name = meal_name
+            existing_meal.calories = calories
+            existing_meal.protein = protein
+            existing_meal.carbs = carbs
+            existing_meal.fats = fats
+            existing_meal.recipe_details = recipe_details
+            existing_meal.cuisine = recipe_details.get('cuisine', target_cuisine)
+            meal_plan_meal = existing_meal
+            db.commit()
+            db.refresh(meal_plan_meal)
+            logger.info(f"✅ Regenerated {meal_type} meal '{meal_name}' for {meal_date} using Sequential RAG (updated existing)")
+        else:
+            # Create new meal plan meal
+            meal_plan_meal = MealPlanMeal(
+                meal_plan_id=meal_plan_id,
+                meal_date=target_date,
+                meal_type=meal_type,
+                meal_name=meal_name,
+                calories=calories,
+                protein=protein,
+                carbs=carbs,
+                fats=fats,
+                recipe_details=recipe_details,
+                cuisine=recipe_details.get('cuisine', target_cuisine)
+            )
+            
+            db.add(meal_plan_meal)
+            db.commit()
+            db.refresh(meal_plan_meal)
+            logger.info(f"✅ Generated {meal_type} meal '{meal_name}' for {meal_date} using Sequential RAG")
+
+        return {
+            "message": "Meal generated successfully using Sequential RAG",
+            "meal": {
+                "id": meal_plan_meal.id,
+                "meal_name": meal_plan_meal.meal_name,
+                "meal_date": meal_plan_meal.meal_date.isoformat(),
+                "meal_type": meal_plan_meal.meal_type,  # DB column: "snack" for all snacks
+                "calories": meal_plan_meal.calories,
+                "protein": meal_plan_meal.protein,
+                "carbs": meal_plan_meal.carbs,
+                "fats": meal_plan_meal.fats,
+                "recipe": recipe_details,  # Contains preserved meal_type: "morning snack", "afternoon snack", etc.
+                "ai_generated": True
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error generating meal slot: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error generating meal slot: {str(e)}"
+        )

@@ -192,3 +192,12 @@ class MicronutrientSearchFilter(BaseModel):
     min_vitamin_e: Optional[float] = None
     min_omega_3: Optional[float] = None
     min_selenium: Optional[float] = None
+
+    # Non-micronutrient filters and options
+    q: Optional[str] = None
+    cuisine: Optional[str] = None
+    meal_type: Optional[str] = None
+    difficulty_level: Optional[str] = None
+    include_partial: Optional[bool] = True
+
+

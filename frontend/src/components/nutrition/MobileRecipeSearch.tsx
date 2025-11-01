@@ -340,3 +340,8 @@ const MobileRecipeSearch: React.FC = () => {
 export default MobileRecipeSearch;
 
 
+
+
+
+
+

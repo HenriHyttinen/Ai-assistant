@@ -37,7 +37,11 @@ class MealRegenerationService:
                 raise ValueError(f"Meal plan {meal_plan_id} not found")
             
             # Extract requirements from existing meal
-            target_calories = existing_meal.calories or 500
+            # Use meal calories if available, otherwise estimate from meal type
+            target_calories = existing_meal.calories
+            if not target_calories or target_calories <= 0:
+                default_cal_by_type = {'breakfast': 400, 'lunch': 500, 'dinner': 600, 'snack': 200}
+                target_calories = default_cal_by_type.get(existing_meal.meal_type, 500)
             target_meal_type = existing_meal.meal_type
             target_cuisine = existing_meal.cuisine or "International"
             
@@ -52,7 +56,9 @@ class MealRegenerationService:
             
             # Update the existing meal with new data
             existing_meal.meal_name = new_meal_data.get('meal_name', existing_meal.meal_name)
-            existing_meal.calories = new_meal_data.get('recipe', {}).get('nutrition', {}).get('calories', target_calories)
+            _cal = new_meal_data.get('recipe', {}).get('nutrition', {}).get('calories')
+            if _cal is not None:
+                existing_meal.calories = _cal
             existing_meal.protein = new_meal_data.get('recipe', {}).get('nutrition', {}).get('protein', 0)
             existing_meal.carbs = new_meal_data.get('recipe', {}).get('nutrition', {}).get('carbs', 0)
             existing_meal.fats = new_meal_data.get('recipe', {}).get('nutrition', {}).get('fats', 0)
@@ -102,9 +108,14 @@ class MealRegenerationService:
             
             for meal in meals_to_regenerate:
                 # Generate new meal data
+                # Use meal calories or estimate from meal type
+                target_cal = meal.calories
+                if not target_cal or target_cal <= 0:
+                    default_cal_by_type = {'breakfast': 400, 'lunch': 500, 'dinner': 600, 'snack': 200}
+                    target_cal = default_cal_by_type.get(meal_type, 500)
                 new_meal_data = self._generate_single_meal(
                     meal_type=meal_type,
-                    target_calories=meal.calories or 500,
+                    target_calories=target_cal,
                     target_cuisine=meal.cuisine or "International",
                     user_preferences=user_preferences,
                     exclude_existing=meal.meal_name
@@ -112,7 +123,9 @@ class MealRegenerationService:
                 
                 # Update the meal
                 meal.meal_name = new_meal_data.get('meal_name', meal.meal_name)
-                meal.calories = new_meal_data.get('recipe', {}).get('nutrition', {}).get('calories', meal.calories)
+                _cal = new_meal_data.get('recipe', {}).get('nutrition', {}).get('calories')
+                if _cal is not None:
+                    meal.calories = _cal
                 meal.protein = new_meal_data.get('recipe', {}).get('nutrition', {}).get('protein', meal.protein)
                 meal.carbs = new_meal_data.get('recipe', {}).get('nutrition', {}).get('carbs', meal.carbs)
                 meal.fats = new_meal_data.get('recipe', {}).get('nutrition', {}).get('fats', meal.fats)
@@ -160,37 +173,159 @@ class MealRegenerationService:
             ).all()
             
             if preserve_structure:
-                # Regenerate each meal individually while preserving meal types and timing
-                regenerated_meals = []
+                # FAST REGENERATION - Generate entire meal plan at once
+                from ai.nutrition_ai import NutritionAI
+                from schemas.nutrition import MealPlanRequest
                 
-                for meal in existing_meals:
-                    new_meal_data = self._generate_single_meal(
-                        meal_type=meal.meal_type,
-                        target_calories=meal.calories or 500,
-                        target_cuisine=meal.cuisine or "International",
-                        user_preferences=user_preferences,
-                        exclude_existing=meal.meal_name
-                    )
+                # Create a meal plan request for the existing plan
+                plan_request = MealPlanRequest(
+                    plan_type=meal_plan.plan_type,
+                    start_date=meal_plan.start_date.strftime('%Y-%m-%d')
+                )
+                
+                # Use the fast AI generation
+                ai = NutritionAI()
+                # Pass existing meals to avoid duplicates
+                existing_meal_names = [
+                    {
+                        'meal_name': m.meal_name,
+                        'meal_type': m.meal_type,
+                        'cuisine': m.cuisine
+                    } for m in existing_meals if m.meal_name
+                ]
+                user_preferences['existing_meals'] = existing_meal_names
+                ai_result = ai.generate_meal_plan_sequential(user_preferences, plan_request)
+                
+                if ai_result.get('error'):
+                    # Fallback to individual generation if AI fails
+                    regenerated_meals = []
+                    for meal in existing_meals:
+                        # Use meal calories or estimate from meal type
+                        target_cal = meal.calories
+                        if not target_cal or target_cal <= 0:
+                            default_cal_by_type = {'breakfast': 400, 'lunch': 500, 'dinner': 600, 'snack': 200}
+                            target_cal = default_cal_by_type.get(meal.meal_type, 500)
+                        new_meal_data = self._generate_single_meal(
+                            meal_type=meal.meal_type,
+                            target_calories=target_cal,
+                            target_cuisine=meal.cuisine or "International",
+                            user_preferences=user_preferences,
+                            exclude_existing=meal.meal_name,
+                            existing_meals=existing_meal_names
+                        )
+                        
+                        # Update the meal
+                        meal.meal_name = new_meal_data.get('meal_name', meal.meal_name)
+                        _cal = new_meal_data.get('recipe', {}).get('nutrition', {}).get('calories')
+                        if _cal is not None:
+                            meal.calories = _cal
+                        meal.protein = new_meal_data.get('recipe', {}).get('nutrition', {}).get('protein', meal.protein)
+                        meal.carbs = new_meal_data.get('recipe', {}).get('nutrition', {}).get('carbs', meal.carbs)
+                        meal.fats = new_meal_data.get('recipe', {}).get('nutrition', {}).get('fats', meal.fats)
+                        meal.cuisine = new_meal_data.get('recipe', {}).get('cuisine', meal.cuisine)
+                        meal.recipe_details = new_meal_data.get('recipe', {})
+                        
+                        regenerated_meals.append({
+                            "id": meal.id,
+                            "meal_name": meal.meal_name,
+                            "meal_type": meal.meal_type,
+                            "calories": meal.calories,
+                            "protein": meal.protein,
+                            "carbs": meal.carbs,
+                            "fats": meal.fats,
+                            "cuisine": meal.cuisine
+                        })
+                else:
+                    # Use AI-generated meals
+                    # CRITICAL: Handle both daily and weekly plan structures
+                    weekly_plan = ai_result.get('weekly_meal_plan', {}).get('weekly_plan', [])
+                    daily_plan = ai_result.get('meal_plan', [])
                     
-                    # Update the meal
-                    meal.meal_name = new_meal_data.get('meal_name', meal.meal_name)
-                    meal.calories = new_meal_data.get('recipe', {}).get('nutrition', {}).get('calories', meal.calories)
-                    meal.protein = new_meal_data.get('recipe', {}).get('nutrition', {}).get('protein', meal.protein)
-                    meal.carbs = new_meal_data.get('recipe', {}).get('nutrition', {}).get('carbs', meal.carbs)
-                    meal.fats = new_meal_data.get('recipe', {}).get('nutrition', {}).get('fats', meal.fats)
-                    meal.cuisine = new_meal_data.get('recipe', {}).get('cuisine', meal.cuisine)
-                    meal.recipe_details = new_meal_data.get('recipe', {})
+                    ai_meals = []
+                    if weekly_plan:
+                        # Extract all meals from weekly plan
+                        for day in weekly_plan:
+                            ai_meals.extend(day.get('meals', []))
+                    elif daily_plan:
+                        # Extract meals from daily plan
+                        for day in daily_plan:
+                            ai_meals.extend(day.get('meals', []))
                     
-                    regenerated_meals.append({
-                        "id": meal.id,
-                        "meal_name": meal.meal_name,
-                        "meal_type": meal.meal_type,
-                        "calories": meal.calories,
-                        "protein": meal.protein,
-                        "carbs": meal.carbs,
-                        "fats": meal.fats,
-                        "cuisine": meal.cuisine
-                    })
+                    regenerated_meals = []
+                    
+                    # CRITICAL: Map AI meals to existing meal slots preserving meal_date and meal_type
+                    # Sort existing meals by date and type to maintain structure
+                    sorted_existing = sorted(existing_meals, key=lambda m: (m.meal_date or meal_plan.start_date, m.meal_type or ''))
+                    
+                    for i, meal in enumerate(sorted_existing):
+                        # CRITICAL: Preserve meal_date and meal_type from existing meal
+                        if i < len(ai_meals):
+                            ai_meal = ai_meals[i]
+                            ai_recipe = ai_meal.get('recipe', {})
+                            
+                            # Update the meal with AI data but preserve structure
+                            meal.meal_name = ai_meal.get('meal_name', meal.meal_name)
+                            cal2 = ai_recipe.get('nutrition', {}).get('calories')
+                            if cal2 is not None:
+                                meal.calories = cal2
+                            meal.protein = ai_recipe.get('nutrition', {}).get('protein', meal.protein)
+                            meal.carbs = ai_recipe.get('nutrition', {}).get('carbs', meal.carbs)
+                            meal.fats = ai_recipe.get('nutrition', {}).get('fats', meal.fats)
+                            meal.cuisine = ai_recipe.get('cuisine', meal.cuisine)
+                            meal.recipe_details = ai_recipe
+                            
+                            # CRITICAL: Ensure meal_date and meal_type are preserved
+                            # meal.meal_date and meal.meal_type should already be set from existing meal
+                            
+                            regenerated_meals.append({
+                                "id": meal.id,
+                                "meal_name": meal.meal_name,
+                                "meal_type": meal.meal_type,
+                                "meal_date": meal.meal_date.isoformat() if meal.meal_date else None,
+                                "calories": meal.calories,
+                                "protein": meal.protein,
+                                "carbs": meal.carbs,
+                                "fats": meal.fats,
+                                "cuisine": meal.cuisine
+                            })
+                        else:
+                            # CRITICAL: If not enough AI meals, generate fallback for this slot
+                            # Use meal calories or estimate from meal type
+                            target_cal = meal.calories
+                            if not target_cal or target_cal <= 0:
+                                default_cal_by_type = {'breakfast': 400, 'lunch': 500, 'dinner': 600, 'snack': 200}
+                                target_cal = default_cal_by_type.get(meal.meal_type, 500)
+                            new_meal_data = self._generate_single_meal(
+                                meal_type=meal.meal_type,
+                                target_calories=target_cal,
+                                target_cuisine=meal.cuisine or "International",
+                                user_preferences=user_preferences,
+                                exclude_existing=meal.meal_name,
+                                existing_meals=existing_meal_names
+                            )
+                            
+                            # Update the meal with fallback data
+                            meal.meal_name = new_meal_data.get('meal_name', meal.meal_name)
+                            _cal = new_meal_data.get('recipe', {}).get('nutrition', {}).get('calories')
+                            if _cal is not None:
+                                meal.calories = _cal
+                            meal.protein = new_meal_data.get('recipe', {}).get('nutrition', {}).get('protein', meal.protein)
+                            meal.carbs = new_meal_data.get('recipe', {}).get('nutrition', {}).get('carbs', meal.carbs)
+                            meal.fats = new_meal_data.get('recipe', {}).get('nutrition', {}).get('fats', meal.fats)
+                            meal.cuisine = new_meal_data.get('recipe', {}).get('cuisine', meal.cuisine)
+                            meal.recipe_details = new_meal_data.get('recipe', {})
+                            
+                            regenerated_meals.append({
+                                "id": meal.id,
+                                "meal_name": meal.meal_name,
+                                "meal_type": meal.meal_type,
+                                "meal_date": meal.meal_date.isoformat() if meal.meal_date else None,
+                                "calories": meal.calories,
+                                "protein": meal.protein,
+                                "carbs": meal.carbs,
+                                "fats": meal.fats,
+                                "cuisine": meal.cuisine
+                            })
                 
                 db.commit()
                 
@@ -211,7 +346,8 @@ class MealRegenerationService:
     
     def _generate_single_meal(self, meal_type: str, target_calories: int, 
                             target_cuisine: str, user_preferences: Dict[str, Any],
-                            exclude_existing: Optional[str] = None) -> Dict[str, Any]:
+                            exclude_existing: Optional[str] = None, 
+                            existing_meals: Optional[List[Dict]] = None) -> Dict[str, Any]:
         """Generate a single meal with specific requirements"""
         
         # Create a focused prompt for single meal generation
@@ -237,7 +373,17 @@ class MealRegenerationService:
         if exclude_existing:
             prompt += f"\n- AVOID creating anything similar to: {exclude_existing}"
         
+        if existing_meals:
+            existing_names = [meal.get('meal_name', '') for meal in existing_meals if meal.get('meal_name')]
+            if existing_names:
+                prompt += f"\n- AVOID these existing recipes: {', '.join(existing_names[:5])}"
+        
         prompt += """
+        
+        CRITICAL JSON REQUIREMENTS:
+        - Use ONLY whole numbers for quantities (no fractions like 1/2, use 0.5 instead)
+        - Use decimal numbers for fractional quantities (e.g., 0.5, 1.5, 2.5)
+        - Ensure all JSON is valid and properly formatted
         
         Respond with ONLY valid JSON in this exact format:
         {
@@ -246,15 +392,15 @@ class MealRegenerationService:
             "recipe": {
                 "title": "recipe_title",
                 "cuisine": "cuisine_name",
-                "prep_time": number,
-                "cook_time": number,
+                "prep_time": 15,
+                "cook_time": 30,
                 "servings": 1,
                 "difficulty": "easy|medium|hard",
                 "summary": "brief_description",
-                "ingredients": [{"name": "string", "quantity": number, "unit": "string"}],
-                "instructions": [{"step": number, "description": "string"}],
+                "ingredients": [{"name": "string", "quantity": 200, "unit": "g"}],
+                "instructions": [{"step": 1, "description": "string"}],
                 "dietary_tags": ["string"],
-                "nutrition": {"calories": number, "protein": number, "carbs": number, "fats": number}
+                "nutrition": {"calories": 500, "protein": 25, "carbs": 30, "fats": 15}
             }
         }
         """
@@ -330,6 +476,8 @@ class MealRegenerationService:
                 }
             }
         }
+
+
 
 
 

@@ -46,7 +46,7 @@ class MealAlternativesService:
             for i in range(count):
                 try:
                     alternative = self._generate_single_alternative(
-                        meal_type, target_calories, target_cuisine, user_preferences, i
+                        meal_type, target_calories, target_cuisine, user_preferences, i, db
                     )
                     alternatives.append(alternative)
                 except Exception as e:
@@ -67,7 +67,7 @@ class MealAlternativesService:
     
     def _generate_single_alternative(self, meal_type: str, target_calories: int, 
                                    target_cuisine: str, user_preferences: Dict[str, Any], 
-                                   variation_index: int) -> Dict[str, Any]:
+                                   variation_index: int, db: Session = None) -> Dict[str, Any]:
         """Generate a single alternative meal option"""
         
         # Create variation in cuisine and style
@@ -119,7 +119,31 @@ class MealAlternativesService:
         
         if self.nutrition_ai.openai_client:
             response = self.nutrition_ai._call_openai(prompt, 0.8)  # Higher temperature for variety
-            return self.nutrition_ai._parse_json_response(response, "meal_alternative")
+            alternative = self.nutrition_ai._parse_json_response(response, "meal_alternative")
+            
+            # ROOT CAUSE FIX: Calculate actual nutrition from ingredients (like meal generation)
+            # Don't trust AI's placeholder nutrition values - calculate from ingredients
+            if alternative and alternative.get('recipe', {}).get('ingredients'):
+                try:
+                    calculated_nutrition = self.nutrition_ai._calculate_recipe_nutrition(
+                        alternative['recipe']['ingredients'], db
+                    )
+                    if calculated_nutrition and calculated_nutrition.get('calories', 0) > 0:
+                        # Use calculated nutrition (more accurate than AI placeholder values)
+                        # _calculate_recipe_nutrition returns flat dict: {calories, protein, carbs, fats}
+                        alternative['recipe']['nutrition'] = {
+                            "calories": calculated_nutrition.get('calories', target_calories),
+                            "protein": calculated_nutrition.get('protein', int(target_calories * 0.25 / 4)),
+                            "carbs": calculated_nutrition.get('carbs', int(target_calories * 0.45 / 4)),
+                            "fats": calculated_nutrition.get('fats', int(target_calories * 0.30 / 9))
+                        }
+                        alternative['calories'] = calculated_nutrition.get('calories', target_calories)
+                        alternative['per_serving_calories'] = calculated_nutrition.get('calories', target_calories)
+                        logger.info(f"✅ Calculated nutrition for alternative: {calculated_nutrition.get('calories', 0)} cal")
+                except Exception as e:
+                    logger.warning(f"⚠️ Failed to calculate nutrition from ingredients: {e}")
+            
+            return alternative
         else:
             return self._generate_fallback_alternative(meal_type, target_calories, selected_cuisine)
     
@@ -146,10 +170,19 @@ class MealAlternativesService:
         """Extract target calories from meal data"""
         try:
             if meal.recipe_details and 'nutrition' in meal.recipe_details:
-                return int(meal.recipe_details['nutrition'].get('calories', 500))
-            return 500  # Default fallback
+                cal = meal.recipe_details['nutrition'].get('calories')
+                if cal and cal > 0:
+                    return int(cal)
+            # Fallback: use meal.calories if available
+            if meal.calories and meal.calories > 0:
+                return int(meal.calories)
+            # Final fallback: estimate from meal type
+            default_cal_by_type = {'breakfast': 400, 'lunch': 500, 'dinner': 600, 'snack': 200}
+            return default_cal_by_type.get(meal.meal_type, 500)
         except:
-            return 500
+            # On error, estimate from meal type
+            default_cal_by_type = {'breakfast': 400, 'lunch': 500, 'dinner': 600, 'snack': 200}
+            return default_cal_by_type.get(meal.meal_type, 500)
     
     def _generate_fallback_alternatives(self, meal_type: str, target_calories: int, 
                                       user_preferences: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -242,11 +275,13 @@ class MealAlternativesService:
                 for pref in dietary_prefs:
                     query = query.filter(Recipe.dietary_tags.contains(pref))
             
-            # Filter out allergies
+            # Filter out allergies - recipes should NOT contain allergens
             allergies = user_preferences.get('allergies', [])
             if allergies:
                 for allergy in allergies:
-                    query = query.filter(~Recipe.dietary_tags.contains(allergy))
+                    # Check for contains-{allergy} tag (e.g., contains-fish, contains-peanuts)
+                    allergen_tag = f"contains-{allergy}"
+                    query = query.filter(~Recipe.dietary_tags.contains([allergen_tag]))
             
             # Get random selection
             recipes = query.order_by(Recipe.id).limit(limit).all()
@@ -274,11 +309,15 @@ class MealAlternativesService:
                         ],
                         "dietary_tags": recipe.dietary_tags or [],
                         "nutrition": {
-                            "calories": recipe.calories or 400,
-                            "protein": recipe.protein or 20,
-                            "carbs": recipe.carbs or 40,
-                            "fats": recipe.fats or 15
-                        }
+                            "calories": recipe.per_serving_calories or recipe.calories or 400,
+                            "protein": recipe.per_serving_protein or recipe.protein or 20,
+                            "carbs": recipe.per_serving_carbs or recipe.carbs or 40,
+                            "fats": recipe.per_serving_fat or recipe.per_serving_fats or recipe.fats or 15
+                        },
+                        "per_serving_calories": recipe.per_serving_calories or recipe.calories or 400,
+                        "per_serving_protein": recipe.per_serving_protein or recipe.protein or 20,
+                        "per_serving_carbs": recipe.per_serving_carbs or recipe.carbs or 40,
+                        "per_serving_fats": recipe.per_serving_fat or recipe.per_serving_fats or recipe.fats or 15
                     }
                 }
                 alternatives.append(alternative)
@@ -288,6 +327,11 @@ class MealAlternativesService:
         except Exception as e:
             logger.error(f"Error getting alternatives from database: {str(e)}")
             return []
+
+
+
+
+
 
 
 

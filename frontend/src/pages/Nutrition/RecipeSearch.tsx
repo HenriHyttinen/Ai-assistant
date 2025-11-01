@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   Box,
   Grid,
+  SimpleGrid,
   Card,
   CardHeader,
   CardBody,
@@ -39,7 +40,8 @@ import {
   ModalBody,
   ModalFooter,
   ModalCloseButton,
-  useDisclosure
+  useDisclosure,
+  useToast
 } from '@chakra-ui/react';
 import { t } from '../../utils/translations';
 import { 
@@ -65,6 +67,7 @@ interface Recipe {
   cuisine: string;
   meal_type: string;
   servings: number;
+  summary?: string; // Recipe summary/description
   calories?: number;
   protein?: number;
   carbs?: number;
@@ -89,10 +92,10 @@ interface Recipe {
   cook_time: number;
   difficulty_level: 'easy' | 'medium' | 'hard';
   dietary_tags: string[];
-  ingredients?: string[];
-  instructions?: string[];
-  ingredients_list?: string[];
-  instructions_list?: string[];
+  ingredients?: (string | { name?: string; quantity?: number | string; unit?: string })[];
+  instructions?: (string | { step?: number; description?: string })[];
+  ingredients_list?: (string | { name?: string; quantity?: number | string; unit?: string })[];
+  instructions_list?: (string | { step?: number; description?: string })[];
   rating: number;
   image?: string;
 }
@@ -128,6 +131,7 @@ const RecipeSearch: React.FC<RecipeSearchProps> = () => {
   const [selectedRecipe, setSelectedRecipe] = useState<Recipe | null>(null);
   const [userPreferences, setUserPreferences] = useState<any>(null);
   const { isOpen, onOpen, onClose } = useDisclosure();
+  const toast = useToast();
   
   // Add to meal plan modal state
   const [addToMealPlanRecipe, setAddToMealPlanRecipe] = useState<Recipe | null>(null);
@@ -414,6 +418,34 @@ const RecipeSearch: React.FC<RecipeSearchProps> = () => {
     });
   };
 
+  const handleClearFilters = () => {
+    setSearchQuery('');
+    setFilters({
+      cuisine: '',
+      mealType: '',
+      difficulty: '',
+      maxCalories: '',
+      maxPrepTime: ''
+    });
+    setMicronutrientFilters({
+      nutrients: [],
+      minValues: {},
+      maxValues: {},
+      categories: []
+    });
+    setRatingFilters({
+      minRating: 1,
+      maxRating: 5,
+      verifiedOnly: false,
+      wouldMakeAgain: null,
+      minReviews: 0
+    });
+    setSortBy('');
+    setSortOrder('asc');
+    setCurrentPage(1);
+    loadRecipes();
+  };
+
   const getDifficultyColor = (difficulty: string) => {
     switch (difficulty) {
       case 'easy': return 'green';
@@ -446,20 +478,17 @@ const RecipeSearch: React.FC<RecipeSearchProps> = () => {
             {t('nutrition.recipeSearch.subtitle', 'en')}
           </Text>
           
-          {/* Reviewer Search Help */}
+          {/* Search Help */}
           <Alert status="info" borderRadius="md" mb={4}>
             <AlertIcon />
             <Box>
-              <Text fontWeight="semibold" mb={2}>Reviewer Search Patterns:</Text>
+              <Text fontWeight="semibold" mb={2}>Search Tips:</Text>
               <VStack align="start" spacing={1} fontSize="sm">
-                <Text>• <Text as="span" fontWeight="bold">#1, #2, #10</Text> - Find specific recipe numbers</Text>
-                <Text>• <Text as="span" fontWeight="bold">1, 2, 10</Text> - Same as above (without #)</Text>
-                <Text>• <Text as="span" fontWeight="bold">r1, r2, r10</Text> - Alternative format</Text>
-                <Text>• <Text as="span" fontWeight="bold">range:1-10</Text> - Get recipes 1 through 10</Text>
-                <Text>• <Text as="span" fontWeight="bold">range:50-100</Text> - Get recipes 50 through 100</Text>
-                <Text>• <Text as="span" fontWeight="bold">first:20</Text> - Get first 20 recipes</Text>
-                <Text>• <Text as="span" fontWeight="bold">last:20</Text> - Get last 20 recipes</Text>
-                <Text>• <Text as="span" fontWeight="bold">pasta, chicken, curry</Text> - Text search</Text>
+                <Text>• <Text as="span" fontWeight="bold">pasta, chicken, curry</Text> - Search by ingredients or cuisine</Text>
+                <Text>• <Text as="span" fontWeight="bold">quick, easy, healthy</Text> - Search by cooking style</Text>
+                <Text>• <Text as="span" fontWeight="bold">#1, #10, #50</Text> - Find specific recipe numbers</Text>
+                <Text>• <Text as="span" fontWeight="bold">range:1-20</Text> - Get recipes in a range</Text>
+                <Text>• <Text as="span" fontWeight="bold">first:10, last:10</Text> - Get first or last N recipes</Text>
               </VStack>
             </Box>
           </Alert>
@@ -470,33 +499,59 @@ const RecipeSearch: React.FC<RecipeSearchProps> = () => {
           <CardBody>
             <VStack spacing={4} align="stretch">
               {/* Search Bar */}
-              <InputGroup>
-                <InputLeftElement>
-                  <FiSearch />
-                </InputLeftElement>
-                <Input
-                  placeholder={t('nutrition.searchRecipes', 'en')}
-                  value={searchQuery}
-                  onChange={(e: any) => setSearchQuery(e.target.value)}
-                  onKeyPress={(e: any) => e.key === 'Enter' && handleSearch()}
-                  list="search-suggestions"
-                />
-                <datalist id="search-suggestions">
-                  <option value="#1" />
-                  <option value="#10" />
-                  <option value="#50" />
-                  <option value="#100" />
-                  <option value="range:1-10" />
-                  <option value="range:50-100" />
-                  <option value="first:20" />
-                  <option value="last:20" />
-                  <option value="pasta" />
-                  <option value="chicken" />
-                  <option value="curry" />
-                  <option value="pizza" />
-                  <option value="salad" />
-                </datalist>
-              </InputGroup>
+              <HStack spacing={2}>
+                <InputGroup flex={1}>
+                  <InputLeftElement>
+                    <FiSearch />
+                  </InputLeftElement>
+                  <Input
+                    placeholder="Search recipes by name, ingredients, or cuisine..."
+                    value={searchQuery}
+                    onChange={(e: any) => setSearchQuery(e.target.value)}
+                    onKeyPress={(e: any) => e.key === 'Enter' && handleSearch()}
+                    list="search-suggestions"
+                  />
+                  <datalist id="search-suggestions">
+                    <option value="pasta" />
+                    <option value="chicken" />
+                    <option value="curry" />
+                    <option value="pizza" />
+                    <option value="salad" />
+                    <option value="soup" />
+                    <option value="dessert" />
+                    <option value="breakfast" />
+                    <option value="quick" />
+                    <option value="healthy" />
+                    <option value="vegetarian" />
+                    <option value="vegan" />
+                    <option value="gluten-free" />
+                    <option value="low-carb" />
+                    <option value="high-protein" />
+                    <option value="#1" />
+                    <option value="#10" />
+                    <option value="#50" />
+                    <option value="range:1-20" />
+                    <option value="first:10" />
+                    <option value="last:10" />
+                  </datalist>
+                </InputGroup>
+                <Button
+                  colorScheme="blue"
+                  leftIcon={<FiSearch />}
+                  onClick={handleSearch}
+                  isLoading={loading}
+                  px={8}
+                >
+                  Search
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={handleClearFilters}
+                  size="md"
+                >
+                  Clear
+                </Button>
+              </HStack>
 
               {/* Micronutrient Filters */}
               <MicronutrientFilters 
@@ -678,21 +733,68 @@ const RecipeSearch: React.FC<RecipeSearchProps> = () => {
         )}
 
         {/* Recipe Results */}
-        <Grid templateColumns={{ base: '1fr', md: 'repeat(2, 1fr)', lg: 'repeat(3, 1fr)' }} gap={4} key={`recipes-${sortBy}-${sortOrder}-${currentPage}`}>
+        <SimpleGrid columns={{ base: 1, md: 2, lg: 3 }} spacing={4} key={`recipes-${sortBy}-${sortOrder}-${currentPage}`}>
           {Array.isArray(recipes) ? recipes.map((recipe, index) => (
-            <Card key={`${recipe.id}-${index}-${sortBy}-${sortOrder}`} bg={cardBg} borderColor={borderColor} position="relative">
-              <CardHeader>
-                <HStack justify="space-between">
-                  <VStack align="start" spacing={1} flex="1">
-                    <Heading size="sm">
+            <Card key={`${recipe.id}-${index}-${sortBy}-${sortOrder}`} bg={cardBg} borderColor={borderColor} position="relative" maxW="sm" mx="auto" w="full" overflow="hidden">
+              <CardHeader pb={2}>
+                <HStack justify="space-between" align="start" spacing={2}>
+                  <VStack align="start" spacing={1} flex={1} minW={0}>
+                    <Heading size="sm" noOfLines={2} wordBreak="break-word" width="100%">
                       {recipe.title.replace(/\s*\(#\d+\)\s*$/, '')}
                     </Heading>
-                    <HStack spacing={2}>
-                      <Badge colorScheme="blue" size="sm">{recipe.cuisine}</Badge>
-                      <Badge colorScheme="purple" size="sm">
+                    {/* Dietary Tags - Prominently displayed */}
+                    {recipe.dietary_tags && recipe.dietary_tags.length > 0 && (
+                      <Box width="100%" overflow="hidden">
+                        <HStack spacing={1} wrap="wrap" maxW="100%" overflow="hidden">
+                          {recipe.dietary_tags
+                            .filter((tag: string) => 
+                              ['vegetarian', 'vegan', 'contains-peanuts', 'contains-tree-nuts', 
+                               'contains-nightshades', 'contains-dairy', 'contains-eggs', 
+                               'contains-gluten', 'contains-soy', 'contains-fish'].includes(tag.toLowerCase())
+                            )
+                            .slice(0, 5)
+                            .map((tag: string) => {
+                              const tagLower = tag.toLowerCase();
+                              let colorScheme = "gray";
+                              
+                              if (tagLower === 'vegetarian') colorScheme = "green";
+                              else if (tagLower === 'vegan') colorScheme = "teal";
+                              else if (tagLower.includes('peanut')) colorScheme = "red";
+                              else if (tagLower.includes('tree-nut')) colorScheme = "orange";
+                              else if (tagLower.includes('nightshade')) colorScheme = "purple";
+                              else if (tagLower.includes('dairy') || tagLower.includes('eggs') || 
+                                       tagLower.includes('gluten') || tagLower.includes('soy') || 
+                                       tagLower.includes('fish')) colorScheme = "red";
+                              
+                              return (
+                                <Badge 
+                                  key={tag} 
+                                  colorScheme={colorScheme} 
+                                  size="sm" 
+                                  fontSize="xs"
+                                  noOfLines={1}
+                                  maxW="100%"
+                                  wordBreak="break-word"
+                                  textTransform="capitalize"
+                                  flexShrink={0}
+                                >
+                                  {tag.replace('contains-', '').replace('-', ' ')}
+                                </Badge>
+                              );
+                            })}
+                          {recipe.dietary_tags.length > 5 && (
+                            <Text fontSize="xs" color="gray.500" noOfLines={1} flexShrink={0}>+{recipe.dietary_tags.length - 5}</Text>
+                          )}
+                        </HStack>
+                      </Box>
+                    )}
+                    <Box width="100%" overflow="hidden">
+                      <HStack spacing={2} wrap="wrap" maxW="100%" overflow="hidden">
+                        <Badge colorScheme="purple" size="sm" noOfLines={1} maxW="100%" wordBreak="break-word" flexShrink={0}>
                         {recipe.meal_type.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
                       </Badge>
                     </HStack>
+                    </Box>
                   </VStack>
                   {recipe.id && recipe.id.startsWith('recipe_') && (
                     <Badge 
@@ -702,11 +804,12 @@ const RecipeSearch: React.FC<RecipeSearchProps> = () => {
                       position="absolute"
                       top={2}
                       right={2}
+                      flexShrink={0}
                     >
                       #{parseInt(recipe.id.replace('recipe_', ''))}
                     </Badge>
                   )}
-                  <Menu>
+                  <Menu flexShrink={0}>
                     <MenuButton as={IconButton} icon={<FiMoreVertical />} size="sm" variant="ghost" />
                     <MenuList>
                       <MenuItem icon={<FiEye />} onClick={() => handleRecipeView(recipe)}>
@@ -722,34 +825,68 @@ const RecipeSearch: React.FC<RecipeSearchProps> = () => {
                   </Menu>
                 </HStack>
               </CardHeader>
-              <CardBody>
-                <VStack spacing={3} align="stretch">
+              <CardBody pt={0}>
+                <VStack spacing={3} align="stretch" overflow="hidden">
                   {/* Nutritional Info */}
-                  <VStack spacing={2} align="stretch">
+                  <VStack spacing={2} align="stretch" width="100%">
                     {/* Total Recipe Nutrition */}
-                    <Box>
-                      <Text fontSize="xs" color="gray.500" mb={1}>Total Recipe ({recipe.servings} servings)</Text>
-                      <HStack justify="space-between" fontSize="sm">
-                        <Text fontWeight="bold">{recipe.total_calories || recipe.calculated_calories || 0} {t('nutrition.calories', 'en')}</Text>
-                        <Text fontWeight="bold">{recipe.total_protein || recipe.calculated_protein || 0}g {t('nutrition.protein', 'en')}</Text>
+                    <Box width="100%" overflow="hidden">
+                      <Text fontSize="xs" color="gray.500" mb={1}>Total Recipe ({recipe.servings || 1} {recipe.servings === 1 ? 'serving' : 'servings'})</Text>
+                      <HStack justify="space-between" fontSize="sm" spacing={2}>
+                        <Text fontWeight="bold" flex={1} minW={0} wordBreak="break-word">{Math.round(recipe.total_calories || recipe.calculated_calories || 0)} {t('nutrition.calories', 'en')}</Text>
+                        <Text fontWeight="bold" flex={1} minW={0} wordBreak="break-word">{Math.round(recipe.total_protein || recipe.calculated_protein || 0)}g {t('nutrition.protein', 'en')}</Text>
                       </HStack>
-                      <HStack justify="space-between" fontSize="sm">
-                        <Text>{recipe.total_carbs || recipe.calculated_carbs || 0}g {t('nutrition.carbs', 'en')}</Text>
-                        <Text>{recipe.total_fats || recipe.calculated_fats || 0}g {t('nutrition.fats', 'en')}</Text>
+                      <HStack justify="space-between" fontSize="sm" spacing={2}>
+                        <Text flex={1} minW={0} wordBreak="break-word">{Math.round(recipe.total_carbs || recipe.calculated_carbs || 0)}g {t('nutrition.carbs', 'en')}</Text>
+                        <Text flex={1} minW={0} wordBreak="break-word">{Math.round(recipe.total_fats || recipe.calculated_fats || 0)}g {t('nutrition.fats', 'en')}</Text>
                       </HStack>
                     </Box>
                     
                     {/* Per-Serving Nutrition */}
-                    <Box>
+                    <Box width="100%" overflow="hidden">
                       <Text fontSize="xs" color="gray.500" mb={1}>Per Serving</Text>
-                      <HStack justify="space-between" fontSize="sm" color="blue.600">
-                        <Text fontWeight="bold">{recipe.per_serving_calories || 0} {t('nutrition.calories', 'en')}</Text>
-                        <Text fontWeight="bold">{recipe.per_serving_protein || 0}g {t('nutrition.protein', 'en')}</Text>
-                      </HStack>
-                      <HStack justify="space-between" fontSize="sm" color="blue.600">
-                        <Text>{recipe.per_serving_carbs || 0}g {t('nutrition.carbs', 'en')}</Text>
-                        <Text>{recipe.per_serving_fats || 0}g {t('nutrition.fats', 'en')}</Text>
-                      </HStack>
+                      <SimpleGrid columns={2} spacing={2} fontSize="sm">
+                        <Box>
+                          <Text fontWeight="bold" color="blue.600" fontSize="xs" noOfLines={1}>
+                            {(() => {
+                              const perServing = recipe.per_serving_calories || 
+                                (recipe.total_calories && recipe.servings ? Math.round(recipe.total_calories / recipe.servings) : 0) ||
+                                (recipe.calculated_calories || 0);
+                              return Math.round(perServing);
+                            })()} {t('nutrition.calories', 'en')}
+                          </Text>
+                        </Box>
+                        <Box>
+                          <Text fontWeight="bold" color="blue.600" fontSize="xs" noOfLines={1}>
+                            {(() => {
+                              const perServing = recipe.per_serving_protein || 
+                                (recipe.total_protein && recipe.servings ? recipe.total_protein / recipe.servings : 0) ||
+                                (recipe.calculated_protein || 0);
+                              return Math.round(perServing * 10) / 10;
+                            })()}g {t('nutrition.protein', 'en')}
+                          </Text>
+                        </Box>
+                        <Box>
+                          <Text color="blue.600" fontSize="xs" noOfLines={1}>
+                            {(() => {
+                              const perServing = recipe.per_serving_carbs || 
+                                (recipe.total_carbs && recipe.servings ? recipe.total_carbs / recipe.servings : 0) ||
+                                (recipe.calculated_carbs || 0);
+                              return Math.round(perServing * 10) / 10;
+                            })()}g {t('nutrition.carbs', 'en')}
+                          </Text>
+                        </Box>
+                        <Box>
+                          <Text color="blue.600" fontSize="xs" noOfLines={1}>
+                            {(() => {
+                              const perServing = recipe.per_serving_fats || 
+                                (recipe.total_fats && recipe.servings ? recipe.total_fats / recipe.servings : 0) ||
+                                (recipe.calculated_fats || 0);
+                              return Math.round(perServing * 10) / 10;
+                            })()}g {t('nutrition.fats', 'en')}
+                          </Text>
+                        </Box>
+                      </SimpleGrid>
                     </Box>
                   </VStack>
 
@@ -804,13 +941,30 @@ const RecipeSearch: React.FC<RecipeSearchProps> = () => {
                   </Box>
 
                   {/* Dietary Tags */}
-                  <HStack wrap="wrap" spacing={1}>
-                    {recipe.dietary_tags.map((tag) => (
-                      <Badge key={tag} size="sm" colorScheme="green" variant="subtle">
+                  {recipe.dietary_tags && recipe.dietary_tags.length > 0 && (
+                    <Box width="100%" overflow="hidden">
+                      <HStack wrap="wrap" spacing={1} maxW="100%">
+                        {recipe.dietary_tags.slice(0, 6).map((tag) => (
+                          <Badge 
+                            key={tag} 
+                            size="sm" 
+                            colorScheme="green" 
+                            variant="subtle"
+                            noOfLines={1}
+                            maxW="100%"
+                            wordBreak="break-word"
+                          >
                         {tag}
                       </Badge>
                     ))}
+                        {recipe.dietary_tags.length > 6 && (
+                          <Text fontSize="xs" color="gray.500" noOfLines={1}>
+                            +{recipe.dietary_tags.length - 6} more
+                          </Text>
+                        )}
                   </HStack>
+                    </Box>
+                  )}
 
                   {/* Actions */}
                   <HStack spacing={2}>
@@ -825,7 +979,7 @@ const RecipeSearch: React.FC<RecipeSearchProps> = () => {
               </CardBody>
             </Card>
           )) : null}
-        </Grid>
+        </SimpleGrid>
 
         {/* Pagination */}
         {totalPages > 1 && (
@@ -992,7 +1146,9 @@ const RecipeSearch: React.FC<RecipeSearchProps> = () => {
         <Modal isOpen={isOpen} onClose={onClose} size="xl">
           <ModalOverlay />
           <ModalContent>
-            <ModalHeader>{selectedRecipe?.title}</ModalHeader>
+            <ModalHeader pr={8}>
+              <Text noOfLines={2} wordBreak="break-word">{selectedRecipe?.title}</Text>
+            </ModalHeader>
             <ModalCloseButton />
             <ModalBody>
               {selectedRecipe && (
@@ -1027,18 +1183,31 @@ const RecipeSearch: React.FC<RecipeSearchProps> = () => {
                   {/* Ingredients */}
                   <Box>
                     <Heading size="sm" mb={2}>{t('nutrition.ingredients', 'en')}</Heading>
-                    <Text fontSize="sm">{(selectedRecipe.ingredients_list || selectedRecipe.ingredients || []).join(', ')}</Text>
+                    <VStack spacing={2} align="stretch">
+                      {(selectedRecipe.ingredients_list || selectedRecipe.ingredients || []).map((ingredient: any, index: number) => (
+                        <Text key={index} fontSize="sm" pl={4} borderLeft="3px solid" borderColor="blue.200">
+                          {typeof ingredient === 'string' 
+                            ? ingredient 
+                            : `${ingredient.name || 'Unknown'} - ${ingredient.quantity || ''}${ingredient.unit || ''}`
+                          }
+                        </Text>
+                      ))}
+                    </VStack>
                   </Box>
 
                   {/* Instructions */}
                   <Box>
                     <Heading size="sm" mb={2}>{t('nutrition.instructions', 'en')}</Heading>
                     <VStack spacing={2} align="stretch">
-                      {(selectedRecipe.instructions_list || selectedRecipe.instructions || []).map((instruction, index) => (
-                        <HStack key={index} align="start">
-                          <Badge colorScheme="blue" size="sm">{index + 1}</Badge>
-                          <Text fontSize="sm">{instruction}</Text>
-                        </HStack>
+                      {(selectedRecipe.instructions_list || selectedRecipe.instructions || []).map((instruction: any, index: number) => (
+                        <Box key={index} p={3} bg="gray.50" borderRadius="md">
+                          <Text fontWeight="bold" color="blue.600" mb={1}>
+                            Step {typeof instruction === 'string' ? index + 1 : (instruction.step || index + 1)}
+                          </Text>
+                          <Text fontSize="sm">
+                            {typeof instruction === 'string' ? instruction : (instruction.description || '')}
+                          </Text>
+                        </Box>
                       ))}
                     </VStack>
                   </Box>

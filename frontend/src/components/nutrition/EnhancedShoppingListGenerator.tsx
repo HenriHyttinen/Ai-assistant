@@ -589,3 +589,8 @@ const EnhancedShoppingListGenerator: React.FC<EnhancedShoppingListGeneratorProps
 export default EnhancedShoppingListGenerator;
 
 
+
+
+
+
+

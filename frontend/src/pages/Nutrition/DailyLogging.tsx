@@ -203,6 +203,49 @@ const DailyLogging: React.FC = () => {
       setLoading(false);
     }
   };
+
+  const addFromMealPlan = async () => {
+    try {
+      setLoading(true);
+      const { supabase } = await import('../../lib/supabase');
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        toast({ title: 'Please log in', status: 'warning', duration: 2500, isClosable: true });
+        return;
+      }
+      // Get the latest plan for the selected date
+      const planResp = await fetch(`http://localhost:8000/nutrition/meal-plans?date=${selectedDate}&limit=1`, {
+        headers: { 'Authorization': `Bearer ${session.access_token}` }
+      });
+      if (!planResp.ok) {
+        toast({ title: 'No meal plan for this date', status: 'info', duration: 2500, isClosable: true });
+        return;
+      }
+      const plans = await planResp.json();
+      if (!plans || plans.length === 0) {
+        toast({ title: 'No meal plan for this date', status: 'info', duration: 2500, isClosable: true });
+        return;
+      }
+      const planId = plans[0].id;
+      // Log from meal plan to the selected date
+      const logResp = await fetch(`http://localhost:8000/daily-logging/log-from-meal-plan?log_date=${selectedDate}&meal_plan_id=${planId}`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${session.access_token}` }
+      });
+      if (logResp.ok) {
+        toast({ title: 'Added from meal plan', status: 'success', duration: 2500, isClosable: true });
+        await loadDailyLog();
+      } else {
+        const errText = await logResp.text();
+        throw new Error(errText || 'Failed to add from meal plan');
+      }
+    } catch (e) {
+      console.error('Add from meal plan failed:', e);
+      toast({ title: 'Failed to add from meal plan', status: 'error', duration: 3000, isClosable: true });
+    } finally {
+      setLoading(false);
+    }
+  };
   
   const addEntry = () => {
     if (!newEntry.food_name || newEntry.calories === 0) {
@@ -335,83 +378,153 @@ const DailyLogging: React.FC = () => {
         </CardBody>
       </Card>
       
-      {/* Add Entry Button */}
-      <Button
-        leftIcon={<FiPlus />}
-        colorScheme="green"
-        onClick={onOpen}
-        mb={4}
-      >
-        Add Food Entry
-      </Button>
-      
-      {/* Food Entries Table */}
-      <Card bg={cardBg} borderColor={borderColor}>
+      {/* Quick Add Buttons */}
+      <Card bg={cardBg} borderColor={borderColor} mb={6}>
+        <CardHeader>
+          <Heading size="md">Quick Add</Heading>
+        </CardHeader>
         <CardBody>
-          {entries.length === 0 ? (
+          <HStack spacing={4} wrap="wrap">
+            <Button
+              leftIcon={<FiPlus />}
+              colorScheme="green"
+              onClick={onOpen}
+              variant="outline"
+            >
+              Add Food Entry
+            </Button>
+            <Button
+              leftIcon={<FiPlus />}
+              colorScheme="blue"
+              onClick={() => {/* Navigate to recipe search */}}
+              variant="outline"
+            >
+              Add from Recipes
+            </Button>
+            <Button
+              leftIcon={<FiPlus />}
+              colorScheme="purple"
+              onClick={addFromMealPlan}
+              variant="outline"
+            >
+              Add from Meal Plan
+            </Button>
+          </HStack>
+        </CardBody>
+      </Card>
+      
+      {/* Daily Summary */}
+      {entries.length > 0 && (
+        <Card bg={cardBg} borderColor={borderColor} mb={4}>
+          <CardBody>
+            <VStack spacing={4}>
+              <Heading size="md">Daily Summary</Heading>
+              <SimpleGrid columns={{ base: 2, md: 4 }} spacing={4} w="full">
+                <VStack>
+                  <Text fontSize="sm" color="gray.600">Total Calories</Text>
+                  <Text fontSize="2xl" fontWeight="bold" color="blue.500">
+                    {totalCalories.toFixed(0)}
+                  </Text>
+                </VStack>
+                <VStack>
+                  <Text fontSize="sm" color="gray.600">Protein</Text>
+                  <Text fontSize="2xl" fontWeight="bold" color="green.500">
+                    {totalProtein.toFixed(1)}g
+                  </Text>
+                </VStack>
+                <VStack>
+                  <Text fontSize="sm" color="gray.600">Carbs</Text>
+                  <Text fontSize="2xl" fontWeight="bold" color="orange.500">
+                    {totalCarbs.toFixed(1)}g
+                  </Text>
+                </VStack>
+                <VStack>
+                  <Text fontSize="sm" color="gray.600">Fats</Text>
+                  <Text fontSize="2xl" fontWeight="bold" color="purple.500">
+                    {totalFats.toFixed(1)}g
+                  </Text>
+                </VStack>
+              </SimpleGrid>
+            </VStack>
+          </CardBody>
+        </Card>
+      )}
+
+      {/* Food Entries by Meal Type */}
+      {entries.length === 0 ? (
+        <Card bg={cardBg} borderColor={borderColor}>
+          <CardBody>
             <Text textAlign="center" color="gray.500" py={8}>
               No food entries for this date. Click "Add Food Entry" to start logging.
             </Text>
-          ) : (
-            <Table variant="simple">
-              <Thead>
-                <Tr>
-                  <Th>Food</Th>
-                  <Th>Quantity</Th>
-                  <Th>Meal</Th>
-                  <Th>Calories</Th>
-                  <Th>Protein</Th>
-                  <Th>Carbs</Th>
-                  <Th>Fats</Th>
-                  <Th>Actions</Th>
-                </Tr>
-              </Thead>
-              <Tbody>
-                {entries.map((entry) => (
-                  <Tr key={entry.id}>
-                    <Td>
-                      <Text fontWeight="medium">{entry.food_name}</Text>
-                    </Td>
-                    <Td>
-                      <Text>{entry.quantity} {entry.unit}</Text>
-                    </Td>
-                    <Td>
-                      <Badge colorScheme={getMealTypeColor(entry.meal_type)}>
-                        {entry.meal_type}
-                      </Badge>
-                    </Td>
-                    <Td>
-                      <Text fontWeight="medium">{entry.calories.toFixed(0)}</Text>
-                    </Td>
-                    <Td>{entry.protein.toFixed(1)}g</Td>
-                    <Td>{entry.carbs.toFixed(1)}g</Td>
-                    <Td>{entry.fats.toFixed(1)}g</Td>
-                    <Td>
-                      <HStack spacing={2}>
-                        <IconButton
-                          aria-label="Edit entry"
-                          icon={<FiEdit />}
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => editEntry(entry)}
-                        />
-                        <IconButton
-                          aria-label="Delete entry"
-                          icon={<FiTrash2 />}
-                          size="sm"
-                          variant="ghost"
-                          colorScheme="red"
-                          onClick={() => deleteEntry(entry.id)}
-                        />
+          </CardBody>
+        </Card>
+      ) : (
+        <VStack spacing={4} align="stretch">
+          {['breakfast', 'lunch', 'dinner', 'snack'].map(mealType => {
+            const mealEntries = entries.filter(entry => entry.meal_type === mealType);
+            if (mealEntries.length === 0) return null;
+            
+            const mealCalories = mealEntries.reduce((sum, entry) => sum + entry.calories, 0);
+            const mealProtein = mealEntries.reduce((sum, entry) => sum + entry.protein, 0);
+            
+            return (
+              <Card key={mealType} bg={cardBg} borderColor={borderColor}>
+                <CardHeader>
+                  <HStack justify="space-between">
+                    <Heading size="md" textTransform="capitalize">{mealType}</Heading>
+                    <HStack spacing={4}>
+                      <Text fontSize="sm" color="gray.600">
+                        {mealCalories.toFixed(0)} cal
+                      </Text>
+                      <Text fontSize="sm" color="gray.600">
+                        {mealProtein.toFixed(1)}g protein
+                      </Text>
+                    </HStack>
+                  </HStack>
+                </CardHeader>
+                <CardBody>
+                  <VStack spacing={3} align="stretch">
+                    {mealEntries.map((entry) => (
+                      <HStack key={entry.id} justify="space-between" p={3} bg="gray.50" borderRadius="md">
+                        <VStack align="start" spacing={1} flex={1}>
+                          <Text fontWeight="medium">{entry.food_name}</Text>
+                          <Text fontSize="sm" color="gray.600">
+                            {entry.quantity} {entry.unit}
+                          </Text>
+                        </VStack>
+                        <HStack spacing={4}>
+                          <Text fontSize="sm" fontWeight="bold">
+                            {entry.calories.toFixed(0)} cal
+                          </Text>
+                          <Text fontSize="sm" color="gray.600">
+                            {entry.protein.toFixed(1)}g protein
+                          </Text>
+                          <HStack spacing={2}>
+                            <IconButton
+                              icon={<FiEdit />}
+                              size="sm"
+                              onClick={() => editEntry(entry)}
+                              aria-label="Edit entry"
+                            />
+                            <IconButton
+                              icon={<FiTrash2 />}
+                              size="sm"
+                              colorScheme="red"
+                              onClick={() => deleteEntry(entry.id)}
+                              aria-label="Delete entry"
+                            />
+                          </HStack>
+                        </HStack>
                       </HStack>
-                    </Td>
-                  </Tr>
-                ))}
-              </Tbody>
-            </Table>
-          )}
-        </CardBody>
-      </Card>
+                    ))}
+                  </VStack>
+                </CardBody>
+              </Card>
+            );
+          })}
+        </VStack>
+      )}
       
       {/* Add/Edit Entry Modal */}
       <Modal isOpen={isOpen} onClose={onClose} size="lg">
@@ -589,6 +702,8 @@ const DailyLogging: React.FC = () => {
 };
 
 export default DailyLogging;
+
+
 
 
 

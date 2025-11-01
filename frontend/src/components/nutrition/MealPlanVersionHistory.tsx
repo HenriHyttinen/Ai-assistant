@@ -82,10 +82,23 @@ const MealPlanVersionHistory: React.FC<MealPlanVersionHistoryProps> = ({
   const fetchVersions = async () => {
     setLoading(true);
     try {
-      const response = await fetch(`/api/meal-plans/${mealPlanId}/versions`);
+      // Get Supabase session token for authentication
+      const { supabase } = await import('../../lib/supabase');
+      const { data: { session } } = await supabase.auth.getSession();
+
+      console.log('🔐 Session token:', session?.access_token ? 'Present' : 'Missing');
+      console.log('🔐 Token preview:', session?.access_token?.substring(0, 20) + '...');
+      console.log('🔐 Full session:', session);
+
+      const response = await fetch(`http://localhost:8000/nutrition/meal-plans/${mealPlanId}/versions`, {
+        headers: {
+          'Authorization': `Bearer ${session?.access_token || ''}`,
+        },
+      });
+      
       if (response.ok) {
         const data = await response.json();
-        setVersions(data);
+        setVersions(data.versions || []);
       } else {
         throw new Error('Failed to fetch versions');
       }
@@ -105,8 +118,15 @@ const MealPlanVersionHistory: React.FC<MealPlanVersionHistoryProps> = ({
   const restoreVersion = async (versionId: string) => {
     setRestoring(versionId);
     try {
-      const response = await fetch(`/api/meal-plans/${mealPlanId}/versions/${versionId}/restore`, {
+      // Get Supabase session token for authentication
+      const { supabase } = await import('../../lib/supabase');
+      const { data: { session } } = await supabase.auth.getSession();
+
+      const response = await fetch(`http://localhost:8000/nutrition/meal-plans/restore/${versionId}`, {
         method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session?.access_token || ''}`,
+        },
       });
       
       if (response.ok) {
@@ -145,8 +165,15 @@ const MealPlanVersionHistory: React.FC<MealPlanVersionHistoryProps> = ({
   const deleteVersion = async (versionId: string) => {
     setDeleting(versionId);
     try {
-      const response = await fetch(`/api/meal-plans/${mealPlanId}/versions/${versionId}`, {
+      // Get Supabase session token for authentication
+      const { supabase } = await import('../../lib/supabase');
+      const { data: { session } } = await supabase.auth.getSession();
+
+      const response = await fetch(`http://localhost:8000/nutrition/meal-plans/${mealPlanId}/versions/${versionId}`, {
         method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${session?.access_token || ''}`,
+        },
       });
       
       if (response.ok) {
@@ -421,3 +448,5 @@ const MealPlanVersionHistory: React.FC<MealPlanVersionHistoryProps> = ({
 };
 
 export default MealPlanVersionHistory;
+
+

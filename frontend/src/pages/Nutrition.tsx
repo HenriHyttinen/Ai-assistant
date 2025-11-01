@@ -76,6 +76,17 @@ const Nutrition: React.FC = () => {
 
   useEffect(() => {
     loadNutritionData();
+    
+    // Listen for tab navigation events from dashboard
+    const handleTabNavigation = (event: CustomEvent) => {
+      setActiveTab(event.detail.tabIndex);
+    };
+    
+    window.addEventListener('navigateToTab', handleTabNavigation as EventListener);
+    
+    return () => {
+      window.removeEventListener('navigateToTab', handleTabNavigation as EventListener);
+    };
   }, []);
 
   const loadNutritionData = useCallback(async () => {
@@ -254,11 +265,10 @@ const Nutrition: React.FC = () => {
                 <option value={4}>Recommendations</option>
                 <option value={5}>Recipes</option>
                 <option value={6}>Shopping</option>
-                <option value={7}>Smart Lists</option>
-                <option value={8}>Daily Log</option>
-                <option value={9}>Analysis</option>
-                <option value={10}>Micronutrients</option>
-                <option value={11}>Micro Search</option>
+                <option value={7}>Daily Log</option>
+                <option value={8}>Analysis</option>
+                <option value={9}>Micronutrients</option>
+                <option value={10}>Micro Search</option>
               </Select>
             </Box>
 
@@ -321,12 +331,6 @@ const Nutrition: React.FC = () => {
                 </Tab>
                 <Tab>
                   <HStack spacing={2}>
-                    <Icon as={FiZap} />
-                    <Text>Smart Lists</Text>
-                  </HStack>
-                </Tab>
-                <Tab>
-                  <HStack spacing={2}>
                     <Icon as={FiEdit3} />
                     <Text>Daily Log</Text>
                   </HStack>
@@ -380,13 +384,6 @@ const Nutrition: React.FC = () => {
 
                 <TabPanel px={0} py={6}>
                   <ShoppingList />
-                </TabPanel>
-
-                <TabPanel px={0} py={6}>
-                  <EnhancedShoppingListGenerator 
-                    mealPlans={nutritionData?.mealPlans || []} 
-                    onUpdate={loadNutritionData} 
-                  />
                 </TabPanel>
 
                 <TabPanel px={0} py={6}>

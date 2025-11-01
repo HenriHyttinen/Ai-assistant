@@ -26,7 +26,7 @@ import {
   StatHelpText,
   StatArrow,
 } from '@chakra-ui/react';
-import { FiBarChart, FiTrendingUp, FiTrendingDown, FiTarget } from 'react-icons/fi';
+import { FiBarChart, FiTrendingUp, FiTrendingDown, FiTarget, FiRefreshCw } from 'react-icons/fi';
 import { t } from '../../utils/translations';
 import MacronutrientVisualization from './MacronutrientVisualization';
 import AdvancedNutritionDashboard from './AdvancedNutritionDashboard';
@@ -95,6 +95,10 @@ const NutritionalAnalysis: React.FC<NutritionalAnalysisProps> = ({
       const { supabase } = await import('../../lib/supabase');
       const { data: { session } } = await supabase.auth.getSession();
       
+      if (!session?.access_token) {
+        throw new Error('No authentication session found');
+      }
+      
       // Add cache-busting parameter to force fresh data
       const timestamp = new Date().getTime();
       const endpoint = dashboardMode === 'advanced' 
@@ -107,7 +111,7 @@ const NutritionalAnalysis: React.FC<NutritionalAnalysisProps> = ({
           method: 'GET',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${session?.access_token || ''}`,
+            'Authorization': `Bearer ${session.access_token}`,
             'Cache-Control': 'no-cache',
             'Pragma': 'no-cache'
           },
@@ -117,23 +121,29 @@ const NutritionalAnalysis: React.FC<NutritionalAnalysisProps> = ({
       if (response.ok) {
         const data = await response.json();
         console.log('🔍 NutritionalAnalysis API Response:', data);
-        console.log('🔍 Calories from API:', data.totals?.calories);
         setAnalysisData(data);
+        
+        toast({
+          title: 'Analysis Updated',
+          description: `Nutritional analysis loaded for ${analysisType} period.`,
+          status: 'success',
+          duration: 3000,
+          isClosable: true,
+        });
       } else {
-        const errorText = await response.text();
-        console.error('API Error:', response.status, errorText);
-        throw new Error(`Failed to load analysis: ${response.status} ${errorText}`);
+        const errorData = await response.json();
+        throw new Error(errorData.detail || `Failed to load analysis: ${response.status}`);
       }
     } catch (error) {
       console.error('Error loading analysis:', error);
       
       // Set mock data for development/demo purposes
-      setAnalysisData({
+      const mockData = {
         totals: {
-          calories: 0,
-          protein: 0,
-          carbs: 0,
-          fats: 0,
+          calories: 1850,
+          protein: 95,
+          carbs: 180,
+          fats: 65,
         },
         targets: {
           calories: 2000,
@@ -142,27 +152,54 @@ const NutritionalAnalysis: React.FC<NutritionalAnalysisProps> = ({
           fats: 65,
         },
         deficits: {
-          calories: 0,
-          protein: 0,
-          carbs: 0,
+          calories: 150,
+          protein: 55,
+          carbs: 70,
           fats: 0,
         },
         percentages: {
-          calories: 0,
-          protein: 0,
-          carbs: 0,
-          fats: 0,
+          calories: 92.5,
+          protein: 63.3,
+          carbs: 72.0,
+          fats: 100.0,
+        },
+        daily_breakdown: [
+          { date: '2024-01-01', calories: 1850, protein: 95, carbs: 180, fats: 65, meals: [] },
+          { date: '2024-01-02', calories: 2100, protein: 120, carbs: 220, fats: 70, meals: [] },
+          { date: '2024-01-03', calories: 1950, protein: 110, carbs: 190, fats: 60, meals: [] }
+        ],
+        meal_distribution: {
+          breakfast: 25,
+          lunch: 35,
+          dinner: 30,
+          snacks: 10
         },
         ai_insights: {
-          achievements: ['No data available yet'],
-          concerns: ['Please log some meals to see analysis'],
-          suggestions: ['Start by logging your daily meals'],
+          achievements: [
+            'Great job meeting your fat intake goal!',
+            'Consistent daily calorie intake this week'
+          ],
+          concerns: [
+            'Protein intake is below target - consider adding lean meats or legumes',
+            'Carb intake could be increased for better energy levels'
+          ],
+          suggestions: [
+            'Add a protein shake to your morning routine',
+            'Include more whole grains in your meals',
+            'Consider meal prepping for consistent nutrition'
+          ],
+          trends: [
+            'Calorie intake has been stable over the past week',
+            'Protein consumption is trending upward'
+          ]
         },
-      });
+      };
+      
+      setAnalysisData(mockData);
       
       toast({
         title: 'Demo Mode',
-        description: 'Nutritional analysis is in demo mode. Log some meals to see real data.',
+        description: 'Showing sample data. Log some meals to see real analysis.',
         status: 'info',
         duration: 5000,
         isClosable: true,
@@ -203,7 +240,19 @@ const NutritionalAnalysis: React.FC<NutritionalAnalysisProps> = ({
       {/* Analysis Controls */}
       <Card>
         <CardHeader>
-          <Heading size="md">Analysis Settings</Heading>
+          <HStack justify="space-between" align="center">
+            <Heading size="md">Analysis Settings</Heading>
+            <Button
+              leftIcon={<FiRefreshCw />}
+              onClick={loadAnalysis}
+              isLoading={loading}
+              size="sm"
+              colorScheme="blue"
+              variant="outline"
+            >
+              Refresh Data
+            </Button>
+          </HStack>
         </CardHeader>
         <CardBody>
           <VStack spacing={4} align="stretch">
@@ -215,6 +264,7 @@ const NutritionalAnalysis: React.FC<NutritionalAnalysisProps> = ({
                   colorScheme={dashboardMode === 'advanced' ? 'blue' : 'gray'}
                   variant={dashboardMode === 'advanced' ? 'solid' : 'outline'}
                   onClick={() => setDashboardMode('advanced')}
+                  isDisabled={loading}
                 >
                   Advanced Dashboard
                 </Button>
@@ -222,6 +272,7 @@ const NutritionalAnalysis: React.FC<NutritionalAnalysisProps> = ({
                   colorScheme={dashboardMode === 'basic' ? 'blue' : 'gray'}
                   variant={dashboardMode === 'basic' ? 'solid' : 'outline'}
                   onClick={() => setDashboardMode('basic')}
+                  isDisabled={loading}
                 >
                   Basic View
                 </Button>
@@ -236,6 +287,7 @@ const NutritionalAnalysis: React.FC<NutritionalAnalysisProps> = ({
                   colorScheme={analysisType === 'daily' ? 'blue' : 'gray'}
                   variant={analysisType === 'daily' ? 'solid' : 'outline'}
                   onClick={() => setAnalysisType('daily')}
+                  isDisabled={loading}
                 >
                   {t('dailyIntake', 'en')}
                 </Button>
@@ -243,6 +295,7 @@ const NutritionalAnalysis: React.FC<NutritionalAnalysisProps> = ({
                   colorScheme={analysisType === 'weekly' ? 'blue' : 'gray'}
                   variant={analysisType === 'weekly' ? 'solid' : 'outline'}
                   onClick={() => setAnalysisType('weekly')}
+                  isDisabled={loading}
                 >
                   {t('weeklyIntake', 'en')}
                 </Button>
@@ -250,6 +303,7 @@ const NutritionalAnalysis: React.FC<NutritionalAnalysisProps> = ({
                   colorScheme={analysisType === 'monthly' ? 'blue' : 'gray'}
                   variant={analysisType === 'monthly' ? 'solid' : 'outline'}
                   onClick={() => setAnalysisType('monthly')}
+                  isDisabled={loading}
                 >
                   {t('monthlyIntake', 'en')}
                 </Button>
@@ -290,6 +344,53 @@ const NutritionalAnalysis: React.FC<NutritionalAnalysisProps> = ({
           />
         ) : (
           <VStack spacing={6} align="stretch">
+          {/* Quick Stats Summary */}
+          <Card>
+            <CardHeader>
+              <Heading size="md">Quick Overview</Heading>
+            </CardHeader>
+            <CardBody>
+              <SimpleGrid columns={{ base: 2, md: 4 }} spacing={4}>
+                <VStack>
+                  <Text fontSize="sm" color="gray.600">Calories</Text>
+                  <Text fontSize="2xl" fontWeight="bold" color="blue.500">
+                    {analysisData?.totals?.calories?.toFixed(0) || 0}
+                  </Text>
+                  <Text fontSize="xs" color="gray.500">
+                    of {analysisData?.targets?.calories || 0} target
+                  </Text>
+                </VStack>
+                <VStack>
+                  <Text fontSize="sm" color="gray.600">Protein</Text>
+                  <Text fontSize="2xl" fontWeight="bold" color="green.500">
+                    {analysisData?.totals?.protein?.toFixed(1) || 0}g
+                  </Text>
+                  <Text fontSize="xs" color="gray.500">
+                    {((analysisData?.totals?.protein || 0) / (analysisData?.targets?.protein || 1) * 100).toFixed(0)}% of target
+                  </Text>
+                </VStack>
+                <VStack>
+                  <Text fontSize="sm" color="gray.600">Carbs</Text>
+                  <Text fontSize="2xl" fontWeight="bold" color="yellow.500">
+                    {analysisData?.totals?.carbs?.toFixed(1) || 0}g
+                  </Text>
+                  <Text fontSize="xs" color="gray.500">
+                    {((analysisData?.totals?.carbs || 0) / (analysisData?.targets?.carbs || 1) * 100).toFixed(0)}% of target
+                  </Text>
+                </VStack>
+                <VStack>
+                  <Text fontSize="sm" color="gray.600">Fats</Text>
+                  <Text fontSize="2xl" fontWeight="bold" color="orange.500">
+                    {analysisData?.totals?.fats?.toFixed(1) || 0}g
+                  </Text>
+                  <Text fontSize="xs" color="gray.500">
+                    {((analysisData?.totals?.fats || 0) / (analysisData?.targets?.fats || 1) * 100).toFixed(0)}% of target
+                  </Text>
+                </VStack>
+              </SimpleGrid>
+            </CardBody>
+          </Card>
+
           {/* Nutritional Overview */}
           <Card>
             <CardHeader>

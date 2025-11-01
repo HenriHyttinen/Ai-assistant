@@ -2,6 +2,7 @@ import logging
 from typing import List, Dict, Any, Optional
 from datetime import datetime, date, timedelta
 from sqlalchemy.orm import Session
+from fastapi import HTTPException, status
 from sqlalchemy import and_, or_, func, desc, case
 
 from models.recipe import Recipe, Ingredient
@@ -151,33 +152,194 @@ class NutritionService:
             "fats_target": 65,
             "personalized": False
         }
+
+    # --- Helpers used when persisting generated meals ---
+    def _sanitize_meal_type(self, meal_type: str, title: str = "", ingredients: Any = None) -> str:
+        """Map/adjust meal types based on title/ingredients to keep grid sensible.
+        - Breakfast: light items, eggs, oats, yogurt, smoothies
+        - Lunch: salads, soups, sandwiches, bowls
+        - Dinner: hearty mains
+        - Snack: very small/side-like items
+        """
+        try:
+            t = (title or "").lower()
+            mt = (meal_type or "dinner").lower()
+            def any_kw(kws):
+                return any(k in t for k in kws)
+            if any_kw(["oat", "pancake", "waffle", "yogurt", "smoothie", "granola", "egg", "scramble", "toast"]):
+                return "breakfast"
+            if any_kw(["salad", "sandwich", "wrap", "soup", "bowl", "noodle", "pasta", "rice", "quinoa"]):
+                return "lunch"
+            if any_kw(["snack", "bar", "bites", "hummus", "guacamole"]) and not any_kw(["bowl", "salad", "soup", "plate"]):
+                return "snack"
+            if mt in ["breakfast", "lunch", "dinner", "snack"]:
+                return mt
+            # default to dinner for mains
+            return "dinner"
+        except Exception:
+            return meal_type or "dinner"
+    
+    def _infer_dietary_tags_from_ingredients(
+        self, 
+        ingredients: List[Dict[str, Any]], 
+        existing_tags: List[str] = None, 
+        title: str = ""
+    ) -> List[str]:
+        """Infer dietary tags from ingredient list"""
+        try:
+            if existing_tags is None:
+                existing_tags = []
+            
+            # Convert to set to avoid duplicates
+            tags = set(existing_tags)
+            
+            # Extract ingredient names (handle both dict and string formats)
+            ingredient_names = []
+            for ing in (ingredients or []):
+                if isinstance(ing, dict):
+                    name = ing.get('name', '') or ing.get('ingredient', '')
+                elif isinstance(ing, str):
+                    name = ing
+                else:
+                    continue
+                if name:
+                    ingredient_names.append(name.lower())
+            
+            # Combine with title for analysis
+            text = ' '.join(ingredient_names + [title.lower() if title else ''])
+            
+            # Define ingredient categories
+            meat_keywords = {'beef', 'pork', 'chicken', 'turkey', 'lamb', 'veal', 'duck', 'goose', 
+                           'bacon', 'ham', 'sausage', 'chorizo', 'pepperoni', 'salami', 'prosciutto',
+                           'ground beef', 'ground pork', 'ground turkey', 'ground lamb',
+                           'steak', 'roast', 'chop', 'cutlet', 'tenderloin', 'ribs', 'wings'}
+            
+            fish_seafood_keywords = {'fish', 'salmon', 'tuna', 'cod', 'halibut', 'mackerel', 'sardines',
+                                    'shrimp', 'prawns', 'crab', 'lobster', 'scallops', 'mussels', 'clams',
+                                    'oysters', 'squid', 'octopus', 'anchovies', 'caviar', 'roe',
+                                    'seafood', 'shellfish', 'crustacean', 'mollusk',
+                                    'mahi-mahi', 'mahi mahi', 'dolphinfish', 'swordfish', 'tilapia',
+                                    'trout', 'bass', 'perch', 'snapper', 'grouper', 'redfish'}
+            
+            dairy_keywords = {'milk', 'cream', 'butter', 'cheese', 'yogurt', 'sour cream', 'buttermilk',
+                            'heavy cream', 'half and half', 'whipping cream', 'mascarpone', 'ricotta',
+                            'mozzarella', 'cheddar', 'parmesan', 'feta', 'goat cheese', 'blue cheese'}
+            
+            egg_keywords = {'egg', 'eggs', 'egg white', 'egg yolk', 'whole egg', 'beaten egg'}
+            
+            gluten_keywords = {'wheat', 'flour', 'bread', 'pasta', 'noodles', 'couscous', 'bulgur',
+                             'barley', 'rye', 'oats', 'spelt', 'kamut', 'semolina',
+                             'breadcrumbs', 'panko', 'crackers', 'cereal', 'granola'}
+            
+            nut_keywords = {'almond', 'walnut', 'pecan', 'hazelnut', 'pistachio', 'cashew',
+                          'brazil nut', 'macadamia', 'pine nut', 'peanut', 'peanut butter',
+                          'almond butter', 'nut butter', 'nuts'}
+            
+            # CRITICAL FIX: Sesame is NOT nut-free (it's a seed allergen often grouped with nuts)
+            sesame_keywords = {'sesame', 'sesame oil', 'sesame seed', 'sesame seeds', 'tahini'}
+            
+            soy_keywords = {'soy', 'soybean', 'tofu', 'tempeh', 'miso', 'soy sauce', 'tamari',
+                          'soy milk', 'soy yogurt', 'soy cheese', 'edamame', 'soy protein'}
+            
+            # Check for ingredients
+            has_meat = any(any(kw in ing for kw in meat_keywords) for ing in ingredient_names)
+            has_fish = any(any(kw in ing for kw in fish_seafood_keywords) for ing in ingredient_names)
+            has_dairy = any(any(kw in ing for kw in dairy_keywords) for ing in ingredient_names)
+            has_eggs = any(any(kw in ing for kw in egg_keywords) for ing in ingredient_names)
+            has_gluten = any(any(kw in ing for kw in gluten_keywords) for ing in ingredient_names)
+            has_nuts = any(any(kw in ing for kw in nut_keywords) for ing in ingredient_names)
+            has_sesame = any(any(kw in ing for kw in sesame_keywords) for ing in ingredient_names)
+            has_soy = any(any(kw in ing for kw in soy_keywords) for ing in ingredient_names)
+            
+            # CRITICAL FIX: Vegetarian means NO animal products (including eggs)
+            # Only add vegetarian if there's no meat, fish, OR eggs
+            # Also remove vegetarian from existing tags if eggs are present
+            if has_eggs:
+                tags.discard('vegetarian')  # Remove vegetarian if eggs are present
+                tags.discard('vegan')  # Also remove vegan if eggs are present
+            
+            if not has_meat and not has_fish and not has_eggs:
+                tags.add('vegetarian')
+                # Vegan means no animal products at all (no meat, fish, eggs, dairy)
+                if not has_dairy:
+                    tags.add('vegan')
+            
+            if not has_gluten:
+                tags.add('gluten-free')
+            
+            if not has_dairy:
+                tags.add('dairy-free')
+            
+            # CRITICAL FIX: Nut-free means NO nuts AND NO sesame (sesame is a seed allergen)
+            if not has_nuts and not has_sesame:
+                tags.add('nut-free')
+            
+            if not has_soy:
+                tags.add('soy-free')
+            
+            # Add allergen warnings
+            if has_dairy:
+                tags.add('contains-dairy')
+            if has_eggs:
+                tags.add('contains-eggs')
+            if has_gluten:
+                tags.add('contains-gluten')
+            if has_nuts:
+                tags.add('contains-tree-nuts')
+            if has_sesame:
+                tags.add('contains-sesame')
+            if has_soy:
+                tags.add('contains-soy')
+            if has_fish:
+                tags.add('contains-fish')
+            
+            return sorted(list(tags))
+            
+        except Exception as e:
+            logger.warning(f"Error inferring dietary tags: {e}")
+            return existing_tags or []
     
     def adjust_recipe_portions(self, recipe: Recipe, new_servings: float) -> Dict[str, Any]:
         """
         Adjust recipe ingredients and nutrition for different serving sizes
+        All ingredient quantities are automatically recalculated and standardized
         
         Args:
             recipe: Recipe object
             new_servings: New number of servings
             
         Returns:
-            Dictionary with adjusted recipe data
+            Dictionary with adjusted recipe data (standardized measurements)
         """
         try:
-            original_servings = recipe.servings
+            original_servings = recipe.servings or 1.0
             multiplier = new_servings / original_servings
             
-            # Adjust ingredients
+            # Adjust ingredients with automatic standardization
             adjusted_ingredients = []
             for ri in recipe.ingredients:
-                adjusted_quantity = ri.quantity * multiplier
+                original_qty = ri.quantity
+                original_unit = ri.unit or 'g'
+                
+                # Calculate adjusted quantity
+                adjusted_quantity = original_qty * multiplier
+                
+                # Standardize measurement (ensures grams/ml/piece)
+                standardized = self.measurement_service.standardize_ingredient_measurement(
+                    ri.ingredient.name if ri.ingredient else "Unknown",
+                    adjusted_quantity,
+                    original_unit
+                )
+                
                 adjusted_ingredients.append({
                     "ingredient_id": ri.ingredient_id,
                     "name": ri.ingredient.name if ri.ingredient else "Unknown",
-                    "quantity": round(adjusted_quantity, 2),
-                    "unit": ri.unit,
-                    "original_quantity": ri.quantity,
-                    "multiplier": round(multiplier, 2)
+                    "quantity": round(standardized['standardized_quantity'], 2),
+                    "unit": standardized['standardized_unit'],  # Standardized (g/ml/piece)
+                    "original_quantity": original_qty,
+                    "original_unit": original_unit,
+                    "multiplier": round(multiplier, 2),
+                    "measurement_type": standardized.get('measurement_type', 'weight')
                 })
             
             # Adjust nutrition (assuming we have calculated nutrition)
@@ -268,6 +430,40 @@ class NutritionService:
         except Exception as e:
             logger.error(f"Error standardizing recipe measurements: {str(e)}")
             return recipe_data
+
+    def _standardize_and_clean_ai_recipe(self, recipe_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Convert imperial units to metric (g/ml/kg) and drop generic placeholders.
+        Preserves original text as original_text per ingredient.
+        """
+        ingredients = recipe_data.get("ingredients", []) or []
+        cleaned: List[Dict[str, Any]] = []
+        generic_terms = {"protein", "vegetables", "veggies", "spices", "herbs", "dried fruits", "sauce"}
+        for item in ingredients:
+            try:
+                name = str((item or {}).get("name", "")).strip()
+                if not name or name.lower() in generic_terms:
+                    continue
+                qty = (item or {}).get("quantity", None)
+                unit = (item or {}).get("unit", "")
+                original_text = f"{name} - {qty}{unit}"
+                std = self.standardize_ingredient_measurement(name, float(qty or 0), str(unit))
+                std_qty = std.get("standardized_quantity", qty)
+                std_unit = std.get("standardized_unit", unit)
+                if std_unit == "g" and isinstance(std_qty, (int, float)) and std_qty >= 1000:
+                    std_qty = round(std_qty / 1000.0, 3)
+                    std_unit = "kg"
+                cleaned.append({
+                    "name": name,
+                    "quantity": std_qty,
+                    "unit": std_unit,
+                    "original_text": original_text
+                })
+            except Exception:
+                if item:
+                    item["original_text"] = f"{item.get('name','')} - {item.get('quantity','')}{item.get('unit','')}"
+                    cleaned.append(item)
+        recipe_data["ingredients"] = cleaned
+        return recipe_data
     
     def standardize_ingredient_measurement(self, ingredient_name: str, quantity: float, unit: str) -> Dict[str, Any]:
         """
@@ -446,24 +642,25 @@ class NutritionService:
         recommendations = []
         
         if activity_level == "sedentary":
-            recommendations.extend([
+            level_recs = [
                 "Space meals 4-5 hours apart for better digestion",
                 "Avoid eating 2-3 hours before bedtime",
                 "Consider smaller, more frequent meals"
-            ])
+            ]
         elif activity_level in ["lightly_active", "moderately_active"]:
-            recommendations.extend([
+            level_recs = [
                 "Maintain consistent meal times",
                 "Eat within 1 hour of waking up",
                 "Have dinner 3-4 hours before bedtime"
-            ])
+            ]
         else:  # very_active or extremely_active
-            recommendations.extend([
+            level_recs = [
                 "Eat within 30 minutes of waking up",
                 "Include pre and post-workout nutrition",
                 "Consider 5-6 smaller meals throughout the day",
                 "Stay hydrated between meals"
-            ])
+            ]
+        recommendations.extend(level_recs)
         
         return recommendations
     
@@ -716,8 +913,10 @@ class NutritionService:
             }
             
             # Override with request preferences if provided
-            if plan_request.preferences_override:
-                for key, value in plan_request.preferences_override.items():
+            # preferences_override may not exist on some request types
+            override_prefs = getattr(plan_request, 'preferences_override', None)
+            if override_prefs:
+                for key, value in override_prefs.items():
                     if value is not None:
                         enhanced_preferences[key] = value
             
@@ -812,95 +1011,673 @@ class NutritionService:
                     db, user_id, existing_plan.id, "regenerate_plan", "New meal plan generated"
                 )
                 if new_plan_id:
-                    # Update the existing plan with new data
-                    existing_plan.id = new_plan_id
-                    existing_plan.version = meal_plan_versioning_service._increment_version(existing_plan.version)
-                    meal_plan = existing_plan
+                    # Load the newly created versioned plan instead of mutating the primary key
+                    meal_plan = db.query(MealPlan).filter(MealPlan.id == new_plan_id).first()
+                    should_add = False
                 else:
                     # Fallback to creating new plan
                     import time
                     unique_id = f"mp_{user_id}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}_{int(time.time() * 1000) % 10000}"
+                    # Normalize weekly plan dates to start on Monday before saving
+                    normalized_start = plan_request.start_date
+                    normalized_end = plan_request.end_date
+                    try:
+                        if plan_request.plan_type == 'weekly':
+                            from datetime import timedelta, datetime as _dt
+                            _sd = plan_request.start_date if isinstance(plan_request.start_date, _dt) else _dt.combine(plan_request.start_date, _dt.min.time())
+                            monday_date = (_sd + timedelta(days=-_sd.weekday())).date()
+                            normalized_start = monday_date
+                            normalized_end = monday_date + timedelta(days=6)
+                    except Exception:
+                        pass
+
                     meal_plan = MealPlan(
                         id=unique_id,
                         user_id=user_id,
                         plan_type=plan_request.plan_type,
-                        start_date=plan_request.start_date,
-                        end_date=plan_request.end_date,
+                        start_date=normalized_start,
+                        end_date=normalized_end,
                         version="1.0",
                         generation_strategy={"strategy": "balanced"},
                         ai_model_used="gpt-3.5-turbo"
                     )
+                    should_add = True
             else:
                 # Create new meal plan record with unique ID
                 import time
                 unique_id = f"mp_{user_id}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}_{int(time.time() * 1000) % 10000}"
+                # Normalize weekly plan dates to start on Monday before saving
+                normalized_start = plan_request.start_date
+                normalized_end = plan_request.end_date
+                try:
+                    if plan_request.plan_type == 'weekly':
+                        from datetime import timedelta, datetime as _dt
+                        _sd = plan_request.start_date if isinstance(plan_request.start_date, _dt) else _dt.combine(plan_request.start_date, _dt.min.time())
+                        monday_date = (_sd + timedelta(days=-_sd.weekday())).date()
+                        normalized_start = monday_date
+                        normalized_end = monday_date + timedelta(days=6)
+                except Exception:
+                    pass
+
                 meal_plan = MealPlan(
                     id=unique_id,
                     user_id=user_id,
                     plan_type=plan_request.plan_type,
-                    start_date=plan_request.start_date,
-                    end_date=plan_request.end_date,
+                    start_date=normalized_start,
+                    end_date=normalized_end,
                     version="1.0",
                     generation_strategy={"strategy": "balanced"},
                     ai_model_used="gpt-3.5-turbo"
                 )
-            db.add(meal_plan)
-            db.flush()
+                should_add = True
+            if 'should_add' in locals() and should_add:
+                db.add(meal_plan)
+                db.flush()
+            else:
+                # Ensure the loaded plan is attached and up-to-date
+                db.flush()
             
             # Create meals and recipes
             # Handle AI output structure - meals can be nested
             meal_plan_data = ai_meal_plan.get("meal_plan", {})
-            
-            # Handle nested structure from AI
-            if "meal_plan" in meal_plan_data and isinstance(meal_plan_data["meal_plan"], list):
-                # AI returns: {"meal_plan": {"meal_plan": [{"meals": [...]}]}}
-                meals_data = []
-                for day_plan in meal_plan_data["meal_plan"]:
-                    if "meals" in day_plan:
-                        meals_data.extend(day_plan["meals"])
-            else:
-                # Direct structure: {"meal_plan": {"meals": [...]}}
-                meals_data = meal_plan_data.get("meals", [])
-            
-            for meal_data in meals_data:
-                    # Extract nutrition data from recipe if available
-                    recipe_data = meal_data.get("recipe", {})
-                    nutrition_data = recipe_data.get("nutrition", {})
+            weekly_plan_data = ai_meal_plan.get("weekly_meal_plan", {})
+
+            # If we have a weekly plan, assign meals across the 7 days starting at start_date
+            if weekly_plan_data and "weekly_plan" in weekly_plan_data:
+                from datetime import timedelta
+                from ai.fallback_recipes import fallback_generator
+                
+                # Determine base meal types from user preferences or default to 4
+                # Guard: plan_request may not have preferences_override
+                _override = getattr(plan_request, 'preferences_override', None)
+                meals_per_day = (_override.get('meals_per_day', 4) if isinstance(_override, dict) else 4)
+                def build_meal_types(meals_per_day: int) -> list:
+                    if meals_per_day <= 3:
+                        return ['breakfast','lunch','dinner']
+                    if meals_per_day == 4:
+                        return ['breakfast','lunch','dinner','snack']
+                    return ['breakfast','snack','lunch','snack','dinner']
+                base_types = build_meal_types(meals_per_day)
+                _override = getattr(plan_request, 'preferences_override', None)
+                # Calculate target calories per meal from daily target (default 2000 kcal/day)
+                daily_target = (_override.get('daily_calorie_target', 2000) if isinstance(_override, dict) else 2000) if _override else 2000
+                target_calories = int(daily_target / max(1, len(base_types)))
+                
+                for day_index, day_plan in enumerate(weekly_plan_data["weekly_plan"]):
+                    meal_date_for_day = plan_request.start_date + timedelta(days=day_index)
                     
-                    # Create meal
+                    # CRITICAL: Ensure every day has all required meals
+                    day_meals = day_plan.get("meals", []) if day_plan else []
+                    used_names = [m.get('meal_name', '') for m in day_meals]
+                    
+                    # CRITICAL FIX: Fill missing meal types for this day
+                    # First, ensure meal_type is set on all existing meals
+                    for meal_data in day_meals:
+                        if not meal_data.get('meal_type'):
+                            # Try to infer from meal name or default
+                            meal_name_lower = (meal_data.get('meal_name') or '').lower()
+                            if any(word in meal_name_lower for word in ['breakfast', 'morning', 'cereal', 'oatmeal', 'pancake', 'waffle', 'egg']):
+                                meal_data['meal_type'] = 'breakfast'
+                            elif any(word in meal_name_lower for word in ['lunch', 'noon', 'salad', 'sandwich']):
+                                meal_data['meal_type'] = 'lunch'
+                            elif any(word in meal_name_lower for word in ['snack', 'hummus', 'trail', 'nuts']):
+                                meal_data['meal_type'] = 'snack'
+                            else:
+                                meal_data['meal_type'] = 'dinner'  # Default
+                    
+                    meal_types_present = {m.get('meal_type', '').strip() for m in day_meals if m.get('meal_type')}
+                    missing_types = [mt for mt in base_types if mt not in meal_types_present]
+                    
+                    # CRITICAL: Ensure we have exactly len(base_types) meals for this day
+                    for mt in missing_types:
+                        # Generate fallback meal for missing type
+                        logger.warning(f"⚠️ Missing {mt} for day {day_index+1} ({meal_date_for_day}) - generating fallback")
+                        fallback = fallback_generator.generate_unique_recipe(mt, target_calories, 'International', used_names)
+                        if 'recipe' not in fallback:
+                            fallback['recipe'] = {}
+                        # CRITICAL: Set meal_type explicitly
+                        fallback['meal_type'] = mt
+                        # CRITICAL: Detect AI-only mode from existing meals
+                        ai_count_day = sum(1 for m in day_meals if (m.get('recipe') or {}).get('ai_generated') == True)
+                        db_count_day = len(day_meals) - ai_count_day
+                        is_ai_only_day = db_count_day == 0 and ai_count_day > 0
+                        if is_ai_only_day:
+                            # AI-ONLY MODE: Mark fallback as AI
+                            fallback['recipe']['ai_generated'] = True
+                            fallback['recipe']['database_source'] = False
+                            fallback['ai_generated'] = True
+                        else:
+                            # 50/50 MODE: Maintain balance - check current day balance
+                            current_ai_count = sum(1 for m in day_meals if (m.get('recipe') or {}).get('ai_generated') == True)
+                            target_ai = len(base_types) // 2
+                            if current_ai_count < target_ai:
+                                fallback['recipe']['ai_generated'] = True
+                                fallback['recipe']['database_source'] = False
+                            else:
+                                fallback['recipe']['ai_generated'] = False
+                                fallback['recipe']['database_source'] = True
+                        day_meals.append(fallback)
+                        used_names.append(fallback.get('meal_name', ''))
+                    
+                    # CRITICAL: Final validation - ensure we have exactly len(base_types) meals
+                    if len(day_meals) < len(base_types):
+                        logger.error(f"❌ CRITICAL: Day {day_index+1} ({meal_date_for_day}) only has {len(day_meals)} meals but need {len(base_types)} - filling remaining")
+                        meal_types_present_now = {m.get('meal_type', '').strip() for m in day_meals if m.get('meal_type')}
+                        for mt in base_types:
+                            if mt not in meal_types_present_now:
+                                logger.error(f"❌ Still missing {mt} for day {day_index+1} - generating emergency fallback")
+                                fallback = fallback_generator.generate_unique_recipe(mt, target_calories, 'International', used_names)
+                                if 'recipe' not in fallback:
+                                    fallback['recipe'] = {}
+                                fallback['meal_type'] = mt
+                                # CRITICAL: Detect AI-only mode from existing meals
+                                ai_count_emergency = sum(1 for m in day_meals if (m.get('recipe') or {}).get('ai_generated') == True)
+                                db_count_emergency = len(day_meals) - ai_count_emergency
+                                is_ai_only_emergency = db_count_emergency == 0 and ai_count_emergency > 0
+                                if is_ai_only_emergency:
+                                    # AI-ONLY MODE: Mark fallback as AI
+                                    fallback['recipe']['ai_generated'] = True
+                                    fallback['recipe']['database_source'] = False
+                                    fallback['ai_generated'] = True
+                                else:
+                                    # 50/50 MODE: Balance AI/DB
+                                    current_ai = sum(1 for m in day_meals if (m.get('recipe') or {}).get('ai_generated') == True)
+                                    if current_ai < len(base_types) // 2:
+                                        fallback['recipe']['ai_generated'] = True
+                                        fallback['recipe']['database_source'] = False
+                                    else:
+                                        fallback['recipe']['ai_generated'] = False
+                                        fallback['recipe']['database_source'] = True
+                                day_meals.append(fallback)
+                                used_names.append(fallback.get('meal_name', ''))
+                    
+                    # CRITICAL: Final check before processing
+                    if len(day_meals) != len(base_types):
+                        logger.error(f"❌❌❌ FATAL: Day {day_index+1} ({meal_date_for_day}) has {len(day_meals)} meals but need {len(base_types)} - THIS SHOULD NOT HAPPEN")
+                    
+                    # Process all meals for this day (including filled ones)
+                    for meal_data in day_meals:
+                        recipe_data = meal_data.get("recipe", {})
+                        # If missing detailed recipe, synthesize one quickly
+                        if not recipe_data:
+                            try:
+                                # Use target_calories from context or estimate from meal type
+                                meal_type_for_gen = meal_data.get('meal_type', 'dinner')
+                                default_cal_by_type = {'breakfast': 400, 'lunch': 500, 'dinner': 600, 'snack': 200}
+                                meal_target_cal = meal_data.get('calories') or default_cal_by_type.get(meal_type_for_gen, 500)
+                                # Use sequential RAG method (task.md compliant) with fast fallback
+                                try:
+                                    quick_meal = self.nutrition_ai._generate_single_meal_with_sequential_rag({
+                                        'meal_type': meal_type_for_gen,
+                                        'target_calories': int(meal_target_cal),
+                                        'target_cuisine': meal_data.get('cuisine') or 'International',
+                                        'user_preferences': {},
+                                        'existing_meals': []
+                                    }, db)
+                                except Exception:
+                                    # Fallback to fast generation if sequential fails
+                                    quick_meal = self.nutrition_ai._generate_single_meal_fast({
+                                        'meal_type': meal_type_for_gen,
+                                        'target_calories': int(meal_target_cal),
+                                        'target_cuisine': meal_data.get('cuisine') or 'International',
+                                        'user_preferences': {},
+                                        'existing_meals': []
+                                    })
+                                recipe_data = quick_meal.get('recipe', {}) or {}
+                                # CRITICAL: Ensure AI flag is set on quick-generated meals
+                                if 'recipe' not in quick_meal:
+                                    quick_meal['recipe'] = {}
+                                if 'recipe' not in recipe_data:
+                                    recipe_data = quick_meal.get('recipe', {}) or {}
+                                # Quick meals are always AI-generated
+                                recipe_data['ai_generated'] = True
+                                recipe_data['database_source'] = False
+                                # backfill nutrition onto meal_data for totals
+                                if 'nutrition' in recipe_data:
+                                    nd = recipe_data['nutrition']
+                                    meal_data['calories'] = nd.get('calories', meal_data.get('calories', 0))
+                                    meal_data['protein'] = nd.get('protein', meal_data.get('protein', 0))
+                                    meal_data['carbs'] = nd.get('carbs', meal_data.get('carbs', 0))
+                                    meal_data['fats'] = nd.get('fats', meal_data.get('fats', 0))
+                            except Exception:
+                                recipe_data = {}
+
+                        # Sanitize meal type and dietary tags
+                        sanitized_meal_type = self._sanitize_meal_type(
+                            meal_data.get("meal_type", "dinner"),
+                            recipe_data.get("title", meal_data.get("meal_name", "")),
+                            recipe_data.get("ingredients", [])
+                        )
+                        corrected_tags = self._infer_dietary_tags_from_ingredients(
+                            recipe_data.get("ingredients", []),
+                            recipe_data.get("dietary_tags", []),
+                            recipe_data.get("title", meal_data.get("meal_name", ""))
+                        )
+                        recipe_data["dietary_tags"] = corrected_tags
+                        
+                        nutrition_data = recipe_data.get("nutrition", {})
+                        servings = recipe_data.get("servings", 1) or 1
+                        # Estimate if nutrition missing or zeros
+                        if not nutrition_data or all(not nutrition_data.get(k) for k in ["calories","protein","carbs","fats"]):
+                            nutrition_data = self._estimate_nutrition_from_ingredients(recipe_data.get("ingredients", []))
+                            recipe_data["nutrition"] = nutrition_data
+                        
+                        # CRITICAL FIX: Ensure nutrition is PER-SERVING, not total
+                        # If nutrition looks like total (> 500 cal and servings > 1), divide by servings
+                        if nutrition_data.get("calories") and servings > 1 and nutrition_data.get("calories", 0) > 500:
+                            # Likely total calories, convert to per-serving
+                            nutrition_data["per_serving_calories"] = int(nutrition_data["calories"] / servings)
+                            nutrition_data["per_serving_protein"] = round(nutrition_data.get("protein", 0) / servings, 1)
+                            nutrition_data["per_serving_carbs"] = round(nutrition_data.get("carbs", 0) / servings, 1)
+                            nutrition_data["per_serving_fats"] = round(nutrition_data.get("fats", 0) / servings, 1)
+                            # Update main values to per-serving
+                            nutrition_data["calories"] = nutrition_data["per_serving_calories"]
+                            nutrition_data["protein"] = nutrition_data["per_serving_protein"]
+                            nutrition_data["carbs"] = nutrition_data["per_serving_carbs"]
+                            nutrition_data["fats"] = nutrition_data["per_serving_fats"]
+                        else:
+                            # Ensure per-serving fields exist
+                            nutrition_data["per_serving_calories"] = nutrition_data.get("calories", 0)
+                            nutrition_data["per_serving_protein"] = nutrition_data.get("protein", 0)
+                            nutrition_data["per_serving_carbs"] = nutrition_data.get("carbs", 0)
+                            nutrition_data["per_serving_fats"] = nutrition_data.get("fats", 0)
+                        
+                        # CRITICAL: Preserve AI flag from recipe_data - don't override it!
+                        # The flag should already be correctly set from hybrid generator
+                        if recipe_data:
+                            # Check if flag exists - if missing, infer from database_source
+                            if "ai_generated" not in recipe_data:
+                                # Only infer if flag is missing - preserve explicit flags
+                                has_database_source = recipe_data.get("database_source", False)
+                                recipe_data["ai_generated"] = not bool(has_database_source)
+                            # Ensure database_source is consistent
+                            if "database_source" not in recipe_data:
+                                recipe_data["database_source"] = not bool(recipe_data.get("ai_generated", False))
+
+                        if recipe_data.get("ai_generated", False):
+                            try:
+                                # CRITICAL FIX: Ensure recipe_data is a dict, not a string
+                                if isinstance(recipe_data, str):
+                                    import json
+                                    try:
+                                        recipe_data = json.loads(recipe_data)
+                                    except:
+                                        logger.error(f"Failed to parse recipe_data as JSON when creating recipe")
+                                        recipe_data = {}
+                                if not isinstance(recipe_data, dict):
+                                    logger.error(f"recipe_data is not a dict when creating recipe, got {type(recipe_data)}")
+                                    recipe_data = {}
+                                
+                                # Ensure meal_type is present on recipe for persistence
+                                recipe_data.setdefault("meal_type", sanitized_meal_type)
+                                created_recipe = self._create_recipe_from_ai(db, recipe_data)
+                                if created_recipe:
+                                    recipe_data["database_source"] = False
+                                    recipe_data["title"] = created_recipe.title or recipe_data.get("title")
+                            except Exception as _:
+                                pass
+
+                        # Use PER-SERVING calories for meal
+                        meal_calories = nutrition_data.get("per_serving_calories") or nutrition_data.get("calories", 0)
+                        meal_protein = nutrition_data.get("per_serving_protein") or nutrition_data.get("protein", 0)
+                        meal_carbs = nutrition_data.get("per_serving_carbs") or nutrition_data.get("carbs", 0)
+                        meal_fats = nutrition_data.get("per_serving_fats") or nutrition_data.get("fats", 0)
+                        
+                        # CRITICAL: Ensure meal_type is set - if not, use sanitized_meal_type or fallback
+                        final_meal_type = sanitized_meal_type or meal_data.get('meal_type') or 'dinner'
+                        if not final_meal_type or final_meal_type.strip() not in ['breakfast', 'lunch', 'dinner', 'snack']:
+                            logger.warning(f"⚠️ Invalid meal_type '{final_meal_type}' for meal '{meal_data.get('meal_name')}' on day {day_index+1}, defaulting to 'dinner'")
+                            final_meal_type = 'dinner'
+                        else:
+                            final_meal_type = final_meal_type.strip()
+                        
+                        try:
+                            # CRITICAL: Check if meal already exists to prevent duplicates
+                            existing_meal = db.query(MealPlanMeal).filter(
+                                MealPlanMeal.meal_plan_id == meal_plan.id,
+                                MealPlanMeal.meal_date == meal_date_for_day,
+                                MealPlanMeal.meal_type == final_meal_type
+                            ).first()
+                            
+                            if existing_meal:
+                                # Update existing meal instead of creating duplicate
+                                logger.warning(f"⚠️ Meal already exists for day {day_index+1} ({meal_date_for_day}), type {final_meal_type} - updating instead of creating duplicate")
+                                meal = existing_meal
+                                meal.meal_name = meal_data.get("meal_name", recipe_data.get("title", "Meal"))
+                                meal.calories = meal_calories
+                                meal.protein = meal_protein
+                                meal.carbs = meal_carbs
+                                meal.fats = meal_fats
+                            else:
+                                # Create new meal
+                                meal = MealPlanMeal(
+                                    meal_plan_id=meal_plan.id,
+                                    meal_date=meal_date_for_day,
+                                    meal_type=final_meal_type,
+                                    meal_name=meal_data.get("meal_name", recipe_data.get("title", "Meal")),
+                                    calories=meal_calories,  # PER-SERVING
+                                    protein=meal_protein,
+                                    carbs=meal_carbs,
+                                    fats=meal_fats
+                                )
+                                db.add(meal)
+                            db.flush()
+                            
+                            # CRITICAL: Verify meal was added
+                            if not meal.id:
+                                logger.error(f"❌ Meal not properly added for day {day_index+1} ({meal_date_for_day}), type {final_meal_type}, name: {meal.meal_name}")
+                            else:
+                                logger.debug(f"✅ Added meal: Day {day_index+1}, {final_meal_type}, {meal.meal_name}, ID: {meal.id}")
+                        except Exception as meal_err:
+                            logger.error(f"❌ ERROR adding meal for day {day_index+1} ({meal_date_for_day}), type {final_meal_type}: {meal_err}")
+                            # Try to continue with next meal
+                            continue
+                        if recipe_data:
+                            # CRITICAL: Ensure ai_generated flag is explicitly set in recipe_details
+                            # Default to AI (True) in AI-only mode if flag is missing
+                            ai_flag_raw = recipe_data.get("ai_generated")
+                            # Check if explicitly set (True or False), or if we need to infer
+                            if ai_flag_raw is None or ai_flag_raw not in [True, False]:
+                                # Flag is missing - check if database_source is explicitly True
+                                has_explicit_db = recipe_data.get("database_source", False) == True
+                                if has_explicit_db:
+                                    ai_flag = False  # Explicitly marked as database
+                                    logger.debug(f"🔧 Inferred ai_generated=False for meal '{meal_data.get('meal_name')}' (has explicit database_source=True)")
+                                else:
+                                    # No explicit flags - default to AI (AI-only mode)
+                                    ai_flag = True
+                                    logger.warning(f"⚠️ Missing ai_generated flag for meal '{meal_data.get('meal_name')}' - defaulting to AI (True) in AI-only mode")
+                            else:
+                                ai_flag = bool(ai_flag_raw)
+                            
+                            # Ensure flags are consistent
+                            if ai_flag:
+                                recipe_data["ai_generated"] = True
+                                recipe_data["database_source"] = False
+                            else:
+                                recipe_data["ai_generated"] = False
+                                recipe_data["database_source"] = True
+                            
+                            meal.recipe_details = {
+                                "title": recipe_data.get("title", meal_data.get("meal_name", "Meal")),
+                                "cuisine": recipe_data.get("cuisine", ""),
+                                "prep_time": recipe_data.get("prep_time", 0),
+                                "cook_time": recipe_data.get("cook_time", 0),
+                                "servings": servings,
+                                "difficulty": recipe_data.get("difficulty", "easy"),
+                                "ingredients": recipe_data.get("ingredients", []),
+                                "instructions": recipe_data.get("instructions", []),
+                                "dietary_tags": recipe_data.get("dietary_tags", []),
+                                "nutrition": nutrition_data,
+                                "ai_generated": ai_flag,  # Explicitly set AI flag
+                                "database_source": not ai_flag  # Explicitly set database flag
+                            }
+                            logger.debug(f"💾 Saved meal '{meal_data.get('meal_name')}' with ai_generated={ai_flag}, database_source={not ai_flag}")
+                            meal.cuisine = recipe_data.get("cuisine", "")
+            else:
+                # Handle non-weekly structures by defaulting all meals to start_date
+                meals_data = []
+                if "meal_plan" in meal_plan_data and isinstance(meal_plan_data["meal_plan"], list):
+                    for day_plan in meal_plan_data["meal_plan"]:
+                        if "meals" in day_plan:
+                            meals_data.extend(day_plan["meals"])
+                else:
+                    meals_data = meal_plan_data.get("meals", [])
+
+                for meal_data in meals_data:
+                    recipe_data = meal_data.get("recipe", {})
+                    # If missing detailed recipe, synthesize one quickly
+                    if not recipe_data:
+                        try:
+                            # Use target_calories from context or estimate from meal type
+                            meal_type_for_gen = meal_data.get('meal_type', 'dinner')
+                            default_cal_by_type = {'breakfast': 400, 'lunch': 500, 'dinner': 600, 'snack': 200}
+                            meal_target_cal = meal_data.get('calories') or default_cal_by_type.get(meal_type_for_gen, 500)
+                            # Use sequential RAG method (task.md compliant) with fast fallback
+                            try:
+                                quick_meal = self.nutrition_ai._generate_single_meal_with_sequential_rag({
+                                    'meal_type': meal_type_for_gen,
+                                    'target_calories': int(meal_target_cal),
+                                    'target_cuisine': meal_data.get('cuisine') or 'International',
+                                    'user_preferences': {},
+                                    'existing_meals': []
+                                }, db)
+                            except Exception:
+                                # Fallback to fast generation if sequential fails
+                                quick_meal = self.nutrition_ai._generate_single_meal_fast({
+                                    'meal_type': meal_type_for_gen,
+                                    'target_calories': int(meal_target_cal),
+                                    'target_cuisine': meal_data.get('cuisine') or 'International',
+                                    'user_preferences': {},
+                                    'existing_meals': []
+                                })
+                            recipe_data = quick_meal.get('recipe', {}) or {}
+                            # CRITICAL: Ensure AI flag is set on quick-generated meals
+                            if 'recipe' not in quick_meal:
+                                quick_meal['recipe'] = {}
+                            if 'recipe' not in recipe_data or not recipe_data:
+                                recipe_data = quick_meal.get('recipe', {}) or {}
+                            # Quick meals are always AI-generated
+                            recipe_data['ai_generated'] = True
+                            recipe_data['database_source'] = False
+                            if 'nutrition' in recipe_data:
+                                nd = recipe_data['nutrition']
+                                meal_data['calories'] = nd.get('calories', meal_data.get('calories', 0))
+                                meal_data['protein'] = nd.get('protein', meal_data.get('protein', 0))
+                                meal_data['carbs'] = nd.get('carbs', meal_data.get('carbs', 0))
+                                meal_data['fats'] = nd.get('fats', meal_data.get('fats', 0))
+                        except Exception:
+                            recipe_data = {}
+
+                    # Sanitize meal type and dietary tags
+                    sanitized_meal_type = self._sanitize_meal_type(
+                        meal_data.get("meal_type", "dinner"),
+                        recipe_data.get("title", meal_data.get("meal_name", "")),
+                        recipe_data.get("ingredients", [])
+                    )
+                    corrected_tags = self._infer_dietary_tags_from_ingredients(
+                        recipe_data.get("ingredients", []),
+                        recipe_data.get("dietary_tags", []),
+                        recipe_data.get("title", meal_data.get("meal_name", ""))
+                    )
+                    recipe_data["dietary_tags"] = corrected_tags
+                    nutrition_data = recipe_data.get("nutrition", {})
+                    servings = recipe_data.get("servings", 1) or 1
+                    # Estimate if nutrition missing or zeros
+                    if not nutrition_data or all(not nutrition_data.get(k) for k in ["calories","protein","carbs","fats"]):
+                        nutrition_data = self._estimate_nutrition_from_ingredients(recipe_data.get("ingredients", []))
+                        recipe_data["nutrition"] = nutrition_data
+                    
+                    # CRITICAL FIX: Ensure nutrition is PER-SERVING, not total
+                    if nutrition_data.get("calories") and servings > 1 and nutrition_data.get("calories", 0) > 500:
+                        # Likely total calories, convert to per-serving
+                        nutrition_data["per_serving_calories"] = int(nutrition_data["calories"] / servings)
+                        nutrition_data["per_serving_protein"] = round(nutrition_data.get("protein", 0) / servings, 1)
+                        nutrition_data["per_serving_carbs"] = round(nutrition_data.get("carbs", 0) / servings, 1)
+                        nutrition_data["per_serving_fats"] = round(nutrition_data.get("fats", 0) / servings, 1)
+                        nutrition_data["calories"] = nutrition_data["per_serving_calories"]
+                        nutrition_data["protein"] = nutrition_data["per_serving_protein"]
+                        nutrition_data["carbs"] = nutrition_data["per_serving_carbs"]
+                        nutrition_data["fats"] = nutrition_data["per_serving_fats"]
+                    else:
+                        nutrition_data["per_serving_calories"] = nutrition_data.get("calories", 0)
+                        nutrition_data["per_serving_protein"] = nutrition_data.get("protein", 0)
+                        nutrition_data["per_serving_carbs"] = nutrition_data.get("carbs", 0)
+                        nutrition_data["per_serving_fats"] = nutrition_data.get("fats", 0)
+                    
+                    # CRITICAL: Preserve AI flag from recipe_data - don't override it!
+                    # The flag should already be correctly set from hybrid generator
+                    if recipe_data:
+                        # Check if flag exists - if missing, infer from database_source
+                        if "ai_generated" not in recipe_data:
+                            # Only infer if flag is missing - preserve explicit flags
+                            has_database_source = recipe_data.get("database_source", False)
+                            recipe_data["ai_generated"] = not bool(has_database_source)
+                        # Ensure database_source is consistent
+                        if "database_source" not in recipe_data:
+                            recipe_data["database_source"] = not bool(recipe_data.get("ai_generated", False))
+
+                    if recipe_data.get("ai_generated", False):
+                        try:
+                            # CRITICAL FIX: Ensure recipe_data is a dict, not a string
+                            if isinstance(recipe_data, str):
+                                import json
+                                try:
+                                    recipe_data = json.loads(recipe_data)
+                                except:
+                                    logger.error(f"Failed to parse recipe_data as JSON when creating recipe")
+                                    recipe_data = {}
+                            if not isinstance(recipe_data, dict):
+                                logger.error(f"recipe_data is not a dict when creating recipe, got {type(recipe_data)}")
+                                recipe_data = {}
+                            
+                            recipe_data.setdefault("meal_type", sanitized_meal_type)
+                            created_recipe = self._create_recipe_from_ai(db, recipe_data)
+                            if created_recipe:
+                                recipe_data["database_source"] = False
+                                recipe_data["title"] = created_recipe.title or recipe_data.get("title")
+                        except Exception as _:
+                            pass
+
+                    # Use PER-SERVING calories for meal
+                    meal_calories = nutrition_data.get("per_serving_calories") or nutrition_data.get("calories", 0)
+                    meal_protein = nutrition_data.get("per_serving_protein") or nutrition_data.get("protein", 0)
+                    meal_carbs = nutrition_data.get("per_serving_carbs") or nutrition_data.get("carbs", 0)
+                    meal_fats = nutrition_data.get("per_serving_fats") or nutrition_data.get("fats", 0)
+                    
                     meal = MealPlanMeal(
                         meal_plan_id=meal_plan.id,
-                        meal_date=plan_request.start_date,  # Use start_date from plan_request
-                        meal_type=meal_data["meal_type"],
-                        meal_name=meal_data["meal_name"],
-                        calories=nutrition_data.get("calories", 0),
-                        protein=nutrition_data.get("protein", 0),
-                        carbs=nutrition_data.get("carbs", 0),
-                        fats=nutrition_data.get("fats", 0)
+                        meal_date=plan_request.start_date,
+                        meal_type=sanitized_meal_type,
+                        meal_name=meal_data.get("meal_name", recipe_data.get("title", "Meal")),
+                        calories=meal_calories,  # PER-SERVING
+                        protein=meal_protein,
+                        carbs=meal_carbs,
+                        fats=meal_fats
                     )
                     db.add(meal)
                     db.flush()
-                    
-                    # Store detailed recipe information in the meal record
-                    recipe_data = meal_data.get("recipe", {})
                     if recipe_data:
-                        # Store recipe details as JSON in the meal record
+                        # CRITICAL: Ensure ai_generated flag is explicitly set
+                        ai_flag = bool(recipe_data.get("ai_generated", False))
                         meal.recipe_details = {
-                            "title": recipe_data.get("title", meal_data["meal_name"]),
+                            "title": recipe_data.get("title", meal_data.get("meal_name", "Meal")),
                             "cuisine": recipe_data.get("cuisine", ""),
                             "prep_time": recipe_data.get("prep_time", 0),
                             "cook_time": recipe_data.get("cook_time", 0),
-                            "servings": recipe_data.get("servings", 1),
+                            "servings": servings,
                             "difficulty": recipe_data.get("difficulty", "easy"),
                             "ingredients": recipe_data.get("ingredients", []),
                             "instructions": recipe_data.get("instructions", []),
-                            "dietary_tags": recipe_data.get("dietary_tags", [])
+                            "dietary_tags": recipe_data.get("dietary_tags", []),
+                            "nutrition": nutrition_data,
+                            "ai_generated": ai_flag,  # Explicitly set AI flag
+                            "database_source": not ai_flag  # Explicitly set database flag
                         }
-                        # Also store cuisine directly in the meal record for easy access
                         meal.cuisine = recipe_data.get("cuisine", "")
             
+            # CRITICAL: Commit all meals to database
             db.commit()
             db.refresh(meal_plan)
+            
+            # CRITICAL: Verify meals were saved
+            saved_meals_count = db.query(MealPlanMeal).filter(
+                MealPlanMeal.meal_plan_id == meal_plan.id
+            ).count()
+            
+            # ROOT CAUSE FIX: Don't validate meal count for progressive meal plans (empty structure)
+            # Progressive generation starts empty and is filled one slot at a time
+            is_progressive_plan = False
+            generation_strategy = getattr(meal_plan, 'generation_strategy', None) or {}
+            if isinstance(generation_strategy, dict):
+                is_progressive_plan = generation_strategy.get('strategy') == 'progressive' or generation_strategy.get('mode') == 'empty_structure'
+            
+            # Only validate meal count for bulk-generated meal plans (not progressive)
+            if meal_plan.plan_type == 'weekly' and not is_progressive_plan:
+                expected_count = 28  # 7 days × 4 meals (default)
+                if saved_meals_count < expected_count:
+                    logger.warning(f"⚠️ Only saved {saved_meals_count}/{expected_count} meals for weekly meal plan {meal_plan.id}")
+                    # Try to count by meal_date to see distribution
+                    from sqlalchemy import func
+                    date_counts = db.query(
+                        MealPlanMeal.meal_date,
+                        func.count(MealPlanMeal.id).label('count')
+                    ).filter(
+                        MealPlanMeal.meal_plan_id == meal_plan.id
+                    ).group_by(MealPlanMeal.meal_date).all()
+                    logger.warning(f"   Date distribution: {dict(date_counts)}")
+                    
+                    # CRITICAL: Check which days/meal types are missing and fill them
+                    for day_idx in range(7):
+                        day_date = meal_plan.start_date + timedelta(days=day_idx)
+                        for meal_type in base_types:
+                            existing = db.query(MealPlanMeal).filter(
+                                MealPlanMeal.meal_plan_id == meal_plan.id,
+                                MealPlanMeal.meal_date == day_date,
+                                MealPlanMeal.meal_type == meal_type
+                            ).first()
+                            if not existing:
+                                logger.error(f"❌ MISSING MEAL: Day {day_idx+1} ({day_date}), type {meal_type} - generating emergency fallback")
+                                try:
+                                    from ai.fallback_recipes import fallback_generator
+                                    all_used = [m.meal_name for m in db.query(MealPlanMeal).filter(MealPlanMeal.meal_plan_id == meal_plan.id).all()]
+                                    fallback = fallback_generator.generate_unique_recipe(meal_type, target_calories, 'International', all_used)
+                                    if 'recipe' not in fallback:
+                                        fallback['recipe'] = {}
+                                    fallback['meal_type'] = meal_type
+                                    
+                                    # Create missing meal
+                                    # Use fallback calories, or estimate from meal type if missing
+                                    fallback_cal = fallback.get('calories')
+                                    if not fallback_cal or fallback_cal <= 0:
+                                        default_cal_by_type = {'breakfast': 400, 'lunch': 500, 'dinner': 600, 'snack': 200}
+                                        fallback_cal = default_cal_by_type.get(meal_type, 500)
+                                    missing_meal = MealPlanMeal(
+                                        meal_plan_id=meal_plan.id,
+                                        meal_date=day_date,
+                                        meal_type=meal_type,
+                                        meal_name=fallback.get('meal_name', f'{meal_type.title()} Meal'),
+                                        calories=fallback_cal,
+                                        protein=fallback.get('protein', 0),
+                                        carbs=fallback.get('carbs', 0),
+                                        fats=fallback.get('fats', 0)
+                                    )
+                                    db.add(missing_meal)
+                                    db.flush()
+                                    if fallback.get('recipe'):
+                                        missing_meal.recipe_details = fallback['recipe']
+                                    logger.info(f"✅ Created emergency fallback meal for day {day_idx+1}, {meal_type}")
+                                except Exception as fill_err:
+                                    logger.error(f"❌ Failed to create emergency fallback: {fill_err}")
+                    
+                    # Commit any emergency fixes
+                    db.commit()
+                    
+                    # Recheck count
+                    saved_meals_count = db.query(MealPlanMeal).filter(
+                        MealPlanMeal.meal_plan_id == meal_plan.id
+                    ).count()
+                    if saved_meals_count >= expected_count:
+                        logger.info(f"✅ After emergency fixes: {saved_meals_count} meals saved (expected {expected_count})")
+                    else:
+                        logger.error(f"❌❌❌ Still missing meals after emergency fixes: {saved_meals_count}/{expected_count}")
+                else:
+                    logger.info(f"✅ Saved {saved_meals_count} meals to database for meal plan {meal_plan.id} (expected {expected_count})")
+            else:
+                logger.info(f"✅ Saved {saved_meals_count} meals to database for meal plan {meal_plan.id}")
+            
+            # Reload meal plan with meals relationship using explicit query
+            # CRITICAL: Use joinedload to ensure all meals are loaded
+            from sqlalchemy.orm import joinedload
+            meal_plan = db.query(MealPlan).options(
+                joinedload(MealPlan.meals)
+            ).filter(MealPlan.id == meal_plan.id).first()
+            
+            # Verify meals are loaded
+            if meal_plan:
+                meals_loaded = len(list(meal_plan.meals)) if hasattr(meal_plan, 'meals') else 0
+                logger.info(f"✅ Reloaded meal plan {meal_plan.id} with {meals_loaded} meals in memory")
+            
             return meal_plan
             
         except Exception as e:
@@ -911,8 +1688,29 @@ class NutritionService:
     def _create_recipe_from_ai(self, db: Session, recipe_data: Dict[str, Any]) -> Optional[Recipe]:
         """Create recipe from AI-generated data"""
         try:
+            # CRITICAL FIX: Ensure recipe_data is a dict, not a string
+            if isinstance(recipe_data, str):
+                import json
+                try:
+                    recipe_data = json.loads(recipe_data)
+                except:
+                    logger.error(f"Failed to parse recipe_data as JSON: {recipe_data[:100] if len(str(recipe_data)) > 100 else recipe_data}")
+                    return None
+            if not isinstance(recipe_data, dict):
+                logger.error(f"recipe_data is not a dict, got {type(recipe_data)}: {recipe_data}")
+                return None
+            
+            # CRITICAL FIX: Generate unique recipe ID with more entropy
+            # Include timestamp (with microseconds), meal name hash, and random component
+            import time
+            import random
+            title_hash = hash(recipe_data.get('title', '') or '') % 10000
+            meal_type_hash = hash(recipe_data.get('meal_type', '') or '') % 1000
+            random_component = random.randint(1000, 9999)
+            unique_id = f"r_{datetime.utcnow().strftime('%Y%m%d_%H%M%S_%f')}_{title_hash}_{meal_type_hash}_{random_component}"
+            
             recipe = Recipe(
-                id=f"r_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}_{hash(recipe_data.get('title', '')) % 10000}",
+                id=unique_id,
                 title=recipe_data.get("title", "Generated Recipe"),
                 cuisine=recipe_data.get("cuisine", "International"),
                 meal_type=recipe_data.get("meal_type", "dinner"),
@@ -958,7 +1756,7 @@ class NutritionService:
                 db.flush()
             
             # Create recipe-ingredient relationship
-            from models.nutrition import RecipeIngredient
+            from models.recipe import RecipeIngredient
             recipe_ingredient = RecipeIngredient(
                 recipe_id=recipe_id,
                 ingredient_id=ingredient.id,
@@ -970,7 +1768,7 @@ class NutritionService:
     def _add_recipe_instructions(self, db: Session, recipe_id: str, instructions_data: List[Dict[str, Any]]):
         """Add instructions to recipe"""
         for i, inst_data in enumerate(instructions_data, 1):
-            from models.nutrition import RecipeInstruction
+            from models.recipe import RecipeInstruction
             instruction = RecipeInstruction(
                 recipe_id=recipe_id,
                 step_number=i,
@@ -1000,7 +1798,57 @@ class NutritionService:
         else:
             return "other"
     
-    def search_recipes(self, db: Session, search_request: RecipeSearchRequest) -> List[Recipe]:
+    def _vector_similarity_search(self, query_text: str, db: Session, limit: int = 50) -> List[Dict[str, Any]]:
+        """Fallback implementation when embedding service is unavailable.
+        Performs a simple text search over title/summary and returns top results.
+        """
+        try:
+            if not query_text:
+                return []
+            q = query_text.strip()
+            # Basic ranking heuristic: prefer title matches over summary
+            title_hits = db.query(Recipe).filter(
+                and_(Recipe.is_active == True, Recipe.title.ilike(f"%{q}%"))
+            ).limit(limit).all()
+            remaining = max(0, limit - len(title_hits))
+            summary_hits = []
+            if remaining > 0:
+                summary_hits = db.query(Recipe).filter(
+                    and_(Recipe.is_active == True, Recipe.summary.ilike(f"%{q}%"))
+                ).limit(remaining).all()
+            results = []
+            for r in title_hits + summary_hits:
+                results.append({
+                    "id": r.id,
+                    "title": r.title,
+                    "score": 1.0  # placeholder score
+                })
+            return results[:limit]
+        except Exception:
+            return []
+
+    def _calculate_recipe_nutrition(self, recipe: Recipe) -> None:
+        """Populate calculated_* fields on a Recipe for search sorting.
+        Uses per-serving macros when available; otherwise leaves zeros.
+        """
+        try:
+            # Prefer explicit per-serving fields if present
+            cal = getattr(recipe, 'per_serving_calories', None)
+            pro = getattr(recipe, 'per_serving_protein', None)
+            car = getattr(recipe, 'per_serving_carbs', None)
+            fat = getattr(recipe, 'per_serving_fat', None)
+
+            recipe.calculated_calories = float(cal or 0)
+            recipe.calculated_protein = float(pro or 0)
+            recipe.calculated_carbs = float(car or 0)
+            recipe.calculated_fats = float(fat or 0)
+        except Exception:
+            recipe.calculated_calories = 0.0
+            recipe.calculated_protein = 0.0
+            recipe.calculated_carbs = 0.0
+            recipe.calculated_fats = 0.0
+    
+    def search_recipes(self, db: Session, search_request: RecipeSearchRequest) -> Dict[str, Any]:
         """Search recipes with filters"""
         try:
             query = db.query(Recipe).filter(Recipe.is_active == True)
@@ -1192,18 +2040,18 @@ class NutritionService:
                 micronutrient_filters = search_request.micronutrient_filters
                 
                 # For now, we'll apply basic micronutrient filtering
-                # In a full implementation, you'd join with ingredient micronutrient data
-                for nutrient in micronutrient_filters.nutrients:
-                    min_value = micronutrient_filters.min_values.get(nutrient, 0)
-                    max_value = micronutrient_filters.max_values.get(nutrient, float('inf'))
-                    
-                    # This is a simplified approach - in reality you'd need to:
+                # In a full implementation, you'd need to:
                     # 1. Join with RecipeIngredient -> Ingredient tables
                     # 2. Sum up micronutrient values per recipe
                     # 3. Filter based on total micronutrient content
                     
                     # For demonstration, we'll filter by recipe ID patterns
                     # (This is just to show the structure - real implementation would be more complex)
+                if micronutrient_filters.nutrients:
+                    for nutrient in micronutrient_filters.nutrients:
+                        min_value = micronutrient_filters.min_values.get(nutrient, 0)
+                        max_value = micronutrient_filters.max_values.get(nutrient, float('inf'))
+                        
                     if nutrient == 'vitamin_d' and min_value > 0:
                         # Example: prioritize recipes with "salmon" or "fish" in title
                         query = query.filter(
@@ -1276,8 +2124,103 @@ class NutritionService:
             for recipe in all_recipes:
                 self._calculate_recipe_nutrition(recipe)
             
-            # Convert to response format
-            all_recipe_responses = [self._convert_recipe_to_response(recipe) for recipe in all_recipes]
+            # Convert to response format (inline to avoid dependency on missing helpers)
+            all_recipe_responses = []
+            for recipe in all_recipes:
+                # Serialize ingredients and instructions (ensure lists)
+                try:
+                    serialized_ingredients = [
+                        {
+                            "name": ri.ingredient.name,
+                            "quantity": ri.quantity,
+                            "unit": ri.unit
+                        }
+                        for ri in getattr(recipe, 'ingredients', [])
+                    ]
+                except Exception:
+                    serialized_ingredients = []
+                try:
+                    serialized_instructions = [
+                        {
+                            "step": instr.step_number,
+                            "description": instr.description
+                        }
+                        for instr in getattr(recipe, 'instructions', [])
+                    ]
+                except Exception:
+                    serialized_instructions = []
+
+                # Get servings - this is the source of truth for how many servings the recipe makes
+                recipe_servings = getattr(recipe, 'servings', 1) or 1
+                
+                # Get per-serving nutrition - these are the original values from the recipe
+                # These should be the authoritative source as recipes typically store per-serving values
+                per_serving_calories = getattr(recipe, 'per_serving_calories', None)
+                per_serving_protein = getattr(recipe, 'per_serving_protein', None)
+                per_serving_carbs = getattr(recipe, 'per_serving_carbs', None)
+                per_serving_fats = getattr(recipe, 'per_serving_fat', None) or getattr(recipe, 'per_serving_fats', None)
+                
+                # Calculate total recipe nutrition by multiplying per-serving by servings
+                # This ensures consistency: total = per_serving * servings
+                if per_serving_calories is not None:
+                    total_calories = per_serving_calories * recipe_servings
+                else:
+                    # Fallback to stored total if per-serving is missing
+                    total_calories = getattr(recipe, 'total_calories', None)
+                    # If we have total but not per-serving, calculate per-serving
+                    if total_calories and recipe_servings > 0:
+                        per_serving_calories = total_calories / recipe_servings
+                
+                if per_serving_protein is not None:
+                    total_protein = per_serving_protein * recipe_servings
+                else:
+                    total_protein = getattr(recipe, 'total_protein', None)
+                    if total_protein and recipe_servings > 0:
+                        per_serving_protein = total_protein / recipe_servings
+                
+                if per_serving_carbs is not None:
+                    total_carbs = per_serving_carbs * recipe_servings
+                else:
+                    total_carbs = getattr(recipe, 'total_carbs', None)
+                    if total_carbs and recipe_servings > 0:
+                        per_serving_carbs = total_carbs / recipe_servings
+                
+                if per_serving_fats is not None:
+                    total_fats = per_serving_fats * recipe_servings
+                else:
+                    total_fats = getattr(recipe, 'total_fat', None) or getattr(recipe, 'total_fats', None)
+                    if total_fats and recipe_servings > 0:
+                        per_serving_fats = total_fats / recipe_servings
+                
+                all_recipe_responses.append({
+                    "id": recipe.id,
+                    "title": recipe.title,
+                    "cuisine": recipe.cuisine,
+                    "meal_type": recipe.meal_type,
+                    "summary": recipe.summary,
+                    "servings": recipe_servings,
+                    "prep_time": getattr(recipe, 'prep_time', 0),
+                    "cook_time": getattr(recipe, 'cook_time', 0),
+                    "difficulty_level": getattr(recipe, 'difficulty_level', 'easy'),
+                    "dietary_tags": getattr(recipe, 'dietary_tags', []) or [],
+                    # Calculated fields (for sorting/search) - use per-serving
+                    "calculated_calories": float(per_serving_calories or 0),
+                    "calculated_protein": float(per_serving_protein or 0),
+                    "calculated_carbs": float(per_serving_carbs or 0),
+                    "calculated_fats": float(per_serving_fats or 0),
+                    # Total recipe nutrition
+                    "total_calories": float(total_calories or 0),
+                    "total_protein": float(total_protein or 0),
+                    "total_carbs": float(total_carbs or 0),
+                    "total_fats": float(total_fats or 0),
+                    # Per-serving nutrition
+                    "per_serving_calories": float(per_serving_calories or 0),
+                    "per_serving_protein": float(per_serving_protein or 0),
+                    "per_serving_carbs": float(per_serving_carbs or 0),
+                    "per_serving_fats": float(per_serving_fats or 0),
+                    "ingredients": serialized_ingredients,
+                    "instructions": serialized_instructions,
+                })
             
             # Apply sorting to ALL recipes BEFORE pagination
             if hasattr(search_request, 'sort_by') and search_request.sort_by:
@@ -1413,679 +2356,435 @@ class NutritionService:
                 "total": total_count,
                 "pages": total_pages,
                 "current_page": search_request.page,
-                "per_page": search_request.limit
+                "sort_by": getattr(search_request, 'sort_by', None),
+                "sort_order": getattr(search_request, 'sort_order', 'asc')
             }
-            
         except Exception as e:
             logger.error(f"Error searching recipes: {str(e)}")
-            return []
-    
-    def _meets_micronutrient_criteria(self, recipe: Recipe, search_request: RecipeSearchRequest) -> bool:
-        """Check if recipe meets micronutrient filter criteria"""
-        try:
-            # Check individual micronutrient filters
-            if search_request.min_vitamin_d and getattr(recipe, 'calculated_vitamin_d', 0) < search_request.min_vitamin_d:
-                return False
-            if search_request.min_vitamin_c and getattr(recipe, 'calculated_vitamin_c', 0) < search_request.min_vitamin_c:
-                return False
-            if search_request.min_iron and getattr(recipe, 'calculated_iron', 0) < search_request.min_iron:
-                return False
-            if search_request.min_calcium and getattr(recipe, 'calculated_calcium', 0) < search_request.min_calcium:
-                return False
-            if search_request.min_magnesium and getattr(recipe, 'calculated_magnesium', 0) < search_request.min_magnesium:
-                return False
-            if search_request.min_zinc and getattr(recipe, 'calculated_zinc', 0) < search_request.min_zinc:
-                return False
-            
-            # Check custom micronutrient filters
-            if search_request.micronutrient_filters:
-                for nutrient, min_value in search_request.micronutrient_filters.items():
-                    calculated_value = getattr(recipe, f'calculated_{nutrient}', 0)
-                    if calculated_value < min_value:
-                        return False
-            
-            return True
-            
-        except Exception as e:
-            logger.error(f"Error checking micronutrient criteria: {str(e)}")
-            return True  # Default to including recipe if check fails
-    
-    def _calculate_recipe_nutrition(self, recipe: Recipe) -> None:
-        """Calculate nutritional data for a recipe based on its ingredients"""
-        try:
-            if not hasattr(recipe, 'ingredients') or not recipe.ingredients:
-                return
-            
-            total_calories = 0
-            total_protein = 0
-            total_carbs = 0
-            total_fats = 0
-            total_fiber = 0
-            total_sugar = 0
-            total_sodium = 0
-            
-            for ri in recipe.ingredients:
-                if ri.ingredient:
-                    # Calculate nutrition per 100g of ingredient
-                    quantity = ri.quantity or 0
-                    calories_per_100g = ri.ingredient.calories or 0
-                    protein_per_100g = ri.ingredient.protein or 0
-                    carbs_per_100g = ri.ingredient.carbs or 0
-                    fats_per_100g = ri.ingredient.fats or 0
-                    fiber_per_100g = ri.ingredient.fiber or 0
-                    sugar_per_100g = ri.ingredient.sugar or 0
-                    sodium_per_100g = ri.ingredient.sodium or 0
-                    
-                    # Calculate total nutrition for this ingredient
-                    total_calories += (calories_per_100g * quantity) / 100
-                    total_protein += (protein_per_100g * quantity) / 100
-                    total_carbs += (carbs_per_100g * quantity) / 100
-                    total_fats += (fats_per_100g * quantity) / 100
-                    total_fiber += (fiber_per_100g * quantity) / 100
-                    total_sugar += (sugar_per_100g * quantity) / 100
-                    total_sodium += (sodium_per_100g * quantity) / 100
-            
-            # Add calculated nutrition as attributes to the recipe object
-            recipe.calculated_calories = round(total_calories, 1)
-            recipe.calculated_protein = round(total_protein, 1)
-            recipe.calculated_carbs = round(total_carbs, 1)
-            recipe.calculated_fats = round(total_fats, 1)
-            recipe.calculated_fiber = round(total_fiber, 1)
-            recipe.calculated_sugar = round(total_sugar, 1)
-            recipe.calculated_sodium = round(total_sodium, 1)
-            
-            # Add ingredients and instructions arrays as new attributes (not overwriting SQLAlchemy relationships)
-            # Format ingredients more naturally
-            ingredients_formatted = []
-            for ri in recipe.ingredients:
-                if ri.ingredient:
-                    # Convert grams to more natural units for common ingredients
-                    name = ri.ingredient.name.lower()
-                    quantity = ri.quantity
-                    unit = ri.unit or 'g'
-                    
-                    # Convert to more natural units
-                    if 'egg' in name and unit == 'g':
-                        # 1 large egg ≈ 50g, so convert to egg count
-                        egg_count = quantity / 50
-                        if egg_count >= 1:
-                            ingredients_formatted.append(f"{int(egg_count)} {ri.ingredient.name}")
-                        else:
-                            ingredients_formatted.append(f"{ri.ingredient.name}: {quantity}g")
-                    elif unit == 'g' and quantity >= 1000:
-                        # Convert large quantities to kg
-                        kg = quantity / 1000
-                        ingredients_formatted.append(f"{kg:.1f}kg {ri.ingredient.name}")
-                    elif unit == 'ml' and quantity >= 1000:
-                        # Convert large quantities to liters
-                        liters = quantity / 1000
-                        ingredients_formatted.append(f"{liters:.1f}L {ri.ingredient.name}")
-                    else:
-                        # Use original format for other ingredients with reasonable precision
-                        if unit == 'g':
-                            # Round to 1 decimal place for grams
-                            ingredients_formatted.append(f"{ri.ingredient.name}: {quantity:.1f}g")
-                        elif unit == 'ml':
-                            # Round to 1 decimal place for milliliters
-                            ingredients_formatted.append(f"{ri.ingredient.name}: {quantity:.1f}ml")
-                        else:
-                            # Round to 1 decimal place for other units
-                            ingredients_formatted.append(f"{ri.ingredient.name}: {quantity:.1f}{unit}")
-            
-            recipe.ingredients_list = ingredients_formatted
-            recipe.instructions_list = [inst.description for inst in recipe.instructions]
-            
-        except Exception as e:
-            logger.error(f"Error calculating recipe nutrition: {str(e)}")
-            # Set default values if calculation fails
-            recipe.calculated_calories = 0
-            recipe.calculated_protein = 0
-            recipe.calculated_carbs = 0
-            recipe.calculated_fats = 0
-            recipe.calculated_fiber = 0
-            recipe.calculated_sugar = 0
-            recipe.calculated_sodium = 0
-            recipe.ingredients_list = []
-            recipe.instructions_list = []
-    
-    def create_shopping_list(self, db: Session, user_id: int, shopping_list_data: ShoppingListCreate) -> ShoppingList:
-        """Create shopping list from meal plan or manual items"""
-        try:
-            shopping_list = ShoppingList(
-                id=f"sl_{user_id}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}",
-                user_id=user_id,
-                list_name=shopping_list_data.list_name,
-                meal_plan_id=shopping_list_data.meal_plan_id
-            )
-            db.add(shopping_list)
-            db.flush()
-            
-            # Add items
-            for item_data in shopping_list_data.items:
-                item = ShoppingListItem(
-                    shopping_list_id=shopping_list.id,
-                    ingredient_id=item_data.ingredient_id,
-                    quantity=item_data.quantity,
-                    unit=item_data.unit,
-                    category=self._categorize_ingredient_by_id(db, item_data.ingredient_id),
-                    notes=item_data.notes
-                )
-                db.add(item)
-            
-            db.commit()
-            db.refresh(shopping_list)
-            return shopping_list
-            
-        except Exception as e:
-            db.rollback()
-            logger.error(f"Error creating shopping list: {str(e)}")
-            raise
-    
-    def _convert_meal_plan_to_response(self, meal_plan: MealPlan) -> 'MealPlanResponse':
-        """Convert MealPlan model to response format"""
-        from schemas.nutrition import MealPlanResponse, NutritionalInfo
-        
-        # Convert meals to dictionaries
-        meals_data = []
-        for meal in meal_plan.meals:
-            meal_data = {
-                "id": meal.id,
-                "meal_type": meal.meal_type,
-                "meal_name": meal.meal_name,
-                "calories": meal.calories,
-                "protein": meal.protein,
-                "carbs": meal.carbs,
-                "fats": meal.fats
-            }
-            
-            # Add recipe details if available
-            if meal.recipe_details:
-                recipe_details = meal.recipe_details
-                meal_data.update({
-                    "cuisine": recipe_details.get("cuisine", meal.cuisine or ""),
-                    "prep_time": recipe_details.get("prep_time", 0),
-                    "cook_time": recipe_details.get("cook_time", 0),
-                    "difficulty": recipe_details.get("difficulty", "easy"),
-                    "ingredients": recipe_details.get("ingredients", []),
-                    "instructions": recipe_details.get("instructions", []),
-                    "dietary_tags": recipe_details.get("dietary_tags", [])
-                })
-            elif meal.cuisine:
-                meal_data["cuisine"] = meal.cuisine
-            
-            meals_data.append(meal_data)
-        
-        # Calculate total nutrition
-        total_calories = sum(meal.calories for meal in meal_plan.meals)
-        total_protein = sum(meal.protein for meal in meal_plan.meals)
-        total_carbs = sum(meal.carbs for meal in meal_plan.meals)
-        total_fats = sum(meal.fats for meal in meal_plan.meals)
-        
-        total_nutrition = NutritionalInfo(
-            calories=total_calories,
-            protein=total_protein,
-            carbs=total_carbs,
-            fats=total_fats,
-            fiber=0.0,  # Not tracked in meals
-            sugar=0.0,  # Not tracked in meals
-            sodium=0.0  # Not tracked in meals
-        )
-        
-        return MealPlanResponse(
-            id=meal_plan.id,
-            user_id=meal_plan.user_id,
-            plan_type=meal_plan.plan_type,
-            start_date=meal_plan.start_date,
-            end_date=meal_plan.end_date,
-            version=meal_plan.version,
-            is_active=meal_plan.is_active,
-            meals=meals_data,
-            total_nutrition=total_nutrition,
-            created_at=meal_plan.created_at,
-            updated_at=meal_plan.updated_at
-        )
-
-    def _vector_similarity_search(self, query_text: str, db: Session, limit: int = 10) -> List[Dict[str, Any]]:
-        """Perform vector similarity search using recipe embeddings"""
-        try:
-            # Try to import required libraries
-            try:
-                from sklearn.feature_extraction.text import TfidfVectorizer
-                from sklearn.metrics.pairwise import cosine_similarity
-                import numpy as np
-            except ImportError:
-                logger.warning("scikit-learn not available for vector search")
-                return []
-            
-            # Get all recipes with embeddings
-            recipes = db.query(Recipe).filter(
-                Recipe.is_active == True,
-                Recipe.embedding.isnot(None)
-            ).all()
-            
-            if not recipes:
-                return []
-            
-            # Create TF-IDF vectorizer for query
-            vectorizer = TfidfVectorizer(max_features=1000, stop_words='english')
-            
-            # Prepare recipe texts and embeddings
-            recipe_texts = []
-            recipe_embeddings = []
-            recipe_data = []
-            
-            for recipe in recipes:
-                # Create recipe text for embedding
-                recipe_text = self._create_recipe_text_for_embedding(recipe)
-                recipe_texts.append(recipe_text)
-                
-                # Get stored embedding
-                if recipe.embedding:
-                    recipe_embeddings.append(np.array(recipe.embedding))
-                    recipe_data.append({
-                        'id': recipe.id,
-                        'title': recipe.title,
-                        'cuisine': recipe.cuisine,
-                        'meal_type': recipe.meal_type,
-                        'similarity': 0.0
-                    })
-            
-            if not recipe_embeddings:
-                return []
-            
-            # Fit vectorizer on all recipe texts
-            vectorizer.fit(recipe_texts)
-            
-            # Transform query
-            query_embedding = vectorizer.transform([query_text]).toarray()[0]
-            
-            # Calculate similarities
-            similarities = []
-            for i, recipe_embedding in enumerate(recipe_embeddings):
-                # Ensure embeddings have same dimension
-                min_dim = min(len(query_embedding), len(recipe_embedding))
-                query_vec = query_embedding[:min_dim]
-                recipe_vec = recipe_embedding[:min_dim]
-                
-                # Calculate cosine similarity
-                similarity = np.dot(query_vec, recipe_vec) / (
-                    np.linalg.norm(query_vec) * np.linalg.norm(recipe_vec) + 1e-8
-                )
-                
-                recipe_data[i]['similarity'] = float(similarity)
-                similarities.append(recipe_data[i])
-            
-            # Sort by similarity and return top results
-            similarities.sort(key=lambda x: x['similarity'], reverse=True)
-            return similarities[:limit]
-            
-        except Exception as e:
-            logger.error(f"Error in vector similarity search: {e}")
-            return []
-    
-    def _create_recipe_text_for_embedding(self, recipe: Recipe) -> str:
-        """Create text representation of recipe for embedding (same as in embedding script)"""
-        text_parts = []
-        
-        # Basic recipe info
-        text_parts.append(f"Title: {recipe.title}")
-        text_parts.append(f"Cuisine: {recipe.cuisine}")
-        text_parts.append(f"Meal type: {recipe.meal_type}")
-        text_parts.append(f"Difficulty: {recipe.difficulty_level}")
-        
-        # Summary
-        if recipe.summary:
-            text_parts.append(f"Summary: {recipe.summary}")
-        
-        # Dietary tags
-        if recipe.dietary_tags:
-            dietary_tags = [tag for tag in recipe.dietary_tags if not tag.startswith('contains-')]
-            if dietary_tags:
-                text_parts.append(f"Dietary: {', '.join(dietary_tags)}")
-        
-        # Allergens
-        if recipe.dietary_tags:
-            allergens = [tag.replace('contains-', '') for tag in recipe.dietary_tags if tag.startswith('contains-')]
-            if allergens:
-                text_parts.append(f"Contains: {', '.join(allergens)}")
-        
-        # Ingredients
-        if recipe.ingredients:
-            ingredient_names = []
-            for ingredient in recipe.ingredients:
-                if hasattr(ingredient, 'ingredient') and ingredient.ingredient:
-                    ingredient_names.append(ingredient.ingredient.name)
-                elif hasattr(ingredient, 'name'):
-                    ingredient_names.append(ingredient.name)
-            
-            if ingredient_names:
-                text_parts.append(f"Ingredients: {', '.join(ingredient_names)}")
-        
-        # Instructions (first few steps)
-        if recipe.instructions:
-            instruction_texts = []
-            for instruction in recipe.instructions[:3]:  # First 3 steps
-                if hasattr(instruction, 'description'):
-                    instruction_texts.append(instruction.description)
-                elif hasattr(instruction, 'step_description'):
-                    instruction_texts.append(instruction.step_description)
-            
-            if instruction_texts:
-                text_parts.append(f"Instructions: {' '.join(instruction_texts)}")
-        
-        # Nutrition info
-        if hasattr(recipe, 'per_serving_calories') and recipe.per_serving_calories:
-            text_parts.append(f"Calories per serving: {recipe.per_serving_calories}")
-        
-        if hasattr(recipe, 'per_serving_protein') and recipe.per_serving_protein:
-            text_parts.append(f"Protein per serving: {recipe.per_serving_protein}g")
-        
-        # Cooking info
-        text_parts.append(f"Prep time: {recipe.prep_time} minutes")
-        text_parts.append(f"Cook time: {recipe.cook_time} minutes")
-        text_parts.append(f"Servings: {recipe.servings}")
-        
-        return " | ".join(text_parts)
-
-    def _convert_recipe_to_response(self, recipe: Recipe) -> dict:
-        """Convert Recipe model to response format with calculated nutritional data"""
-        # Calculate nutrition if not already done
-        self._calculate_recipe_nutrition(recipe)
-        
-        return {
-            "id": recipe.id,
-            "title": recipe.title,
-            "cuisine": recipe.cuisine,
-            "meal_type": recipe.meal_type,
-            "servings": recipe.servings,
-            "summary": recipe.summary,
-            "prep_time": recipe.prep_time,
-            "cook_time": recipe.cook_time,
-            "difficulty_level": recipe.difficulty_level,
-            "dietary_tags": recipe.dietary_tags or [],
-            "source": recipe.source,
-            "image_url": recipe.image_url,
-            # Per-serving nutrition (for daily logging)
-            "per_serving_calories": getattr(recipe, 'per_serving_calories', 0),
-            "per_serving_protein": getattr(recipe, 'per_serving_protein', 0),
-            "per_serving_carbs": getattr(recipe, 'per_serving_carbs', 0),
-            "per_serving_fats": getattr(recipe, 'per_serving_fat', 0),
-            "per_serving_sodium": getattr(recipe, 'per_serving_sodium', 0),
-            # Total recipe nutrition (for full recipe display)
-            "total_calories": getattr(recipe, 'total_calories', 0),
-            "total_protein": getattr(recipe, 'total_protein', 0),
-            "total_carbs": getattr(recipe, 'total_carbs', 0),
-            "total_fats": getattr(recipe, 'total_fat', 0),
-            "total_sodium": getattr(recipe, 'total_sodium', 0),
-            # Legacy calculated fields (for backward compatibility)
-            "calculated_calories": getattr(recipe, 'total_calories', 0),
-            "calculated_protein": getattr(recipe, 'total_protein', 0),
-            "calculated_carbs": getattr(recipe, 'total_carbs', 0),
-            "calculated_fats": getattr(recipe, 'total_fat', 0),
-            "calculated_fiber": getattr(recipe, 'calculated_fiber', 0),
-            "calculated_sugar": getattr(recipe, 'calculated_sugar', 0),
-            "calculated_sodium": getattr(recipe, 'total_sodium', 0),
-            "ingredients_list": getattr(recipe, 'ingredients_list', []),
-            "instructions_list": getattr(recipe, 'instructions_list', []),
-            "created_at": recipe.created_at,
-            "updated_at": recipe.updated_at
-        }
-
-    def _convert_shopping_list_to_response(self, shopping_list: ShoppingList) -> 'ShoppingListResponse':
-        """Convert ShoppingList model to response format with calculated fields"""
-        from schemas.nutrition import ShoppingListResponse
-        
-        total_items = len(shopping_list.items)
-        purchased_items = sum(1 for item in shopping_list.items if item.is_purchased)
-        
-        def ensure_category(item):
-            if getattr(item, 'category', None):
-                return item.category
-            # Fallback categorization by ingredient name if available
-            name = getattr(item, 'name', None)
-            if not name and getattr(item, 'ingredient', None):
-                name = getattr(item.ingredient, 'label', None) or getattr(item.ingredient, 'name', None)
-            name_l = (name or '').lower()
-            if any(k in name_l for k in ("milk", "cheese", "yogurt", "butter")):
-                return "Dairy"
-            if any(k in name_l for k in ("apple", "banana", "berry", "tomato", "lettuce", "onion", "pepper", "cucumber", "spinach")):
-                return "Produce"
-            if any(k in name_l for k in ("chicken", "beef", "pork", "turkey", "fish", "tofu", "egg")):
-                return "Proteins"
-            if any(k in name_l for k in ("rice", "pasta", "bread", "oats", "quinoa", "flour")):
-                return "Grains"
-            if any(k in name_l for k in ("oil", "vinegar", "salt", "sugar", "spice", "herb")):
-                return "Pantry"
-            return "Other"
-
-        return ShoppingListResponse(
-            id=shopping_list.id,
-            user_id=shopping_list.user_id,
-            list_name=shopping_list.list_name,
-            meal_plan_id=shopping_list.meal_plan_id,
-            is_active=shopping_list.is_active,
-            items=[
-                {
-                    "id": item.id,
-                    "ingredient_id": item.ingredient_id,
-                    "quantity": item.quantity,
-                    "unit": item.unit,
-                    "category": ensure_category(item),
-                    "is_purchased": item.is_purchased,
-                    "notes": item.notes
-                }
-                for item in shopping_list.items
-            ],
-            total_items=total_items,
-            purchased_items=purchased_items,
-            created_at=shopping_list.created_at,
-            updated_at=shopping_list.updated_at
-        )
-
-    def update_shopping_list_item(self, db: Session, user_id: int, list_id: str, item_id: int, *,
-                                  quantity: Optional[float] = None,
-                                  unit: Optional[str] = None,
-                                  notes: Optional[str] = None,
-                                  is_purchased: Optional[bool] = None) -> ShoppingList:
-        """Update a shopping list item and return updated list."""
-        sl = db.query(ShoppingList).filter(ShoppingList.id == list_id, ShoppingList.user_id == user_id).first()
-        if not sl:
-            raise ValueError("Shopping list not found")
-        item = next((i for i in sl.items if i.id == item_id), None)
-        if not item:
-            raise ValueError("Shopping list item not found")
-        if quantity is not None:
-            item.quantity = quantity
-        if unit is not None:
-            item.unit = unit
-        if notes is not None:
-            item.notes = notes
-        if is_purchased is not None:
-            item.is_purchased = is_purchased
-        db.flush()
-        db.refresh(sl)
-        return sl
-
-    def delete_shopping_list_item(self, db: Session, user_id: int, list_id: str, item_id: int) -> ShoppingList:
-        """Remove an item from the shopping list and return updated list."""
-        sl = db.query(ShoppingList).filter(ShoppingList.id == list_id, ShoppingList.user_id == user_id).first()
-        if not sl:
-            raise ValueError("Shopping list not found")
-        # Remove via relationship
-        to_keep = [i for i in sl.items if i.id != item_id]
-        if len(to_keep) == len(sl.items):
-            raise ValueError("Shopping list item not found")
-        sl.items = to_keep
-        db.flush()
-        db.refresh(sl)
-        return sl
-    
-    def _categorize_ingredient_by_id(self, db: Session, ingredient_id: str) -> str:
-        """Get ingredient category by ID"""
-        ingredient = db.query(Ingredient).filter(Ingredient.id == ingredient_id).first()
-        return ingredient.category if ingredient else "other"
-    
-    def get_nutritional_analysis(self, db: Session, user_id: int, start_date: date, end_date: date, analysis_type: str) -> Dict[str, Any]:
-        """Get comprehensive nutritional analysis"""
-        try:
-            # Get nutritional logs for the period
-            logs = db.query(NutritionalLog).filter(
-                NutritionalLog.user_id == user_id,
-                NutritionalLog.log_date >= start_date,
-                NutritionalLog.log_date <= end_date
-            ).all()
-            
-            # Calculate totals
-            total_calories = sum(log.calories for log in logs)
-            total_protein = sum(log.protein for log in logs)
-            total_carbs = sum(log.carbs for log in logs)
-            total_fats = sum(log.fats for log in logs)
-            
-            # Get user targets
-            preferences = db.query(UserNutritionPreferences).filter(
-                UserNutritionPreferences.user_id == user_id
-            ).first()
-            
-            # Calculate days in the period
-            days_in_period = (end_date - start_date).days + 1
-            
-            # Count days with actual logged data
-            logged_dates = set(log.log_date for log in logs)
-            days_with_data = len(logged_dates)
-            missing_days = days_in_period - days_with_data
-            
-            # Use actual days in period for target calculation
-            targets = {
-                "calories": (preferences.daily_calorie_target if preferences else 2000) * days_in_period,
-                "protein": (preferences.protein_target if preferences else 100) * days_in_period,
-                "carbs": (preferences.carbs_target if preferences else 200) * days_in_period,
-                "fats": (preferences.fats_target if preferences else 60) * days_in_period
-            }
-            
-            # Calculate deficits/surpluses
-            calorie_deficit = targets["calories"] - total_calories
-            protein_deficit = targets["protein"] - total_protein
-            carbs_deficit = targets["carbs"] - total_carbs
-            fats_deficit = targets["fats"] - total_fats
-            
-            # Generate AI insights
-            ai_insights = self._generate_nutritional_insights(
-                total_calories, total_protein, total_carbs, total_fats,
-                targets, calorie_deficit, protein_deficit, carbs_deficit, fats_deficit
-            )
-            
             return {
-                "period": {
-                    "start_date": start_date,
-                    "end_date": end_date,
-                    "analysis_type": analysis_type,
-                    "days_in_period": days_in_period,
-                    "days_with_data": days_with_data,
-                    "missing_days": missing_days
-                },
-                "totals": {
-                    "calories": total_calories,
-                    "protein": total_protein,
-                    "carbs": total_carbs,
-                    "fats": total_fats
-                },
-                "targets": targets,
-                "deficits": {
-                    "calories": calorie_deficit,
-                    "protein": protein_deficit,
-                    "carbs": carbs_deficit,
-                    "fats": fats_deficit
-                },
-                "percentages": {
-                    "calories": (total_calories / targets["calories"]) * 100 if targets["calories"] > 0 else 0,
-                    "protein": (total_protein / targets["protein"]) * 100 if targets["protein"] > 0 else 0,
-                    "carbs": (total_carbs / targets["carbs"]) * 100 if targets["carbs"] > 0 else 0,
-                    "fats": (total_fats / targets["fats"]) * 100 if targets["fats"] > 0 else 0
-                },
-                "ai_insights": ai_insights,
-                "daily_breakdown": self._get_daily_breakdown(logs),
-                "data_completeness": {
-                    "completion_rate": (days_with_data / days_in_period) * 100 if days_in_period > 0 else 0,
-                    "missing_days": missing_days,
-                    "logged_dates": sorted(list(logged_dates))
-                }
+                "recipes": [],
+                "total": 0,
+                "pages": 0,
+                "current_page": getattr(search_request, 'page', 1),
+                "sort_by": getattr(search_request, 'sort_by', None),
+                "sort_order": getattr(search_request, 'sort_order', 'asc'),
+                "error": str(e)
             }
+    
+    def _convert_meal_plan_to_response(self, meal_plan: MealPlan, db: Session = None) -> Dict[str, Any]:
+        """Convert MealPlan ORM to MealPlanResponse-compatible dict."""
+        try:
+            # CRITICAL: Explicitly access meals relationship - ensure it's loaded
+            # Try multiple ways to access meals to ensure we get all of them
+            meals_list = []
+            try:
+                # First try: direct access (if joinedload was used)
+                if hasattr(meal_plan, 'meals'):
+                    meals_list = list(meal_plan.meals)
+                # Second try: getattr
+                if not meals_list:
+                    meals_list = list(getattr(meal_plan, 'meals', []))
+                
+                # CRITICAL FIX: If meals still aren't loaded and we have a db session, query directly
+                if (not meals_list or len(meals_list) == 0) and db is not None:
+                    logger.warning(f"⚠️ No meals found via relationship for meal plan {meal_plan.id}, querying directly from database")
+                    from models.nutrition import MealPlanMeal
+                    meals_list = db.query(MealPlanMeal).filter(
+                        MealPlanMeal.meal_plan_id == meal_plan.id
+                    ).order_by(MealPlanMeal.meal_date, MealPlanMeal.meal_type).all()
+                    logger.info(f"✅ Queried {len(meals_list)} meals directly from database for meal plan {meal_plan.id}")
+                elif not meals_list or len(meals_list) == 0:
+                    # This shouldn't happen if joinedload was used, but safety check
+                    logger.warning(f"⚠️ No meals found via relationship for meal plan {meal_plan.id}, and no db session available to query directly")
+            except Exception as e:
+                logger.error(f"Error accessing meals relationship: {e}", exc_info=True)
+                # Last resort: try to query directly if db session is available
+                if db is not None:
+                    try:
+                        from models.nutrition import MealPlanMeal
+                        meals_list = db.query(MealPlanMeal).filter(
+                            MealPlanMeal.meal_plan_id == meal_plan.id
+                        ).order_by(MealPlanMeal.meal_date, MealPlanMeal.meal_type).all()
+                        logger.info(f"✅ Fallback: Queried {len(meals_list)} meals directly from database after exception")
+                    except Exception as db_error:
+                        logger.error(f"❌ Failed to query meals directly: {db_error}", exc_info=True)
+                        meals_list = []
+                else:
+                    meals_list = []
             
+            logger.info(f"📊 Converting meal plan {meal_plan.id} to response: {len(meals_list)} meals found")
+            
+            # ROOT CAUSE FIX: Don't validate meal count for progressive meal plans (empty structure)
+            # Progressive generation starts empty and is filled one slot at a time
+            is_progressive_plan = False
+            generation_strategy = getattr(meal_plan, 'generation_strategy', None) or {}
+            if isinstance(generation_strategy, dict):
+                is_progressive_plan = generation_strategy.get('strategy') == 'progressive' or generation_strategy.get('mode') == 'empty_structure'
+            
+            # Only validate meal count for bulk-generated meal plans (not progressive)
+            if meal_plan.plan_type == 'weekly' and not is_progressive_plan:
+                # Calculate expected meals based on meals_per_day (default 4)
+                # For progressive plans, this validation is skipped
+                meals_per_day = 4  # Default, can be calculated from user preferences if needed
+                expected_meals = 7 * meals_per_day  # 7 days × meals_per_day
+                if len(meals_list) < expected_meals:
+                    logger.warning(f"⚠️ Weekly meal plan {meal_plan.id} has only {len(meals_list)} meals, expected {expected_meals} (7 days × {meals_per_day} meals)")
+                    # Log meal distribution by date to debug (only for bulk-generated plans with missing meals)
+                    from collections import Counter
+                    meal_dates = [str(m.meal_date) for m in meals_list if hasattr(m, 'meal_date') and m.meal_date]
+                    date_counts = Counter(meal_dates)
+                    logger.warning(f"   Meal distribution by date: {dict(date_counts)}")
+                else:
+                    logger.info(f"✅ Weekly meal plan {meal_plan.id} has {len(meals_list)} meals (expected {expected_meals})")
+            elif meal_plan.plan_type == 'weekly' and is_progressive_plan:
+                # Progressive plan - log info only, no validation
+                logger.info(f"📋 Progressive meal plan {meal_plan.id} has {len(meals_list)} meals (filling progressively)")
+            
+            meals_response: List[Dict[str, Any]] = []
+            total_cal = 0.0
+            total_pro = 0.0
+            total_carbs = 0.0
+            total_fats = 0.0
+
+            # CRITICAL: Filter out beverages and sauces from meal plans (even if already saved)
+            from ai.fallback_recipes import fallback_generator
+            
+            # CRITICAL: Detect AI-only mode by checking meal flags
+            # In AI-only mode, ALL meals should have ai_generated=True
+            ai_meals_in_plan = []
+            db_meals_in_plan = []
+            for m in meals_list:
+                rd = m.recipe_details or {}
+                if isinstance(rd, dict):
+                    # Check both flags - prioritize ai_generated
+                    is_ai = rd.get('ai_generated', False) == True
+                    is_db = rd.get('database_source', False) == True
+                    if is_ai:
+                        ai_meals_in_plan.append(m)
+                    if is_db:
+                        db_meals_in_plan.append(m)
+            # CRITICAL: AI-only mode = no database meals at all (or 90%+ AI meals)
+            # If we have any database meals, it's NOT AI-only
+            total_meals = len(meals_list)
+            ai_ratio = len(ai_meals_in_plan) / total_meals if total_meals > 0 else 0
+            is_ai_only_plan = len(db_meals_in_plan) == 0 and ai_ratio > 0.9
+            logger.info(f"📊 AI-only detection: {len(ai_meals_in_plan)} AI, {len(db_meals_in_plan)} DB out of {total_meals} total (ratio: {ai_ratio:.1%}) -> AI-only: {is_ai_only_plan}")
+
+            for meal in meals_list:
+                recipe_details = meal.recipe_details or {}
+                
+                # CRITICAL DEBUG: Log meal_type from recipe_details to diagnose snack slot assignment
+                if isinstance(recipe_details, dict):
+                    preserved_meal_type = recipe_details.get('meal_type', None)
+                    if preserved_meal_type and preserved_meal_type != meal.meal_type:
+                        logger.info(f"🔍 Meal {meal.id} '{meal.meal_name}': DB meal_type='{meal.meal_type}', recipe_details.meal_type='{preserved_meal_type}'")
+                    elif meal.meal_type == 'snack':
+                        logger.warning(f"⚠️ Snack meal {meal.id} '{meal.meal_name}' has no preserved meal_type in recipe_details (DB meal_type='snack')")
+                
+                # Check if this meal is a beverage/sauce/dessert and should be excluded
+                # CRITICAL FIX: Only filter if the meal is CLEARLY a beverage/sauce/dessert, not just because a keyword appears in instructions
+                meal_name = (meal.meal_name or "").lower()
+                meal_type = meal.meal_type or ""
+                
+                # Only check title and summary for beverage/sauce/dessert keywords (not ingredients/instructions)
+                # This prevents false positives from ingredients like "add sauce" or "butter" in cooking instructions
+                title_and_summary = meal_name
+                if isinstance(recipe_details, dict):
+                    title = (recipe_details.get('title') or "").lower()
+                    summary = (recipe_details.get('summary') or "").lower()
+                    title_and_summary = f"{meal_name} {title} {summary}"
+                
+                # Strict beverage keywords - only match if meal is clearly a drink
+                beverage_keywords = [
+                    "sangria", "cocktail", "smoothie", "shake", "juice", "punch", "cider", 
+                    "tea", "coffee", "latte", "mojito", "spritzer", "spritz",
+                    "amaretto", "vodka", "rum", "gin", "whiskey", "beer", "wine", "liquor",
+                    "highball", "drink", "beverage", "mixed drink", "shot",
+                    "margarita", "daiquiri", "martini", "cosmopolitan", "boccie ball"
+                ]
+                # Strict sauce keywords - only match if meal is clearly a sauce/dip
+                sauce_keywords = ["sauce only", "dressing only", "marinade only", "dip only", "guacamole only"]
+                # Strict dessert keywords - only match if meal is clearly a dessert
+                dessert_keywords = ["ice cream", "sorbet", "cookie", "brownie", "cake", "pudding", "mousse", "dessert only"]
+                
+                # Only check title/summary, and require the keyword to be prominent (not in cooking instructions)
+                is_beverage = any(k in title_and_summary for k in beverage_keywords)
+                is_sauce = any(k in title_and_summary for k in sauce_keywords)
+                is_dessert = any(k in title_and_summary for k in dessert_keywords)
+                
+                is_beverage_sauce_dessert = is_beverage or is_sauce or is_dessert
+                
+                # Exclude beverages/sauces/desserts from breakfast, lunch, dinner (but allow snacks)
+                # CRITICAL: Only filter if we're CERTAIN it's a beverage/sauce/dessert
+                if meal_type in ("breakfast", "lunch", "dinner") and is_beverage_sauce_dessert:
+                    logger.warning(f"⚠️ Filtering out beverage/sauce/dessert meal: {meal.meal_name} (type: {meal_type})")
+                    # Replace with a fallback meal
+                    try:
+                        # Use meal calories or estimate from meal type
+                        target_cal_for_fallback = meal.calories
+                        if not target_cal_for_fallback or target_cal_for_fallback <= 0:
+                            default_cal_by_type = {'breakfast': 400, 'lunch': 500, 'dinner': 600, 'snack': 200}
+                            target_cal_for_fallback = default_cal_by_type.get(meal_type, 500)
+                        # Collect ALL existing meal names to avoid duplicates (including already processed meals)
+                        existing_meal_names = [m.meal_name for m in meals_list if m != meal and m.meal_name]
+                        existing_meal_names.extend([m.get('meal_name', '') for m in meals_response if m.get('meal_name')])
+                        
+                        # Try to generate a unique fallback
+                        max_attempts = 5
+                        fallback = None
+                        for attempt in range(max_attempts):
+                            fallback = fallback_generator.generate_unique_recipe(
+                                meal_type, 
+                                target_cal_for_fallback, 
+                                meal.cuisine or 'International', 
+                                existing_meal_names
+                            )
+                            fallback_name = fallback.get('meal_name', '')
+                            # Check if fallback is unique
+                            if fallback_name and fallback_name not in existing_meal_names:
+                                existing_meal_names.append(fallback_name)
+                                break
+                            # If still duplicate, try with different calories
+                            target_cal_for_fallback = int(target_cal_for_fallback * (1.1 if attempt % 2 == 0 else 0.9))
+                        
+                        if not fallback or not fallback.get('meal_name'):
+                            logger.error(f"❌ Failed to generate unique fallback for {meal_type} after {max_attempts} attempts")
+                            # Keep the original meal rather than creating empty slot - it's better than nothing
+                            logger.warning(f"⚠️ Keeping original meal '{meal.meal_name}' (could not generate unique fallback)")
+                            # Don't replace - keep original meal and continue processing
+                        else:
+                            # Update meal data with fallback
+                            meal.meal_name = fallback.get('meal_name', f'Fallback {meal_type}')
+                            fallback_cal = fallback.get('calories')
+                            if not fallback_cal or fallback_cal <= 0:
+                                default_cal_by_type = {'breakfast': 400, 'lunch': 500, 'dinner': 600, 'snack': 200}
+                                fallback_cal = default_cal_by_type.get(meal_type, 500)
+                            meal.calories = fallback_cal
+                            meal.protein = fallback.get('protein', meal.protein or 0)
+                            meal.carbs = fallback.get('carbs', meal.carbs or 0)
+                            meal.fats = fallback.get('fats', meal.fats or 0)
+                            meal.cuisine = fallback.get('cuisine', meal.cuisine or 'International')
+                            recipe_details = fallback.get('recipe', {})
+                            if not isinstance(recipe_details, dict):
+                                recipe_details = {}
+                            # CRITICAL FIX: ALWAYS mark beverage replacements as AI (AI-only generation is default)
+                            # Even if the meal plan has database meals (from old plans), new replacements should be AI
+                            # This prevents old database meal plans from getting more database meals when beverages are filtered
+                            recipe_details['ai_generated'] = True
+                            recipe_details['database_source'] = False
+                            logger.info(f"✅ Replaced beverage meal with AI fallback: {meal.meal_name} (AI-ONLY MODE - always AI)")
+                            meal.recipe_details = recipe_details
+                    except Exception as e:
+                        logger.error(f"Error replacing beverage meal with fallback: {e}")
+                        # Keep the original meal rather than creating empty slot
+                        logger.warning(f"⚠️ Keeping original meal '{meal.meal_name}' (exception during fallback generation)")
+                        # Continue processing this meal normally (don't skip it)
+                
+                # Standardize measurements in recipe details
+                if recipe_details and isinstance(recipe_details, dict):
+                    recipe_details = self.standardize_recipe_measurements(recipe_details)
+                
+                # Use PER-SERVING calories for daily intake calculation
+                # Extract per-serving calories from recipe_details or calculate from meal.calories
+                servings = recipe_details.get('servings', 1) if isinstance(recipe_details, dict) else 1
+                per_serving_cal = None
+                if isinstance(recipe_details, dict):
+                    nutrition = recipe_details.get('nutrition', {})
+                    # Priority: per_serving_calories > calculated from total > meal.calories
+                    if nutrition.get('per_serving_calories'):
+                        per_serving_cal = nutrition.get('per_serving_calories')
+                    elif recipe_details.get('per_serving_calories'):
+                        per_serving_cal = recipe_details.get('per_serving_calories')
+                    elif meal.calories and servings > 1 and meal.calories > 500:
+                        # If meal.calories looks like total (> 500 and servings > 1), divide
+                        per_serving_cal = int(meal.calories / servings)
+                    else:
+                        # Otherwise assume meal.calories is per-serving
+                        per_serving_cal = meal.calories
+                else:
+                    per_serving_cal = meal.calories
+                
+                # CRITICAL FIX: In AI-only generation mode (default), ALL meals should be AI unless explicitly marked as database
+                # Default to AI (True) if flag is missing - don't default to database (False)
+                ai_flag = None
+                if isinstance(recipe_details, dict):
+                    ai_flag = recipe_details.get('ai_generated')
+                    # Explicitly check for True/False, but default to True (AI) if missing
+                    if ai_flag is True:
+                        ai_flag = True
+                    elif ai_flag is False:
+                        ai_flag = False
+                    else:
+                        # Flag is missing/None - check database_source
+                        has_explicit_db = recipe_details.get('database_source', False) == True
+                        if has_explicit_db:
+                            ai_flag = False  # Explicitly marked as database
+                        else:
+                            ai_flag = True  # Default to AI (AI-only mode is default)
+                            logger.debug(f"🔧 Inferred AI flag=True for meal '{meal.meal_name}' (missing flag, defaulting to AI)")
+                # Also check if meal has direct ai_generated attribute
+                if ai_flag is None:
+                    ai_flag = bool(getattr(meal, 'ai_generated', True))  # Default to True (AI-only mode)
+                
+                # CRITICAL: If flag is False but database_source is not explicitly True, treat as AI
+                # This handles old meal plans that might have incorrect flags
+                if ai_flag is False and isinstance(recipe_details, dict):
+                    has_explicit_db = recipe_details.get('database_source', False) == True
+                    if not has_explicit_db:
+                        ai_flag = True  # No explicit DB flag - assume AI (fix old meal plans)
+                        logger.warning(f"⚠️ FIXED: Meal '{meal.meal_name}' had ai_generated=False but no explicit database_source - marking as AI")
+                        # Update the recipe_details to fix it
+                        recipe_details['ai_generated'] = True
+                        recipe_details['database_source'] = False
+                
+                # CRITICAL: Ensure meal_date is properly formatted as string for frontend
+                meal_date_str = meal.meal_date.isoformat() if hasattr(meal.meal_date, 'isoformat') else str(meal.meal_date)
+                
+                meals_response.append({
+                    "id": meal.id,  # CRITICAL FIX: Include meal ID for move/delete operations
+                    "meal_plan_id": meal.meal_plan_id,
+                    "meal_date": meal_date_str,  # String format for frontend
+                    "date": meal_date_str,  # Also include as 'date' for frontend compatibility
+                "meal_type": meal.meal_type,
+                    "type": meal.meal_type,  # Also include as 'type' for frontend compatibility
+                    "meal_time": getattr(meal, 'meal_time', None),
+                "meal_name": meal.meal_name,
+                    "recipe": recipe_details if recipe_details else None,
+                    "recipes": [recipe_details] if recipe_details else [],
+                    "recipe_details": recipe_details if recipe_details else None,  # Also expose as recipe_details for frontend
+                    "ai_generated": ai_flag,  # Top-level flag for easy access
+                    "calories": float(per_serving_cal or meal.calories or 0),  # Top-level per-serving calories (primary field)
+                    "per_serving_calories": float(per_serving_cal or meal.calories or 0),  # Explicit per-serving field
+                    # NOTE: All calorie values are per-serving (not total recipe calories)
+                    "total_protein": meal.protein,
+                    "total_carbs": meal.carbs,
+                    "total_fat": meal.fats,
+                    "total_fiber": getattr(meal, 'fiber', None),
+                    "total_sodium": getattr(meal, 'sodium', None),
+                    "created_at": getattr(meal, 'created_at', datetime.utcnow()),
+                    "updated_at": getattr(meal, 'updated_at', None)
+                })
+                total_cal += float(per_serving_cal or meal.calories or 0)  # Use per-serving calories for total
+                total_pro += float(meal.protein or 0)
+                total_carbs += float(meal.carbs or 0)
+                total_fats += float(meal.fats or 0)
+
+            response = {
+                "id": meal_plan.id,
+                "user_id": meal_plan.user_id,
+                "plan_type": meal_plan.plan_type,
+                "start_date": meal_plan.start_date,
+                "end_date": meal_plan.end_date,
+                "version": meal_plan.version,
+                "is_active": getattr(meal_plan, 'is_active', True),
+                "meals": meals_response,
+                "total_nutrition": {
+                    "calories": round(total_cal, 1),
+                    "protein": round(total_pro, 1),
+                    "carbs": round(total_carbs, 1),
+                    "fats": round(total_fats, 1)
+                },
+                "created_at": getattr(meal_plan, 'created_at', datetime.utcnow()),
+                "updated_at": getattr(meal_plan, 'updated_at', datetime.utcnow())
+            }
+            return response
         except Exception as e:
-            logger.error(f"Error getting nutritional analysis: {str(e)}")
-            return {}
+            logger.error(f"Error converting meal plan response: {str(e)}")
+        return {
+                "id": meal_plan.id,
+                "user_id": meal_plan.user_id,
+                "plan_type": meal_plan.plan_type,
+                "start_date": meal_plan.start_date,
+                "end_date": meal_plan.end_date,
+                "version": meal_plan.version,
+                "is_active": getattr(meal_plan, 'is_active', True),
+                "meals": [],
+                "total_nutrition": {"calories": 0, "protein": 0, "carbs": 0, "fats": 0},
+                "created_at": getattr(meal_plan, 'created_at', datetime.utcnow()),
+                "updated_at": getattr(meal_plan, 'updated_at', datetime.utcnow())
+            }
     
-    def _generate_nutritional_insights(self, calories: float, protein: float, carbs: float, fats: float,
-                                      targets: Dict[str, float], calorie_deficit: float, protein_deficit: float,
-                                      carbs_deficit: float, fats_deficit: float) -> Dict[str, Any]:
-        """Generate AI-powered nutritional insights"""
-        insights = {
-            "achievements": [],
-            "concerns": [],
-            "suggestions": []
+    def get_nutritional_analysis(self, db: Session, user_id: int, start_date: date, end_date: date, analysis_type: str = "daily") -> Dict[str, Any]:
+        """Aggregate nutrition from MealPlanMeal between dates for a user."""
+        try:
+            plans = db.query(MealPlan).filter(
+                and_(MealPlan.user_id == user_id, MealPlan.start_date >= start_date, MealPlan.start_date <= end_date)
+            ).all()
+            plan_ids = [p.id for p in plans]
+            if not plan_ids:
+                return {"totals": {"calories": 0, "protein": 0, "carbs": 0, "fats": 0}, "days": []}
+            meals = db.query(MealPlanMeal).filter(MealPlanMeal.meal_plan_id.in_(plan_ids)).all()
+            totals = {"calories": 0.0, "protein": 0.0, "carbs": 0.0, "fats": 0.0}
+            by_day: Dict[date, Dict[str, float]] = {}
+            for m in meals:
+                d = m.meal_date
+                if d < start_date or d > end_date:
+                    continue
+                if d not in by_day:
+                    by_day[d] = {"calories": 0.0, "protein": 0.0, "carbs": 0.0, "fats": 0.0}
+                by_day[d]["calories"] += float(m.calories or 0)
+                by_day[d]["protein"] += float(m.protein or 0)
+                by_day[d]["carbs"] += float(m.carbs or 0)
+                by_day[d]["fats"] += float(m.fats or 0)
+                totals["calories"] += float(m.calories or 0)
+                totals["protein"] += float(m.protein or 0)
+                totals["carbs"] += float(m.carbs or 0)
+                totals["fats"] += float(m.fats or 0)
+            days_list = [
+                {"date": d, "calories": round(v["calories"], 1), "protein": round(v["protein"], 1), "carbs": round(v["carbs"], 1), "fats": round(v["fats"], 1)}
+                for d, v in sorted(by_day.items(), key=lambda x: x[0])
+            ]
+            return {"totals": {k: round(v, 1) for k, v in totals.items()}, "days": days_list, "analysis_type": analysis_type}
+        except Exception as e:
+            logger.error(f"Error computing nutritional analysis: {str(e)}")
+            return {"totals": {"calories": 0, "protein": 0, "carbs": 0, "fats": 0}, "days": [], "error": str(e)}
+
+    def _estimate_nutrition_from_ingredients(self, ingredients: Any) -> Dict[str, int]:
+        """Very rough nutrition estimate from ingredient names and quantities.
+        Uses per-100g approximations for common items; fallback minimal values."""
+        per100g = {
+            # name: (cal, protein, carbs, fats)
+            "chicken breast": (165, 31, 0, 3.6),
+            "chickpea": (364, 19, 61, 6),
+            "chickpeas": (364, 19, 61, 6),
+            "olive oil": (884, 0, 0, 100),
+            "tomato": (18, 0.9, 3.9, 0.2),
+            "cucumber": (16, 0.7, 3.6, 0.1),
+            "lettuce": (15, 1.4, 2.9, 0.2),
+            "bell pepper": (31, 1, 6, 0.3),
+            "pepper": (31, 1, 6, 0.3),
+            "carrot": (41, 0.9, 10, 0.2),
+            "onion": (40, 1.1, 9.3, 0.1),
+            "garlic": (149, 6.4, 33, 0.5),
+            "feta": (265, 14, 4, 21),
+            "rice": (130, 2.4, 28, 0.3),
+            "quinoa": (120, 4.4, 21, 1.9),
+            "pasta": (131, 5, 25, 1.1),
+            "hummus": (166, 8, 14, 9.6),
+            "yogurt": (59, 10, 3.6, 0.4),
         }
-        
-        # Analyze calorie intake
-        calorie_percentage = (calories / targets["calories"]) * 100 if targets["calories"] > 0 else 0
-        
-        if calorie_percentage >= 95 and calorie_percentage <= 105:
-            insights["achievements"].append("Excellent calorie target adherence!")
-        elif calorie_percentage < 80:
-            insights["concerns"].append("Significant calorie deficit - consider increasing portion sizes")
-            insights["suggestions"].append("Add healthy snacks between meals")
-        elif calorie_percentage > 120:
-            insights["concerns"].append("Calorie surplus - consider reducing portion sizes")
-            insights["suggestions"].append("Focus on nutrient-dense, lower-calorie foods")
-        
-        # Analyze protein intake
-        protein_percentage = (protein / targets["protein"]) * 100 if targets["protein"] > 0 else 0
-        
-        if protein_percentage >= 90:
-            insights["achievements"].append("Great protein intake for muscle maintenance!")
-        elif protein_percentage < 70:
-            insights["concerns"].append("Low protein intake")
-            insights["suggestions"].append("Include lean proteins like chicken, fish, or legumes in each meal")
-        
-        # Analyze carbs intake
-        carbs_percentage = (carbs / targets["carbs"]) * 100 if targets["carbs"] > 0 else 0
-        
-        # Analyze fats intake
-        fats_percentage = (fats / targets["fats"]) * 100 if targets["fats"] > 0 else 0
-        
-        # Analyze macro balance
-        if protein_percentage > 120 and carbs_percentage < 80:
-            insights["suggestions"].append("Consider adding more complex carbohydrates for energy")
-        elif carbs_percentage > 120 and protein_percentage < 80:
-            insights["suggestions"].append("Balance your meals with more protein sources")
-        
-        return insights
-    
-    def _get_daily_breakdown(self, logs: List[NutritionalLog]) -> List[Dict[str, Any]]:
-        """Get daily nutritional breakdown"""
-        daily_data = {}
-        
-        for log in logs:
-            date_str = log.log_date.isoformat()
-            if date_str not in daily_data:
-                daily_data[date_str] = {
-                    "date": date_str,
-                    "calories": 0,
-                    "protein": 0,
-                    "carbs": 0,
-                    "fats": 0,
-                    "meals": []
-                }
-            
-            daily_data[date_str]["calories"] += log.calories
-            daily_data[date_str]["protein"] += log.protein
-            daily_data[date_str]["carbs"] += log.carbs
-            daily_data[date_str]["fats"] += log.fats
-            daily_data[date_str]["meals"].append({
-                "meal_type": log.meal_type,
-                "calories": log.calories,
-                "protein": log.protein,
-                "carbs": log.carbs,
-                "fats": log.fats
-            })
-        
-        return list(daily_data.values())
+        total = {"calories": 0.0, "protein": 0.0, "carbs": 0.0, "fats": 0.0}
+        for item in (ingredients or []):
+            if isinstance(item, dict):
+                name = str(item.get("name", "")).lower()
+                qty = float(item.get("quantity", 0) or 0)
+                unit = str(item.get("unit", "g")).lower()
+            else:
+                name = str(item).lower()
+                qty = 0.0
+                unit = "g"
+            # convert to grams heuristic for ml
+            grams = qty
+            if unit in ["ml"]:
+                grams = qty  # assume density ~1
+            # find key match
+            key = next((k for k in per100g.keys() if k in name), None)
+            if not key or grams <= 0:
+                continue
+            cal, p, c, f = per100g[key]
+            factor = grams / 100.0
+            total["calories"] += cal * factor
+            total["protein"] += p * factor
+            total["carbs"] += c * factor
+            total["fats"] += f * factor
+        return {k: int(round(v)) for k, v in total.items()}

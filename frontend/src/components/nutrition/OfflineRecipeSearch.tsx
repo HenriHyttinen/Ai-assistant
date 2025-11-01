@@ -462,3 +462,8 @@ const OfflineRecipeSearch: React.FC = () => {
 export default OfflineRecipeSearch;
 
 
+
+
+
+
+
