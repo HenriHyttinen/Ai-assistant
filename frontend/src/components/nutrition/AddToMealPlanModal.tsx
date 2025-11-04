@@ -69,13 +69,15 @@ interface AddToMealPlanModalProps {
     sodium?: number;
   };
   onRecipeAdded: () => void;
+  initialServings?: number;
 }
 
 const AddToMealPlanModal: React.FC<AddToMealPlanModalProps> = ({
   isOpen,
   onClose,
   recipe,
-  onRecipeAdded
+  onRecipeAdded,
+  initialServings
 }) => {
   const [mealPlans, setMealPlans] = useState<any[]>([]);
   const [loadingPlans, setLoadingPlans] = useState(false);
@@ -96,12 +98,12 @@ const AddToMealPlanModal: React.FC<AddToMealPlanModalProps> = ({
   useEffect(() => {
     if (isOpen) {
       loadMealPlans();
-      // Reset form data
+      // Reset form data - use recipe's default servings if available
       setFormData({
         meal_plan_id: '',
         meal_date: new Date().toISOString().split('T')[0],
         meal_type: recipe.meal_type || 'main_course',
-        servings: 1,
+        servings: initialServings || recipe.servings || 1,
         meal_time: '',
         custom_meal_name: ''
       });

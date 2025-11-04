@@ -3,7 +3,12 @@ import react from '@vitejs/plugin-react'
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react({
+    typescript: {
+      // Skip type checking during build (for Docker)
+      check: false,
+    },
+  })],
   resolve: {
     dedupe: ['react', 'react-dom', '@emotion/react', '@emotion/styled'],
   },

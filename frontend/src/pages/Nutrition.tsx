@@ -37,7 +37,6 @@ import ShoppingList from '../components/nutrition/ShoppingList';
 import EnhancedShoppingListGenerator from '../components/nutrition/EnhancedShoppingListGenerator';
 import NutritionalAnalysis from '../components/nutrition/NutritionalAnalysis';
 import NutritionPreferences from '../components/nutrition/NutritionPreferences';
-import RecipeRecommendations from '../components/nutrition/RecipeRecommendations';
 import MicronutrientDashboard from '../components/nutrition/MicronutrientDashboard';
 import MicronutrientRecipeSearch from '../components/nutrition/MicronutrientRecipeSearch';
 import {
@@ -262,8 +261,7 @@ const Nutrition: React.FC = () => {
                 <option value={1}>Preferences</option>
                 <option value={2}>Meal Planning</option>
                 <option value={3}>Goals</option>
-                <option value={4}>Recommendations</option>
-                <option value={5}>Recipes</option>
+                <option value={4}>Recipes</option>
                 <option value={6}>Shopping</option>
                 <option value={7}>Daily Log</option>
                 <option value={8}>Analysis</option>
@@ -309,12 +307,6 @@ const Nutrition: React.FC = () => {
                   <HStack spacing={2}>
                     <Icon as={FiTarget} />
                     <Text>Goals</Text>
-                  </HStack>
-                </Tab>
-                <Tab>
-                  <HStack spacing={2}>
-                    <Icon as={FiStar} />
-                    <Text>Recommendations</Text>
                   </HStack>
                 </Tab>
                 <Tab>
@@ -372,10 +364,6 @@ const Nutrition: React.FC = () => {
                 </TabPanel>
                 <TabPanel px={0} py={6}>
                   <GoalsDashboard />
-                </TabPanel>
-
-                <TabPanel px={0} py={6}>
-                  <RecipeRecommendations />
                 </TabPanel>
 
                 <TabPanel px={0} py={6}>

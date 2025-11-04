@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Simple OAuth Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .url { background: #f0f0f0; padding: 10px; margin: 10px 0; word-break: break-all; }
+        button { padding: 10px 20px; background: #4285f4; color: white; border: none; cursor: pointer; }
+        button:hover { background: #3367d6; }
+    </head>
+<body>
+    <h1>Google OAuth Test</h1>
+    
+    <h2>Backend OAuth URL:</h2>
+    <div id="oauth-url" class="url">Loading...</div>
+    
+    <button onclick="testOAuth()">Test Google OAuth</button>
+    
+    <h2>Instructions:</h2>
+    <ol>
+        <li>Click the "Test Google OAuth" button above</li>
+        <li>If you get a 404 error, check your Google Console settings</li>
+        <li>Make sure the redirect URI in Google Console is exactly: <code>http://127.0.0.1:8000/auth/oauth/google/callback</code></li>
+    </ol>
+    
+    <script>
+        // Get OAuth URL from backend
+        fetch('http://localhost:8000/auth/oauth/google')
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById('oauth-url').innerHTML = data.url;
+            })
+            .catch(error => {
+                document.getElementById('oauth-url').innerHTML = 'Error: ' + error;
+            });
+        
+        function testOAuth() {
+            fetch('http://localhost:8000/auth/oauth/google')
+                .then(response => response.json())
+                .then(data => {
+                    window.open(data.url, '_blank');
+                })
+                .catch(error => {
+                    alert('Error: ' + error);
+                });
+        }
+    </script>
+</body>
+</html>

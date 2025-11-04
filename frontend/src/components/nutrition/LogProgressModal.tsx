@@ -26,7 +26,8 @@ import {
   AlertIcon,
   Divider,
   SimpleGrid,
-  Badge
+  Badge,
+  Box
 } from '@chakra-ui/react';
 import { 
   FiTarget, 
@@ -189,8 +190,8 @@ const LogProgressModal: React.FC<LogProgressModalProps> = ({
             <FormControl isRequired>
               <FormLabel>How much did you achieve today?</FormLabel>
               <NumberInput
-                value={progressData.achieved_value}
-                onChange={(_, value) => handleInputChange('achieved_value', value)}
+                value={typeof progressData.achieved_value === 'number' && !isNaN(progressData.achieved_value) ? progressData.achieved_value : ''}
+                onChange={(_, value) => handleInputChange('achieved_value', typeof value === 'number' && !isNaN(value) ? value : 0)}
                 min={0}
                 precision={2}
                 size="lg"
@@ -277,8 +278,8 @@ const LogProgressModal: React.FC<LogProgressModalProps> = ({
                     </HStack>
                   </FormLabel>
                   <NumberInput
-                    value={progressData.difficulty_rating}
-                    onChange={(_, value) => handleInputChange('difficulty_rating', value)}
+                    value={progressData.difficulty_rating !== undefined && typeof progressData.difficulty_rating === 'number' && !isNaN(progressData.difficulty_rating) ? progressData.difficulty_rating : ''}
+                    onChange={(_, value) => handleInputChange('difficulty_rating', typeof value === 'number' && !isNaN(value) ? value : undefined)}
                     min={1}
                     max={5}
                   >
@@ -301,8 +302,8 @@ const LogProgressModal: React.FC<LogProgressModalProps> = ({
                     </HStack>
                   </FormLabel>
                   <NumberInput
-                    value={progressData.mood_rating}
-                    onChange={(_, value) => handleInputChange('mood_rating', value)}
+                    value={progressData.mood_rating !== undefined && typeof progressData.mood_rating === 'number' && !isNaN(progressData.mood_rating) ? progressData.mood_rating : ''}
+                    onChange={(_, value) => handleInputChange('mood_rating', typeof value === 'number' && !isNaN(value) ? value : undefined)}
                     min={1}
                     max={5}
                   >

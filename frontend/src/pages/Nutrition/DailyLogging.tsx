@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Box,
   Button,
@@ -35,7 +35,8 @@ import {
   NumberInputField,
   NumberInputStepper,
   NumberIncrementStepper,
-  NumberDecrementStepper
+  NumberDecrementStepper,
+  SimpleGrid
 } from '@chakra-ui/react';
 import { FiPlus, FiTrash2, FiEdit, FiSave, FiX } from 'react-icons/fi';
 
@@ -86,11 +87,7 @@ const DailyLogging: React.FC = () => {
   const cardBg = useColorModeValue('white', 'gray.800');
   const borderColor = useColorModeValue('gray.200', 'gray.600');
   
-  useEffect(() => {
-    loadDailyLog();
-  }, [selectedDate]);
-  
-  const loadDailyLog = async () => {
+  const loadDailyLog = useCallback(async () => {
     try {
       setLoading(true);
       
@@ -134,7 +131,27 @@ const DailyLogging: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedDate, toast]);
+  
+  useEffect(() => {
+    loadDailyLog();
+  }, [loadDailyLog]);
+  
+  // Listen for daily log updates from meal planning
+  useEffect(() => {
+    const handleDailyLogUpdate = (event: CustomEvent) => {
+      const updatedDate = event.detail?.date;
+      // If the updated date matches the selected date, refresh
+      if (updatedDate && updatedDate === selectedDate) {
+        loadDailyLog();
+      }
+    };
+    
+    window.addEventListener('dailyLogUpdated', handleDailyLogUpdate as EventListener);
+    return () => {
+      window.removeEventListener('dailyLogUpdated', handleDailyLogUpdate as EventListener);
+    };
+  }, [selectedDate, loadDailyLog]);
   
   const saveDailyLog = async () => {
     try {
@@ -300,8 +317,59 @@ const DailyLogging: React.FC = () => {
     onClose();
   };
   
-  const deleteEntry = (entryId: string) => {
-    setEntries(entries.filter(entry => entry.id !== entryId));
+  const deleteEntry = async (entryId: string) => {
+    try {
+      setLoading(true);
+      
+      const { supabase } = await import('../../lib/supabase');
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session?.access_token) {
+        toast({
+          title: 'Please log in',
+          status: 'error',
+          duration: 3000,
+          isClosable: true,
+        });
+        return;
+      }
+      
+      const response = await fetch(
+        `http://localhost:8000/daily-logging/daily-log-entry/${entryId}`,
+        {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+      
+      if (response.ok) {
+        toast({
+          title: 'Entry deleted successfully',
+          status: 'success',
+          duration: 2000,
+          isClosable: true,
+        });
+        // Reload the log to reflect changes
+        await loadDailyLog();
+      } else {
+        const errorData = await response.json().catch(() => ({ detail: 'Failed to delete entry' }));
+        throw new Error(errorData.detail || 'Failed to delete entry');
+      }
+    } catch (error) {
+      console.error('Error deleting entry:', error);
+      toast({
+        title: 'Error deleting entry',
+        description: (error as Error).message,
+        status: 'error',
+        duration: 3000,
+        isClosable: true,
+      });
+    } finally {
+      setLoading(false);
+    }
   };
   
   const getMealTypeColor = (mealType: string) => {
@@ -354,23 +422,23 @@ const DailyLogging: React.FC = () => {
         </CardHeader>
         <CardBody>
           <HStack spacing={8} wrap="wrap">
-            <VStack align="start">
+            <VStack key="calories" align="start">
               <Text fontSize="sm" color="gray.500">Total Calories</Text>
               <Text fontSize="2xl" fontWeight="bold">{totalCalories.toFixed(0)}</Text>
             </VStack>
-            <VStack align="start">
+            <VStack key="protein" align="start">
               <Text fontSize="sm" color="gray.500">Protein</Text>
               <Text fontSize="2xl" fontWeight="bold">{totalProtein.toFixed(1)}g</Text>
             </VStack>
-            <VStack align="start">
+            <VStack key="carbs" align="start">
               <Text fontSize="sm" color="gray.500">Carbs</Text>
               <Text fontSize="2xl" fontWeight="bold">{totalCarbs.toFixed(1)}g</Text>
             </VStack>
-            <VStack align="start">
+            <VStack key="fats" align="start">
               <Text fontSize="sm" color="gray.500">Fats</Text>
               <Text fontSize="2xl" fontWeight="bold">{totalFats.toFixed(1)}g</Text>
             </VStack>
-            <VStack align="start">
+            <VStack key="meals" align="start">
               <Text fontSize="sm" color="gray.500">Meals</Text>
               <Text fontSize="2xl" fontWeight="bold">{entries.length}</Text>
             </VStack>
@@ -420,25 +488,25 @@ const DailyLogging: React.FC = () => {
             <VStack spacing={4}>
               <Heading size="md">Daily Summary</Heading>
               <SimpleGrid columns={{ base: 2, md: 4 }} spacing={4} w="full">
-                <VStack>
+                <VStack key="calories-summary">
                   <Text fontSize="sm" color="gray.600">Total Calories</Text>
                   <Text fontSize="2xl" fontWeight="bold" color="blue.500">
                     {totalCalories.toFixed(0)}
                   </Text>
                 </VStack>
-                <VStack>
+                <VStack key="protein-summary">
                   <Text fontSize="sm" color="gray.600">Protein</Text>
                   <Text fontSize="2xl" fontWeight="bold" color="green.500">
                     {totalProtein.toFixed(1)}g
                   </Text>
                 </VStack>
-                <VStack>
+                <VStack key="carbs-summary">
                   <Text fontSize="sm" color="gray.600">Carbs</Text>
                   <Text fontSize="2xl" fontWeight="bold" color="orange.500">
                     {totalCarbs.toFixed(1)}g
                   </Text>
                 </VStack>
-                <VStack>
+                <VStack key="fats-summary">
                   <Text fontSize="sm" color="gray.600">Fats</Text>
                   <Text fontSize="2xl" fontWeight="bold" color="purple.500">
                     {totalFats.toFixed(1)}g
@@ -461,19 +529,22 @@ const DailyLogging: React.FC = () => {
         </Card>
       ) : (
         <VStack spacing={4} align="stretch">
-          {['breakfast', 'lunch', 'dinner', 'snack'].map(mealType => {
+          {['breakfast', 'lunch', 'dinner', 'snack']
+            .filter(mealType => {
+              const mealEntries = entries.filter(entry => entry.meal_type === mealType);
+              return mealEntries.length > 0;
+            })
+            .map(mealType => {
             const mealEntries = entries.filter(entry => entry.meal_type === mealType);
-            if (mealEntries.length === 0) return null;
-            
             const mealCalories = mealEntries.reduce((sum, entry) => sum + entry.calories, 0);
             const mealProtein = mealEntries.reduce((sum, entry) => sum + entry.protein, 0);
             
             return (
               <Card key={mealType} bg={cardBg} borderColor={borderColor}>
                 <CardHeader>
-                  <HStack justify="space-between">
+                  <HStack key={`${mealType}-header`} justify="space-between">
                     <Heading size="md" textTransform="capitalize">{mealType}</Heading>
-                    <HStack spacing={4}>
+                    <HStack key={`${mealType}-summary`} spacing={4}>
                       <Text fontSize="sm" color="gray.600">
                         {mealCalories.toFixed(0)} cal
                       </Text>
@@ -493,14 +564,14 @@ const DailyLogging: React.FC = () => {
                             {entry.quantity} {entry.unit}
                           </Text>
                         </VStack>
-                        <HStack spacing={4}>
+                        <HStack key={`${entry.id}-nutrition`} spacing={4}>
                           <Text fontSize="sm" fontWeight="bold">
                             {entry.calories.toFixed(0)} cal
                           </Text>
                           <Text fontSize="sm" color="gray.600">
                             {entry.protein.toFixed(1)}g protein
                           </Text>
-                          <HStack spacing={2}>
+                          <HStack key={`${entry.id}-actions`} spacing={2}>
                             <IconButton
                               icon={<FiEdit />}
                               size="sm"
@@ -512,7 +583,8 @@ const DailyLogging: React.FC = () => {
                               size="sm"
                               colorScheme="red"
                               onClick={() => deleteEntry(entry.id)}
-                              aria-label="Delete entry"
+                              aria-label="Delete this entry"
+                              title="Delete this food entry"
                             />
                           </HStack>
                         </HStack>
@@ -551,7 +623,7 @@ const DailyLogging: React.FC = () => {
                 />
               </FormControl>
               
-              <HStack spacing={4} w="full">
+              <HStack key="quantity-unit-mealtype" spacing={4} w="full">
                 <FormControl>
                   <FormLabel>Quantity</FormLabel>
                   <NumberInput
@@ -613,7 +685,7 @@ const DailyLogging: React.FC = () => {
                 </FormControl>
               </HStack>
               
-              <HStack spacing={4} w="full">
+              <HStack key="calories-protein" spacing={4} w="full">
                 <FormControl>
                   <FormLabel>Calories</FormLabel>
                   <NumberInput
@@ -647,7 +719,7 @@ const DailyLogging: React.FC = () => {
                 </FormControl>
               </HStack>
               
-              <HStack spacing={4} w="full">
+              <HStack key="carbs-fats" spacing={4} w="full">
                 <FormControl>
                   <FormLabel>Carbs (g)</FormLabel>
                   <NumberInput
@@ -681,7 +753,7 @@ const DailyLogging: React.FC = () => {
                 </FormControl>
               </HStack>
               
-              <HStack spacing={4} w="full" pt={4}>
+              <HStack key="action-buttons" spacing={4} w="full" pt={4}>
                 <Button
                   colorScheme="blue"
                   onClick={editingEntry ? updateEntry : addEntry}

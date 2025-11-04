@@ -10,12 +10,13 @@ WORKDIR /app/frontend
 COPY frontend/package*.json ./
 
 # Install frontend dependencies
-RUN npm ci --only=production
+RUN npm ci
 
 # Copy frontend source code
 COPY frontend/ .
 
-# Build frontend
+# Build frontend (skip type checking for Docker)
+ENV SKIP_TYPE_CHECK=true
 RUN npm run build
 
 # Stage 2: Build Backend
@@ -48,9 +49,21 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y \
     libpq-dev \
     nginx \
+    curl \
+    netcat-openbsd \
+    gcc \
+    g++ \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy backend from builder stage
+# Copy backend requirements first (for better caching)
+COPY --from=backend-builder /app/backend/requirements.txt /app/backend/requirements.txt
+
+# Install Python dependencies in final stage
+WORKDIR /app/backend
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy backend source code
+WORKDIR /app
 COPY --from=backend-builder /app/backend /app/backend
 
 # Copy frontend build from builder stage

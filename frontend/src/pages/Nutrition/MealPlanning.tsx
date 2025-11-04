@@ -152,7 +152,7 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
       console.warn('Failed to save mealsPerDay to localStorage:', e);
     }
   }, [mealsPerDay]);
-  const [preferences] = useState({
+  const [preferences, setPreferences] = useState({
     dietaryRestrictions: [] as string[],
     allergies: [] as string[],
     cuisinePreferences: [] as string[],
@@ -185,9 +185,33 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
   const [availableRecipes, setAvailableRecipes] = useState<any[]>([]);
   const [recipeSearch, setRecipeSearch] = useState('');
 
+  // Simple swap state - first click selects meal, second click swaps
+  const [swapMode, setSwapMode] = useState(false);
+  const [swapSourceMeal, setSwapSourceMeal] = useState<{id: string, date: string, mealType: string} | null>(null);
+
   const cardBg = useColorModeValue('white', 'gray.800');
   const borderColor = useColorModeValue('gray.200', 'gray.600');
   const toast = useToast();
+
+  // Cancel swap mode on ESC key or outside click
+  useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && swapMode) {
+        setSwapMode(false);
+        setSwapSourceMeal(null);
+        toast({
+          title: 'Swap cancelled',
+          description: 'Press Swap button again to start swapping',
+          status: 'info',
+          duration: 2000,
+          isClosable: true
+        });
+      }
+    };
+    
+    window.addEventListener('keydown', handleEsc);
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, [swapMode, toast]);
 
   const weekDates = useMemo(() => {
     if (planType !== 'weekly') return [] as string[];
@@ -366,7 +390,7 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
         });
         
         toast({ 
-          title: 'AI Meal Generated!', 
+          title: 'Meal Generated!', 
           description: `${result.meal.meal_name} added to ${dayName} ${mealType}`, 
           status: 'success', 
           duration: 2000, 
@@ -799,6 +823,43 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
     } catch {}
   }, [planType]);
 
+  // Load user preferences on mount
+  useEffect(() => {
+    const loadUserPreferences = async () => {
+      try {
+        const { supabase } = await import('../../lib/supabase');
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.access_token) return;
+
+        const response = await fetch('http://localhost:8000/nutrition/preferences', {
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json'
+          }
+        });
+
+        if (response.ok) {
+          const prefs = await response.json();
+          setPreferences({
+            dietaryRestrictions: prefs.dietary_preferences || [],
+            allergies: prefs.allergies || [],
+            cuisinePreferences: prefs.cuisine_preferences || [],
+            calorieTarget: prefs.daily_calorie_target || prefs.calorie_target || 2000,
+            mealsPerDay: prefs.meals_per_day || 4
+          });
+          console.log('📊 Loaded user preferences:', {
+            calorieTarget: prefs.daily_calorie_target || prefs.calorie_target || 2000,
+            mealsPerDay: prefs.meals_per_day || 4
+          });
+        }
+      } catch (error) {
+        console.warn('Failed to load user preferences:', error);
+      }
+    };
+
+    loadUserPreferences();
+  }, []);
+
   const loadMealPlan = useCallback(async () => {
     // CRITICAL: Skip loading if we're currently generating a meal plan
     // This prevents race conditions where loadMealPlan restores from localStorage
@@ -1197,7 +1258,7 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
         setStreamingProgress(null);
         toast({ 
           title: 'Meal plan structure created!', 
-          description: 'Click "Generate AI" on empty slots to fill them one by one (lighter approach).', 
+          description: 'Click "Generate Recipe" on empty slots to fill them one by one (lighter approach).', 
           status: 'success', 
           duration: 4000, 
           isClosable: true 
@@ -1275,6 +1336,31 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
       carbs: Math.round(total.carbs),
       fats: Math.round(total.fats),
     };
+  };
+
+  // Handle serving size changes with preview
+  const handleServingsChange = (newServings: number) => {
+    if (!selectedRecipe || newServings <= 0) return;
+    
+    // Always allow preview - no need to check for meal ID
+    const currentServings = selectedRecipe.servings || selectedRecipe.recipe?.servings || 1;
+    const multiplier = newServings / currentServings;
+    
+    // Preview the adjusted nutrition
+    const previewCalories = Math.round((selectedRecipe.calories || selectedRecipe.per_serving_calories || 0) * multiplier);
+    const previewProtein = Math.round((selectedRecipe.protein || 0) * multiplier);
+    const previewCarbs = Math.round((selectedRecipe.carbs || 0) * multiplier);
+    const previewFats = Math.round((selectedRecipe.fats || 0) * multiplier);
+    
+    setSelectedRecipe(prev => prev ? {
+      ...prev,
+      servings: newServings,
+      previewCalories,
+      previewProtein,
+      previewCarbs,
+      previewFats,
+      previewMultiplier: multiplier
+    } : null);
   };
 
   const handleViewRecipe = (meal: Meal) => {
@@ -1370,6 +1456,17 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
     // CRITICAL FIX: Ensure dietary tags are extracted
     normalized.dietary_tags = normalized.dietary_tags || normalized.dietaryTags || candidate?.dietary_tags || m.recipe_details?.dietary_tags || [];
 
+    // CRITICAL: Preserve meal ID so serving size adjuster works
+    normalized.id = m.id || normalized.id || (m as any).meal_id;
+    normalized.meal_id = normalized.meal_id || m.id || (m as any).meal_id;
+    
+    // CRITICAL: Preserve servings from meal/recipe
+    normalized.servings = normalized.servings || normalized.recipe?.servings || m.recipe_details?.servings || candidate?.servings || 1;
+    normalized.recipe = {
+      ...(normalized.recipe || {}),
+      servings: normalized.servings || 1
+    };
+
     setSelectedRecipe(normalized as any);
     onRecipeOpen();
   };
@@ -1408,6 +1505,97 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
       }
     } catch (e) {
       // Ignore abort errors
+    }
+  };
+
+  // Simple two-click swap function
+  const handleSimpleSwap = async (mealId: string, date: string, mealType: string) => {
+    if (!mealPlan?.id || !mealId) return;
+    
+    // First click: enter swap mode and select source meal
+    if (!swapMode || !swapSourceMeal) {
+      setSwapMode(true);
+      setSwapSourceMeal({ id: mealId, date, mealType });
+      toast({
+        title: 'Swap mode active',
+        description: 'Click another meal to swap with this one',
+        status: 'info',
+        duration: 3000,
+        isClosable: true
+      });
+      return;
+    }
+    
+    // Second click: perform the swap
+    if (swapSourceMeal.id === mealId) {
+      // Same meal clicked - cancel swap
+      setSwapMode(false);
+      setSwapSourceMeal(null);
+      toast({
+        title: 'Swap cancelled',
+        description: 'Same meal selected',
+        status: 'info',
+        duration: 2000,
+        isClosable: true
+      });
+      return;
+    }
+    
+    // Perform swap via API
+    try {
+      const { supabase } = await import('../../lib/supabase');
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session?.access_token) {
+        toast({ title: 'Please log in', status: 'error', duration: 2000, isClosable: true });
+        setSwapMode(false);
+        setSwapSourceMeal(null);
+        return;
+      }
+      
+      const response = await fetch(`http://localhost:8000/nutrition/meal-plans/${mealPlan.id}/meals/swap`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({
+          meal_id_1: parseInt(swapSourceMeal.id),
+          meal_id_2: parseInt(mealId)
+        })
+      });
+      
+      if (response.ok) {
+        const result = await response.json();
+        toast({
+          title: 'Meals swapped successfully',
+          description: `${result.meal_1.meal_name} ↔ ${result.meal_2.meal_name}`,
+          status: 'success',
+          duration: 3000,
+          isClosable: true
+        });
+        
+        // Reload meal plan to reflect changes
+        await loadMealPlan();
+        
+        // Exit swap mode
+        setSwapMode(false);
+        setSwapSourceMeal(null);
+      } else {
+        const errorData = await response.json().catch(() => ({ detail: 'Failed to swap meals' }));
+        throw new Error(errorData.detail || 'Swap failed');
+      }
+    } catch (error) {
+      console.error('Error swapping meals:', error);
+      toast({
+        title: 'Failed to swap meals',
+        description: (error as Error).message,
+        status: 'error',
+        duration: 3000,
+        isClosable: true
+      });
+      setSwapMode(false);
+      setSwapSourceMeal(null);
     }
   };
 
@@ -2144,7 +2332,10 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${session.access_token}`
         },
-        body: JSON.stringify(mealTypes)
+        body: JSON.stringify({
+          meal_types: mealTypes,
+          list_name: `Shopping List - ${mealTypes.join(', ')}`
+        })
       });
       
       if (response.ok) {
@@ -2212,29 +2403,30 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
           };
         });
         
-        // Update selected recipe if it's the same meal
+        // Update selected recipe if it's the same meal - use result directly
         if (selectedRecipe?.id === mealId) {
-          setSelectedRecipe(prev => {
+          setSelectedRecipe((prev: any) => {
             if (!prev) return null;
-            const updatedMeal = mealPlan?.meals.find(m => m.id === mealId);
-            if (updatedMeal) {
-              return {
-                ...prev,
-                ...updatedMeal,
-                calories: result.updated_meal.calories,
-                protein: result.updated_meal.protein,
-                carbs: result.updated_meal.carbs,
-                fats: result.updated_meal.fats,
+            return {
+              ...prev,
+              calories: result.updated_meal.calories,
+              protein: result.updated_meal.protein,
+              carbs: result.updated_meal.carbs,
+              fats: result.updated_meal.fats,
+              servings: result.updated_meal.servings,
+              recipe: {
+                ...prev.recipe,
                 servings: result.updated_meal.servings,
-                recipe: {
-                  ...prev.recipe,
-                  servings: result.updated_meal.servings,
-                  ingredients: result.adjusted_ingredients,
-                  nutrition: result.adjusted_nutrition
-                }
-              } as any;
-            }
-            return prev;
+                ingredients: result.adjusted_ingredients,
+                nutrition: result.adjusted_nutrition
+              },
+              // Clear preview since change has been applied
+              previewCalories: undefined,
+              previewMultiplier: undefined,
+              previewProtein: undefined,
+              previewCarbs: undefined,
+              previewFats: undefined
+            } as any;
           });
         }
         
@@ -2427,13 +2619,118 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
 
       if (response.ok) {
         const result = await response.json();
-        toast({ title: `${new Date(date).toLocaleDateString()} logged successfully`, description: `Logged ${result.logged_meals} meals`, status: 'success', duration: 2000, isClosable: true });
+        toast({ title: `${new Date(date).toLocaleDateString()} logged successfully`, description: `Logged ${result.logged_meals} meals. Goals and daily log will be updated.`, status: 'success', duration: 3000, isClosable: true });
+        
+        // Trigger a custom event to notify other components to refresh
+        window.dispatchEvent(new CustomEvent('dailyLogUpdated', { detail: { date } }));
       } else {
-        throw new Error('Failed to log day');
+        const errorData = await response.json().catch(() => ({ detail: 'Unknown error' }));
+        const errorMessage = errorData.detail || `Server error: ${response.status}`;
+        console.error('Backend error:', errorMessage);
+        throw new Error(errorMessage);
       }
     } catch (err: any) {
       console.error('Error logging day:', err);
       toast({ title: 'Failed to log day', description: err.message, status: 'error', duration: 3000, isClosable: true });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleFixDailyTotal = async (date: string) => {
+    if (!mealPlan) return;
+    setLoading(true);
+    try {
+      const { supabase } = await import('../../lib/supabase');
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        toast({ title: 'Please log in', status: 'warning', duration: 2500, isClosable: true });
+        return;
+      }
+
+      const response = await fetch(
+        `http://localhost:8000/nutrition/meal-plans/${mealPlan.id}/fix-daily-totals?target_date=${date}`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+
+      if (response.ok) {
+        const result = await response.json();
+        toast({ 
+          title: 'Daily total adjusted', 
+          description: `Meals adjusted to match your daily target (${result.fixed_dates?.length || 1} day(s) fixed)`, 
+          status: 'success', 
+          duration: 3000, 
+          isClosable: true 
+        });
+        
+        // Force reload meal plan to see updated values
+        if (mealPlan?.id) {
+          const planId = mealPlan.id;
+          console.log('🔄 Reloading meal plan after fix:', planId);
+          
+          // Clear localStorage cache to force fresh fetch
+          try {
+            localStorage.removeItem('lastMealPlanId');
+            localStorage.removeItem('lastMealPlanDate');
+            localStorage.removeItem('lastMealPlanType');
+          } catch (e) {
+            console.warn('Failed to clear localStorage cache:', e);
+          }
+          
+          // Clear the meal plan state to force a fresh fetch
+          setMealPlan(null);
+          
+          // Force reload after a brief delay
+          setTimeout(async () => {
+            try {
+              await loadMealPlan();
+              console.log('✅ Meal plan reloaded successfully');
+              
+              // Also try to refetch directly via API to ensure we have latest data
+              const { supabase } = await import('../../lib/supabase');
+              const { data: { session } } = await supabase.auth.getSession();
+              if (session?.access_token) {
+                const response = await fetch(
+                  `http://localhost:8000/nutrition/meal-plans/${planId}`,
+                  {
+                    headers: {
+                      'Authorization': `Bearer ${session.access_token}`,
+                      'Content-Type': 'application/json'
+                    }
+                  }
+                );
+                if (response.ok) {
+                  const updatedPlan = await response.json();
+                  setMealPlan(updatedPlan);
+                  console.log('✅ Force-refetched meal plan from API');
+                }
+              }
+            } catch (error) {
+              console.error('❌ Error reloading meal plan:', error);
+            }
+          }, 300);
+        }
+      } else {
+        const errorData = await response.json().catch(() => ({ detail: 'Unknown error' }));
+        const errorMessage = errorData.detail || `Server error: ${response.status}`;
+        console.error('Backend error:', errorMessage);
+        throw new Error(errorMessage);
+      }
+    } catch (err: any) {
+      console.error('Error fixing daily total:', err);
+      toast({ 
+        title: 'Error fixing daily total', 
+        description: err.message || 'Failed to adjust meals to match target', 
+        status: 'error', 
+        duration: 3000, 
+        isClosable: true 
+      });
     } finally {
       setLoading(false);
     }
@@ -2698,7 +2995,7 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
                     Create Meal Plan Structure
                   </Button>
                   <Text fontSize="sm" color="gray.400">
-                    After creating the structure, click "Generate AI" or "Pick from Database" on each meal slot
+                    After creating the structure, click "Generate Recipe" or "Pick from Database" on each meal slot
                   </Text>
                 </VStack>
               </VStack>
@@ -2803,10 +3100,49 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
                                 {isToday && <Text fontSize="xs" color="green.600">Today</Text>}
                               </HStack>
                               <Text fontSize="xs" color="gray.600">{new Date(d).toLocaleDateString(undefined,{month:'short', day:'numeric'})}</Text>
-                              <Text fontSize="xs" color="blue.600" fontWeight="bold">{dayCalories} cal</Text>
-                              <Button size="xs" colorScheme="green" variant="outline" onClick={() => handleLogDayToDailyIntake(d)}>
-                                Log Day
-                              </Button>
+                              <HStack spacing={1} align="center">
+                                <Text fontSize="xs" color="blue.600" fontWeight="bold">{dayCalories} cal</Text>
+                                {preferences?.calorieTarget && dayCalories > 0 && (
+                                  <Text fontSize="xs" color="gray.500">
+                                    / {preferences.calorieTarget} cal
+                                  </Text>
+                                )}
+                              </HStack>
+                              {dayCalories > 0 && preferences?.calorieTarget && Math.abs(dayCalories - preferences.calorieTarget) > 10 && (
+                                <Button 
+                                  size="xs" 
+                                  colorScheme="orange" 
+                                  variant="outline" 
+                                  onClick={() => handleFixDailyTotal(d)}
+                                  isLoading={loading}
+                                >
+                                  Fix Daily Total
+                                </Button>
+                              )}
+                              {dayCalories > 0 && (
+                                <Button size="xs" colorScheme="green" variant="outline" onClick={() => handleLogDayToDailyIntake(d)}>
+                                  Log Day
+                                </Button>
+                              )}
+                              {swapMode && (
+                                <Button 
+                                  size="xs" 
+                                  colorScheme="gray" 
+                                  variant="ghost" 
+                                  onClick={() => {
+                                    setSwapMode(false);
+                                    setSwapSourceMeal(null);
+                                    toast({
+                                      title: 'Swap cancelled',
+                                      status: 'info',
+                                      duration: 2000,
+                                      isClosable: true
+                                    });
+                                  }}
+                                >
+                                  Cancel Swap (ESC)
+                                </Button>
+                              )}
                             </VStack>
                           </Box>
                         {mealTypes.map((slot, slotIdx) => {
@@ -2820,8 +3156,11 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
                               p={mealsPerDay > 4 ? 1 : 1.5} 
                               borderRightWidth={1} 
                               borderBottomWidth={1} 
-                              borderColor={borderColor}
+                              borderColor={swapMode && swapSourceMeal?.id !== (cellMeal?.id || cellMeal?.meal_id || cellMeal?.mealId) && cellMeal ? "orange.300" : swapMode && swapSourceMeal?.id === (cellMeal?.id || cellMeal?.meal_id || cellMeal?.mealId) ? "green.400" : borderColor}
+                              borderWidth={swapMode && cellMeal ? 2 : 1}
+                              bg={swapMode && swapSourceMeal?.id === (cellMeal?.id || cellMeal?.meal_id || cellMeal?.mealId) ? "green.50" : swapMode && cellMeal ? "orange.50" : undefined}
                               minH={mealsPerDay > 4 ? "180px" : "auto"}
+                              transition="all 0.2s"
                             >
                               {cellMeal ? (
                                 <VStack align="stretch" spacing={mealsPerDay > 4 ? 1.5 : 2} h="100%" justify="space-between">
@@ -2972,15 +3311,36 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
                                       </Button>
                                       <Button 
                                         size={mealsPerDay > 4 ? "2xs" : "xs"} 
-                                        onClick={() => loadAlternatives(slot)} 
+                                        onClick={() => loadAlternatives(slot)}
                                         variant="outline" 
-                                        colorScheme="orange"
+                                        colorScheme="teal"
                                         flex={1} 
                                         minW={mealsPerDay > 4 ? "50px" : "60px"}
                                         fontSize={mealsPerDay > 4 ? "10px" : "12px"}
-                                        title="Get alternative recipes"
+                                        title="See alternative meal suggestions"
                                       >
-                                        Swap
+                                        Alt
+                                      </Button>
+                                      <Button 
+                                        size={mealsPerDay > 4 ? "2xs" : "xs"} 
+                                        onClick={() => {
+                                          const mealId = cellMeal?.id || cellMeal?.meal_id || cellMeal?.mealId;
+                                          if (mealId) {
+                                            handleSimpleSwap(String(mealId), d, slot);
+                                          }
+                                        }}
+                                        variant="outline" 
+                                        colorScheme={swapMode && swapSourceMeal?.id === (cellMeal?.id || cellMeal?.meal_id || cellMeal?.mealId) ? "green" : "orange"}
+                                        flex={1} 
+                                        minW={mealsPerDay > 4 ? "50px" : "60px"}
+                                        fontSize={mealsPerDay > 4 ? "10px" : "12px"}
+                                        title={swapMode && swapSourceMeal?.id === (cellMeal?.id || cellMeal?.meal_id || cellMeal?.mealId) 
+                                          ? "Selected - click another meal to swap" 
+                                          : swapMode 
+                                          ? "Click to swap with selected meal" 
+                                          : "Click to select meal for swapping"}
+                                      >
+                                        {swapMode && swapSourceMeal?.id === (cellMeal?.id || cellMeal?.meal_id || cellMeal?.mealId) ? "Selected" : "Swap"}
                                       </Button>
                                     </HStack>
                                     {mealsPerDay <= 4 && (
@@ -3025,9 +3385,9 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
                                         minW={mealsPerDay > 4 ? "60px" : "80px"}
                                         fontSize={mealsPerDay > 4 ? "9px" : "12px"}
                                         px={mealsPerDay > 4 ? 1 : 2}
-                                        title="Generate a new AI recipe"
+                                        title="Generate a new recipe"
                                       >
-                                        {mealsPerDay > 4 ? 'AI' : 'Regenerate AI'}
+                                        {mealsPerDay > 4 ? 'Gen' : 'Regenerate'}
                                       </Button>
                                       <Button 
                                         size={mealsPerDay > 4 ? "2xs" : "xs"} 
@@ -3058,7 +3418,7 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
                                     fontSize={mealsPerDay > 4 ? "10px" : "12px"}
                                     py={mealsPerDay > 4 ? 2 : 3}
                                   >
-                                    {generatingMeals.has(`${d}-${slotIdx}-${slot}`) ? (mealsPerDay > 4 ? '...' : 'Generating...') : (mealsPerDay > 4 ? 'Generate AI' : 'Generate AI')}
+                                    {generatingMeals.has(`${d}-${slotIdx}-${slot}`) ? (mealsPerDay > 4 ? '...' : 'Generating...') : (mealsPerDay > 4 ? 'Generate' : 'Generate Recipe')}
                                   </Button>
                                   <Button 
                                     size={mealsPerDay > 4 ? "2xs" : "xs"} 
@@ -3230,7 +3590,7 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
               </VStack>
             </ModalHeader>
             <ModalCloseButton />
-            <ModalBody>
+            <ModalBody maxH="80vh" overflowY="auto">
               {selectedRecipe && (
                 <VStack spacing={6} align="stretch">
                   {/* Nutritional Information */}
@@ -3282,136 +3642,149 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
                     </Grid>
                   </Box>
 
-                  {/* Preparation Info */}
-                  <Box>
-                    <Heading size="md" mb={3}>Preparation</Heading>
-                    <HStack spacing={4}>
-                      <Box>
-                        <Text fontSize="sm" color="gray.600">Prep Time</Text>
-                        <Text fontWeight="bold">{selectedRecipe.prepTime || selectedRecipe.prep_time || 0} min</Text>
-                      </Box>
-                      {selectedRecipe.cook_time && (
-                        <Box>
-                          <Text fontSize="sm" color="gray.600">Cook Time</Text>
-                          <Text fontWeight="bold">{selectedRecipe.cook_time} min</Text>
-                        </Box>
-                      )}
-                      <Box>
-                        <Text fontSize="sm" color="gray.600">Difficulty</Text>
-                        <Badge colorScheme={
-                          (selectedRecipe.difficulty || selectedRecipe.difficulty_level) === 'easy' ? 'green' :
-                          (selectedRecipe.difficulty || selectedRecipe.difficulty_level) === 'medium' ? 'yellow' : 'red'
-                        }>
-                          {(selectedRecipe.difficulty || selectedRecipe.difficulty_level || 'easy').toUpperCase()}
-                        </Badge>
-                      </Box>
-                    </HStack>
-                  </Box>
-
-                  {/* Portion Adjustment */}
-                  {selectedRecipe.id && (
-                    <Box>
-                      <Heading size="md" mb={3}>Portion Size</Heading>
-                      <VStack align="stretch" spacing={3}>
-                        <HStack spacing={4} align="center">
-                          <FormControl width="200px">
-                            <FormLabel fontSize="sm" color="gray.600">Servings</FormLabel>
-                            <NumberInput
-                              defaultValue={selectedRecipe.servings || selectedRecipe.recipe?.servings || 1}
-                              min={0.25}
-                              max={10}
-                              step={0.25}
-                              precision={2}
-                              onChange={(valueString, valueNumber) => {
-                                // Update local state immediately for preview
-                                const mealId = selectedRecipe.id;
-                                if (mealId && valueNumber > 0) {
-                                  // Store the value for when user clicks Apply
-                                  const currentServings = selectedRecipe.servings || selectedRecipe.recipe?.servings || 1;
-                                  const multiplier = valueNumber / currentServings;
-                                  
-                                  // Preview the adjusted nutrition
-                                  const previewCalories = Math.round((selectedRecipe.calories || selectedRecipe.per_serving_calories || 0) * multiplier);
-                                  const previewProtein = Math.round((selectedRecipe.protein || 0) * multiplier);
-                                  const previewCarbs = Math.round((selectedRecipe.carbs || 0) * multiplier);
-                                  const previewFats = Math.round((selectedRecipe.fats || 0) * multiplier);
-                                  
-                                  setSelectedRecipe(prev => prev ? {
-                                    ...prev,
-                                    servings: valueNumber,
-                                    previewCalories,
-                                    previewProtein,
-                                    previewCarbs,
-                                    previewFats,
-                                    previewMultiplier: multiplier
-                                  } : null);
-                                }
-                              }}
-                            >
-                              <NumberInputField />
-                              <NumberInputStepper>
-                                <NumberIncrementStepper />
-                                <NumberDecrementStepper />
-                              </NumberInputStepper>
-                            </NumberInput>
-                          </FormControl>
-                          <VStack align="start" spacing={1} flex={1}>
-                            <Text fontSize="xs" color="gray.500">
-                              Adjust to change ingredient quantities and nutrition values
-                            </Text>
-                            {(selectedRecipe as any).previewCalories && (
-                              <Text fontSize="xs" color="blue.600" fontWeight="semibold">
-                                Preview: {(selectedRecipe as any).previewCalories} cal
-                                {(selectedRecipe as any).previewProtein > 0 && `, P:${(selectedRecipe as any).previewProtein}g`}
-                                {(selectedRecipe as any).previewCarbs > 0 && ` C:${(selectedRecipe as any).previewCarbs}g`}
-                                {(selectedRecipe as any).previewFats > 0 && ` F:${(selectedRecipe as any).previewFats}g`}
-                              </Text>
-                            )}
-                          </VStack>
-                        </HStack>
+                  {/* Portion Adjustment - Compact design */}
+                  <Box borderTop="1px" borderColor="gray.200" pt={4}>
+                    <HStack justify="space-between" align="center" mb={2}>
+                      <Text fontSize="sm" fontWeight="semibold" color="gray.700">Portion Size</Text>
+                      {(selectedRecipe.id || (selectedRecipe as any).meal_id) && (
                         <Button
-                          size="sm"
+                          size="xs"
+                          variant="ghost"
                           colorScheme="blue"
                           onClick={async () => {
-                            const mealId = selectedRecipe.id;
+                            const mealId = selectedRecipe.id || (selectedRecipe as any).meal_id;
                             const newServings = (selectedRecipe.servings || selectedRecipe.recipe?.servings || 1) as number;
                             if (mealId && newServings > 0) {
                               try {
+                                setLoading(true);
                                 await adjustMealPortion(mealId, newServings);
                                 toast({
                                   title: 'Portion adjusted',
                                   description: `Recipe servings updated to ${newServings}`,
                                   status: 'success',
-                                  duration: 3000,
+                                  duration: 2000,
                                   isClosable: true
                                 });
-                                // Reload meal plan to get updated values
-                                if (mealPlan?.id) {
-                                  await loadMealPlan(mealPlan.id);
-                                  // Update the selected recipe after reload
-                                  const updatedMeal = mealPlan?.meals.find(m => m.id === mealId);
-                                  if (updatedMeal) {
-                                    handleViewRecipe(updatedMeal);
-                                  }
-                                }
+                                // adjustMealPortion already updates selectedRecipe state
+                                // No additional update needed here
                               } catch (err) {
                                 toast({
                                   title: 'Error',
                                   description: 'Failed to adjust portion size',
                                   status: 'error',
-                                  duration: 3000,
+                                  duration: 2000,
                                   isClosable: true
                                 });
+                              } finally {
+                                setLoading(false);
                               }
                             }
                           }}
-                          isDisabled={loading || !selectedRecipe.id || !((selectedRecipe as any).previewCalories)}
+                          isLoading={loading}
+                          isDisabled={loading || !((selectedRecipe as any).previewMultiplier && (selectedRecipe as any).previewMultiplier !== 1)}
                         >
-                          Apply Portion Change
+                          Apply Change
                         </Button>
-                      </VStack>
-                    </Box>
-                  )}
+                      )}
+                    </HStack>
+                    
+                    <HStack spacing={2} align="center" justify="center" w="full">
+                      <Button
+                        size="sm"
+                        colorScheme="blue"
+                        borderRadius="full"
+                        width="32px"
+                        height="32px"
+                        fontSize="md"
+                        onClick={() => {
+                          const currentServings = selectedRecipe.servings || selectedRecipe.recipe?.servings || 1;
+                          const newServings = Math.max(0.25, currentServings - 0.25);
+                          handleServingsChange(newServings);
+                        }}
+                        isDisabled={loading}
+                      >
+                        −
+                      </Button>
+                      
+                      <FormControl width="100px">
+                        <NumberInput
+                          value={selectedRecipe.servings || selectedRecipe.recipe?.servings || 1}
+                          min={0.25}
+                          max={10}
+                          step={0.25}
+                          precision={2}
+                          onChange={(valueString, valueNumber) => {
+                            if (valueNumber > 0) {
+                              handleServingsChange(valueNumber);
+                            }
+                          }}
+                          size="sm"
+                        >
+                          <NumberInputField 
+                            textAlign="center" 
+                            fontWeight="semibold"
+                            fontSize="sm"
+                            bg="white"
+                          />
+                        </NumberInput>
+                      </FormControl>
+                      
+                      <Text fontSize="sm" color="gray.600" minW="50px" textAlign="center">
+                        serving{((selectedRecipe.servings || selectedRecipe.recipe?.servings || 1) !== 1) ? 's' : ''}
+                      </Text>
+                      
+                      <Button
+                        size="sm"
+                        colorScheme="blue"
+                        borderRadius="full"
+                        width="32px"
+                        height="32px"
+                        fontSize="md"
+                        onClick={() => {
+                          const currentServings = selectedRecipe.servings || selectedRecipe.recipe?.servings || 1;
+                          const newServings = Math.min(10, currentServings + 0.25);
+                          handleServingsChange(newServings);
+                        }}
+                        isDisabled={loading}
+                      >
+                        +
+                      </Button>
+                      
+                      <Button
+                        size="xs"
+                        variant="ghost"
+                        colorScheme="gray"
+                        onClick={() => {
+                          const originalServings = selectedRecipe.recipe?.servings || 1;
+                          handleServingsChange(originalServings);
+                        }}
+                        isDisabled={loading}
+                      >
+                        Reset
+                      </Button>
+                    </HStack>
+                    
+                    {/* Compact preview of adjusted nutrition - only show when changed */}
+                    {(selectedRecipe as any).previewCalories && (selectedRecipe as any).previewMultiplier !== 1 && (
+                      <Box mt={2} p={2} bg="blue.50" borderRadius="sm" borderLeft="2px" borderColor="blue.400">
+                        <HStack spacing={3} fontSize="xs">
+                          <Text color="blue.700" fontWeight="semibold">
+                            {(selectedRecipe as any).previewCalories} cal
+                          </Text>
+                          {(selectedRecipe as any).previewProtein > 0 && (
+                            <Text color="green.700">P: {(selectedRecipe as any).previewProtein}g</Text>
+                          )}
+                          {(selectedRecipe as any).previewCarbs > 0 && (
+                            <Text color="orange.700">C: {(selectedRecipe as any).previewCarbs}g</Text>
+                          )}
+                          {(selectedRecipe as any).previewFats > 0 && (
+                            <Text color="purple.700">F: {(selectedRecipe as any).previewFats}g</Text>
+                          )}
+                        </HStack>
+                      </Box>
+                    )}
+                  </Box>
+                  
 
                   {/* Ingredients */}
                   {selectedRecipe.ingredients && selectedRecipe.ingredients.length > 0 && (

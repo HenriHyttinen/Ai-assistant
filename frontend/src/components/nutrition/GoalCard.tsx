@@ -8,7 +8,6 @@ import {
   CardBody,
   CardHeader,
   Badge,
-  Icon,
   Progress,
   Button,
   useColorModeValue,
@@ -18,7 +17,8 @@ import {
   MenuItem,
   useDisclosure,
   Tooltip,
-  Divider
+  Divider,
+  SimpleGrid
 } from '@chakra-ui/react';
 import { 
   FiTarget, 
@@ -66,34 +66,36 @@ const GoalCard: React.FC<GoalCardProps> = ({ goal, onUpdate }) => {
   };
 
   const getStatusIcon = (status: string) => {
+    const iconProps = { size: 20, style: { color: 'inherit' } };
     switch (status) {
       case 'active':
-        return <Icon as={FiTarget} color="green.500" />;
+        return <Box color="green.500" display="inline-flex"><FiTarget {...iconProps} /></Box>;
       case 'paused':
-        return <Icon as={FiPause} color="yellow.500" />;
+        return <Box color="yellow.500" display="inline-flex"><FiPause {...iconProps} /></Box>;
       case 'completed':
-        return <Icon as={FiCheck} color="blue.500" />;
+        return <Box color="blue.500" display="inline-flex"><FiCheck {...iconProps} /></Box>;
       case 'cancelled':
-        return <Icon as={FiTarget} color="red.500" />;
+        return <Box color="red.500" display="inline-flex"><FiTarget {...iconProps} /></Box>;
       default:
-        return <Icon as={FiTarget} color="gray.500" />;
+        return <Box color="gray.500" display="inline-flex"><FiTarget {...iconProps} /></Box>;
     }
   };
 
   const getGoalTypeIcon = (goalType: string) => {
+    const iconProps = { size: 20, style: { color: 'inherit' } };
     switch (goalType) {
       case 'calories':
-        return <Icon as={FiTarget} color="orange.500" />;
+        return <Box color="orange.500" display="inline-flex"><FiTarget {...iconProps} /></Box>;
       case 'protein':
-        return <Icon as={FiTrendingUp} color="blue.500" />;
+        return <Box color="blue.500" display="inline-flex"><FiTrendingUp {...iconProps} /></Box>;
       case 'fiber':
-        return <Icon as={FiTarget} color="green.500" />;
+        return <Box color="green.500" display="inline-flex"><FiTarget {...iconProps} /></Box>;
       case 'water':
-        return <Icon as={FiTarget} color="cyan.500" />;
+        return <Box color="cyan.500" display="inline-flex"><FiTarget {...iconProps} /></Box>;
       case 'sodium':
-        return <Icon as={FiTarget} color="purple.500" />;
+        return <Box color="purple.500" display="inline-flex"><FiTarget {...iconProps} /></Box>;
       default:
-        return <Icon as={FiTarget} color="gray.500" />;
+        return <Box color="gray.500" display="inline-flex"><FiTarget {...iconProps} /></Box>;
     }
   };
 
@@ -167,22 +169,22 @@ const GoalCard: React.FC<GoalCardProps> = ({ goal, onUpdate }) => {
             
             <Menu>
               <MenuButton as={Button} variant="ghost" size="sm">
-                <Icon as={FiMoreVertical} />
+                <FiMoreVertical size={20} />
               </MenuButton>
               <MenuList>
-                <MenuItem icon={<Icon as={FiEdit} />} onClick={handleEdit}>
+                <MenuItem icon={<FiEdit size={20} />} onClick={handleEdit}>
                   Edit Goal
                 </MenuItem>
                 {goal.status === 'active' ? (
-                  <MenuItem icon={<Icon as={FiPause} />} onClick={handlePause}>
+                  <MenuItem icon={<FiPause size={20} />} onClick={handlePause}>
                     Pause Goal
                   </MenuItem>
                 ) : goal.status === 'paused' ? (
-                  <MenuItem icon={<Icon as={FiPlay} />} onClick={handleResume}>
+                  <MenuItem icon={<FiPlay size={20} />} onClick={handleResume}>
                     Resume Goal
                   </MenuItem>
                 ) : null}
-                <MenuItem icon={<Icon as={FiTrash2} />} onClick={handleDelete} color="red.500">
+                <MenuItem icon={<FiTrash2 size={20} />} onClick={handleDelete} color="red.500">
                   Delete Goal
                 </MenuItem>
               </MenuList>
@@ -215,11 +217,11 @@ const GoalCard: React.FC<GoalCardProps> = ({ goal, onUpdate }) => {
                 <HStack spacing={1}>
                   {goal.is_on_track ? (
                     <Tooltip label="On track">
-                      <Icon as={FiCheck} color="green.500" />
+                      <Box color="green.500" display="inline-flex"><FiCheck size={20} style={{ color: 'inherit' }} /></Box>
                     </Tooltip>
                   ) : (
                     <Tooltip label="Behind schedule">
-                      <Icon as={FiTarget} color="yellow.500" />
+                      <Box color="yellow.500" display="inline-flex"><FiTarget size={20} style={{ color: 'inherit' }} /></Box>
                     </Tooltip>
                   )}
                 </HStack>
@@ -253,7 +255,7 @@ const GoalCard: React.FC<GoalCardProps> = ({ goal, onUpdate }) => {
             {goal.next_milestone && (
               <Box p={3} bg={useColorModeValue('gray.50', 'gray.700')} borderRadius="md">
                 <HStack spacing={2} mb={1}>
-                  <Icon as={FiAward} color="purple.500" />
+                  <Box color="purple.500" display="inline-flex"><FiAward size={20} style={{ color: 'inherit' }} /></Box>
                   <Text fontSize="sm" fontWeight="semibold">Next Milestone</Text>
                 </HStack>
                 <Text fontSize="sm" color={textColor}>
@@ -271,7 +273,7 @@ const GoalCard: React.FC<GoalCardProps> = ({ goal, onUpdate }) => {
             {/* Last Achieved */}
             {goal.last_achieved && (
               <HStack spacing={2}>
-                <Icon as={FiCalendar} color="green.500" />
+                <Box color="green.500" display="inline-flex"><FiCalendar size={20} style={{ color: 'inherit' }} /></Box>
                 <Text fontSize="sm" color={textColor}>
                   Last achieved: {new Date(goal.last_achieved).toLocaleDateString()}
                 </Text>

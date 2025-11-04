@@ -27,7 +27,7 @@ const GoalInsights: React.FC<GoalInsightsProps> = ({ dashboardData }) => {
       
       <Card>
         <CardHeader>
-          <Text fontSize="lg" fontWeight="semibold">AI-Powered Insights</Text>
+          <Text fontSize="lg" fontWeight="semibold">Analytics & Recommendations</Text>
         </CardHeader>
         <CardBody>
           <Text>Goal insights and recommendations will be implemented here.</Text>

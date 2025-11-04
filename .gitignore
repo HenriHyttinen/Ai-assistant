@@ -42,6 +42,7 @@ venv.bak/
 *.sqlite
 *.sqlite3
 dev.db
+recipes.sqlite3
 
 # Logs
 logs/
@@ -207,11 +208,15 @@ temp/
 local/
 local_*
 
-# Test files
-test_*
-*_test.py
-tests/
-test/
+# Test output files (but keep test source files)
+.pytest_cache/
+.coverage
+htmlcov/
+*.pyc
+__pycache__/
+# Keep tests/ directory for reviewers!
+# tests/
+# test/
 
 # Backup files
 *.bak
@@ -246,3 +251,18 @@ datasets/
 !vite.config.ts
 !tailwind.config.js
 !postcss.config.js
+
+# Development test files (not test suite)
+test_*.py
+*_test.py
+test_*.csv
+test_*.json
+
+# Development scripts (not essential)
+debug_*.py
+monitor_*.sh
+start_backend_*.sh
+
+# Validation/export files
+*_export.csv
+*_validation_report.json

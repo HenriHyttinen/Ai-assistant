@@ -1,25 +1,21 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   Box,
   VStack,
   HStack,
   Text,
   Button,
-  ButtonGroup,
   Card,
   CardBody,
   CardHeader,
   Heading,
-  Badge,
   Progress,
   useToast,
   SimpleGrid,
   Icon,
-  Flex,
   Spinner,
   Alert,
   AlertIcon,
-  Divider,
   Stat,
   StatLabel,
   StatNumber,
@@ -29,20 +25,15 @@ import {
 import { FiBarChart, FiTrendingUp, FiTrendingDown, FiTarget, FiRefreshCw } from 'react-icons/fi';
 import { t } from '../../utils/translations';
 import MacronutrientVisualization from './MacronutrientVisualization';
-import AdvancedNutritionDashboard from './AdvancedNutritionDashboard';
 
 interface NutritionalAnalysisProps {
   nutritionalLogs?: any[];
   onUpdate?: () => void;
 }
 
-const NutritionalAnalysis: React.FC<NutritionalAnalysisProps> = ({
-  nutritionalLogs = [],
-  onUpdate = () => {},
-}) => {
+const NutritionalAnalysis: React.FC<NutritionalAnalysisProps> = () => {
   const [analysisType, setAnalysisType] = useState<'daily' | 'weekly' | 'monthly'>('daily');
   const [loading, setLoading] = useState(false);
-  const [dashboardMode, setDashboardMode] = useState<'basic' | 'advanced'>('advanced');
   const [analysisData, setAnalysisData] = useState<any>({
     totals: {
       calories: 0,
@@ -76,20 +67,37 @@ const NutritionalAnalysis: React.FC<NutritionalAnalysisProps> = ({
   });
   const toast = useToast();
 
-  const loadAnalysis = async () => {
+  const loadAnalysis = useCallback(async () => {
     try {
       setLoading(true);
       
-      const endDate = new Date();
-      const startDate = new Date();
+      // Use UTC dates to avoid timezone issues
+      const now = new Date();
+      const endDate = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+      let startDate = new Date(endDate);
       
       if (analysisType === 'daily') {
-        startDate.setDate(endDate.getDate()); // Same day for daily analysis
+        // Same day for daily analysis
+        startDate = new Date(endDate);
       } else if (analysisType === 'weekly') {
-        startDate.setDate(endDate.getDate() - 6); // Last 7 days including today
+        // Last 7 days including today
+        startDate = new Date(endDate);
+        startDate.setUTCDate(startDate.getUTCDate() - 6);
       } else {
-        startDate.setDate(endDate.getDate() - 29); // Last 30 days including today
+        // Last 30 days including today
+        startDate = new Date(endDate);
+        startDate.setUTCDate(startDate.getUTCDate() - 29);
       }
+      
+      // Format as YYYY-MM-DD for API call
+      const formatDate = (date: Date) => {
+        return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
+      };
+      
+      const startDateStr = formatDate(startDate);
+      const endDateStr = formatDate(endDate);
+      
+      console.log(`📊 Loading ${analysisType} analysis: ${startDateStr} to ${endDateStr}`);
 
       // Get Supabase session token
       const { supabase } = await import('../../lib/supabase');
@@ -101,12 +109,9 @@ const NutritionalAnalysis: React.FC<NutritionalAnalysisProps> = ({
       
       // Add cache-busting parameter to force fresh data
       const timestamp = new Date().getTime();
-      const endpoint = dashboardMode === 'advanced' 
-        ? 'advanced-analytics' 
-        : 'nutritional-analysis';
       
       const response = await fetch(
-        `http://localhost:8000/nutrition/${endpoint}?start_date=${startDate.toISOString().split('T')[0]}&end_date=${endDate.toISOString().split('T')[0]}&analysis_type=${analysisType}&_t=${timestamp}`,
+        `http://localhost:8000/nutrition/advanced-analytics?start_date=${startDateStr}&end_date=${endDateStr}&analysis_type=${analysisType}&_t=${timestamp}`,
         {
           method: 'GET',
           headers: {
@@ -121,7 +126,70 @@ const NutritionalAnalysis: React.FC<NutritionalAnalysisProps> = ({
       if (response.ok) {
         const data = await response.json();
         console.log('🔍 NutritionalAnalysis API Response:', data);
-        setAnalysisData(data);
+        console.log('📊 Totals:', data.totals);
+        console.log('🎯 Targets:', data.targets);
+        console.log('📈 Progress:', data.progress);
+        console.log('📅 Daily breakdown:', data.daily_breakdown);
+        
+        // Validate that we have actual data (not empty analysis)
+        if (!data.totals || (data.totals.calories === 0 && data.totals.protein === 0 && data.totals.carbs === 0 && data.totals.fats === 0)) {
+          console.warn('⚠️ Received empty analysis - no nutrition data found');
+          toast({
+            title: 'No Data Available',
+            description: `No nutritional logs found for ${analysisType} period (${startDateStr} to ${endDateStr}). Please log some meals first.`,
+            status: 'info',
+            duration: 5000,
+            isClosable: true,
+          });
+        }
+        
+        // Ensure response has the expected structure with defaults
+        const defaultDeficits = {
+          calories: 0,
+          protein: 0,
+          carbs: 0,
+          fats: 0,
+          fiber: 0,
+          sugar: 0,
+          sodium: 0,
+        };
+        const defaultPercentages = {
+          calories: 0,
+          protein: 0,
+          carbs: 0,
+          fats: 0,
+          fiber: 0,
+          sugar: 0,
+          sodium: 0,
+        };
+        
+        // Merge deficits and percentages with defaults (handles empty objects)
+        const deficits = data.deficits || data.progress?.deficits || {};
+        const percentages = data.percentages || data.progress?.percentages || {};
+        
+        setAnalysisData({
+          totals: data.totals || {
+            calories: 0,
+            protein: 0,
+            carbs: 0,
+            fats: 0,
+          },
+          targets: data.targets || {
+            calories: 2000,
+            protein: 150,
+            carbs: 250,
+            fats: 65,
+          },
+          deficits: { ...defaultDeficits, ...deficits },
+          percentages: { ...defaultPercentages, ...percentages },
+          daily_breakdown: data.daily_breakdown || [],
+          meal_distribution: data.meal_distribution || {},
+          ai_insights: data.ai_insights || {
+            achievements: [],
+            concerns: [],
+            suggestions: []
+          },
+        });
         
         toast({
           title: 'Analysis Updated',
@@ -131,19 +199,27 @@ const NutritionalAnalysis: React.FC<NutritionalAnalysisProps> = ({
           isClosable: true,
         });
       } else {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || `Failed to load analysis: ${response.status}`);
+        const errorText = await response.text();
+        let errorData;
+        try {
+          errorData = JSON.parse(errorText);
+        } catch {
+          errorData = { detail: errorText || `HTTP ${response.status}: ${response.statusText}` };
+        }
+        
+        console.error('❌ API Error:', errorData);
+        throw new Error(errorData.detail || `Failed to load ${analysisType} analysis (HTTP ${response.status})`);
       }
     } catch (error) {
       console.error('Error loading analysis:', error);
       
-      // Set mock data for development/demo purposes
-      const mockData = {
+      // Set empty data structure on error instead of mock data
+      setAnalysisData({
         totals: {
-          calories: 1850,
-          protein: 95,
-          carbs: 180,
-          fats: 65,
+          calories: 0,
+          protein: 0,
+          carbs: 0,
+          fats: 0,
         },
         targets: {
           calories: 2000,
@@ -152,54 +228,35 @@ const NutritionalAnalysis: React.FC<NutritionalAnalysisProps> = ({
           fats: 65,
         },
         deficits: {
-          calories: 150,
-          protein: 55,
-          carbs: 70,
+          calories: 0,
+          protein: 0,
+          carbs: 0,
           fats: 0,
+          fiber: 0,
+          sugar: 0,
+          sodium: 0,
         },
         percentages: {
-          calories: 92.5,
-          protein: 63.3,
-          carbs: 72.0,
-          fats: 100.0,
+          calories: 0,
+          protein: 0,
+          carbs: 0,
+          fats: 0,
+          fiber: 0,
+          sugar: 0,
+          sodium: 0,
         },
-        daily_breakdown: [
-          { date: '2024-01-01', calories: 1850, protein: 95, carbs: 180, fats: 65, meals: [] },
-          { date: '2024-01-02', calories: 2100, protein: 120, carbs: 220, fats: 70, meals: [] },
-          { date: '2024-01-03', calories: 1950, protein: 110, carbs: 190, fats: 60, meals: [] }
-        ],
-        meal_distribution: {
-          breakfast: 25,
-          lunch: 35,
-          dinner: 30,
-          snacks: 10
-        },
+        daily_breakdown: [],
+        meal_distribution: {},
         ai_insights: {
-          achievements: [
-            'Great job meeting your fat intake goal!',
-            'Consistent daily calorie intake this week'
-          ],
-          concerns: [
-            'Protein intake is below target - consider adding lean meats or legumes',
-            'Carb intake could be increased for better energy levels'
-          ],
-          suggestions: [
-            'Add a protein shake to your morning routine',
-            'Include more whole grains in your meals',
-            'Consider meal prepping for consistent nutrition'
-          ],
-          trends: [
-            'Calorie intake has been stable over the past week',
-            'Protein consumption is trending upward'
-          ]
+          achievements: ['No data available yet'],
+          concerns: ['Please log some meals to see analysis'],
+          suggestions: ['Start by logging your daily meals'],
         },
-      };
-      
-      setAnalysisData(mockData);
+      });
       
       toast({
-        title: 'Demo Mode',
-        description: 'Showing sample data. Log some meals to see real analysis.',
+        title: 'No Data Available',
+        description: error instanceof Error ? error.message : 'Please log some meals to see analysis.',
         status: 'info',
         duration: 5000,
         isClosable: true,
@@ -207,11 +264,11 @@ const NutritionalAnalysis: React.FC<NutritionalAnalysisProps> = ({
     } finally {
       setLoading(false);
     }
-  };
+  }, [analysisType, toast]);
 
   React.useEffect(() => {
     loadAnalysis();
-  }, [analysisType, dashboardMode]);
+  }, [loadAnalysis]);
 
   const getProgressColor = (percentage: number) => {
     if (percentage >= 90 && percentage <= 110) return 'green';
@@ -220,11 +277,6 @@ const NutritionalAnalysis: React.FC<NutritionalAnalysisProps> = ({
     return 'red';
   };
 
-  const getTrendIcon = (value: number, target: number) => {
-    if (value >= target * 0.9 && value <= target * 1.1) return FiTarget;
-    if (value < target) return FiTrendingDown;
-    return FiTrendingUp;
-  };
 
   return (
     <VStack spacing={6} align="stretch">
@@ -233,7 +285,7 @@ const NutritionalAnalysis: React.FC<NutritionalAnalysisProps> = ({
           {t('nutritionalAnalysis', 'en')}
         </Heading>
         <Text color="gray.600">
-          Track your nutritional intake and get AI-powered insights
+          Track your nutritional intake and get personalized insights
         </Text>
       </Box>
 
@@ -256,29 +308,6 @@ const NutritionalAnalysis: React.FC<NutritionalAnalysisProps> = ({
         </CardHeader>
         <CardBody>
           <VStack spacing={4} align="stretch">
-            {/* Dashboard Mode Toggle */}
-            <Box>
-              <Text fontWeight="semibold" mb={2}>Dashboard Mode</Text>
-              <ButtonGroup isAttached>
-                <Button
-                  colorScheme={dashboardMode === 'advanced' ? 'blue' : 'gray'}
-                  variant={dashboardMode === 'advanced' ? 'solid' : 'outline'}
-                  onClick={() => setDashboardMode('advanced')}
-                  isDisabled={loading}
-                >
-                  Advanced Dashboard
-                </Button>
-                <Button
-                  colorScheme={dashboardMode === 'basic' ? 'blue' : 'gray'}
-                  variant={dashboardMode === 'basic' ? 'solid' : 'outline'}
-                  onClick={() => setDashboardMode('basic')}
-                  isDisabled={loading}
-                >
-                  Basic View
-                </Button>
-              </ButtonGroup>
-            </Box>
-            
             {/* Analysis Period */}
             <Box>
               <Text fontWeight="semibold" mb={2}>Analysis Period</Text>
@@ -319,31 +348,7 @@ const NutritionalAnalysis: React.FC<NutritionalAnalysisProps> = ({
           <Text mt={4}>Loading analysis...</Text>
         </Box>
       ) : analysisData ? (
-        dashboardMode === 'advanced' ? (
-          <AdvancedNutritionDashboard
-            currentData={{
-              calories: analysisData.totals?.calories || 0,
-              protein: analysisData.totals?.protein || 0,
-              carbs: analysisData.totals?.carbs || 0,
-              fats: analysisData.totals?.fats || 0,
-              fiber: analysisData.totals?.fiber || 0,
-              sugar: analysisData.totals?.sugar || 0,
-              sodium: analysisData.totals?.sodium || 0
-            }}
-            targets={{
-              calories: analysisData.targets?.calories || 2000,
-              protein: analysisData.targets?.protein || 150,
-              carbs: analysisData.targets?.carbs || 250,
-              fats: analysisData.targets?.fats || 65
-            }}
-            dailyBreakdown={analysisData.daily_breakdown || []}
-            mealDistribution={analysisData.meal_distribution}
-            period={analysisType}
-            onPeriodChange={setAnalysisType}
-            aiInsights={analysisData.ai_insights}
-          />
-        ) : (
-          <VStack spacing={6} align="stretch">
+        <VStack spacing={6} align="stretch">
           {/* Quick Stats Summary */}
           <Card>
             <CardHeader>
@@ -402,8 +407,8 @@ const NutritionalAnalysis: React.FC<NutritionalAnalysisProps> = ({
                   <StatLabel>{t('calories', 'en')}</StatLabel>
                   <StatNumber>{analysisData?.totals?.calories?.toFixed(0) || 0}</StatNumber>
                   <StatHelpText>
-                    <StatArrow type={(analysisData?.deficits?.calories || 0) > 0 ? 'increase' : 'decrease'} />
-                    {Math.abs(analysisData?.deficits?.calories || 0).toFixed(0)} {(analysisData?.deficits?.calories || 0) > 0 ? 'deficit' : 'surplus'}
+                    <StatArrow type={(analysisData?.deficits?.calories ?? 0) > 0 ? 'increase' : 'decrease'} />
+                    {Math.abs(analysisData?.deficits?.calories ?? 0).toFixed(0)} {(analysisData?.deficits?.calories ?? 0) > 0 ? 'deficit' : 'surplus'}
                   </StatHelpText>
                 </Stat>
 
@@ -411,8 +416,8 @@ const NutritionalAnalysis: React.FC<NutritionalAnalysisProps> = ({
                   <StatLabel>{t('protein', 'en')}</StatLabel>
                   <StatNumber>{analysisData?.totals?.protein?.toFixed(1) || 0}g</StatNumber>
                   <StatHelpText>
-                    <StatArrow type={(analysisData?.deficits?.protein || 0) > 0 ? 'increase' : 'decrease'} />
-                    {Math.abs(analysisData?.deficits?.protein || 0).toFixed(1)}g {(analysisData?.deficits?.protein || 0) > 0 ? 'deficit' : 'surplus'}
+                    <StatArrow type={(analysisData?.deficits?.protein ?? 0) > 0 ? 'increase' : 'decrease'} />
+                    {Math.abs(analysisData?.deficits?.protein ?? 0).toFixed(1)}g {(analysisData?.deficits?.protein ?? 0) > 0 ? 'deficit' : 'surplus'}
                   </StatHelpText>
                 </Stat>
 
@@ -420,8 +425,8 @@ const NutritionalAnalysis: React.FC<NutritionalAnalysisProps> = ({
                   <StatLabel>{t('carbs', 'en')}</StatLabel>
                   <StatNumber>{analysisData?.totals?.carbs?.toFixed(1) || 0}g</StatNumber>
                   <StatHelpText>
-                    <StatArrow type={(analysisData?.deficits?.carbs || 0) > 0 ? 'increase' : 'decrease'} />
-                    {Math.abs(analysisData?.deficits?.carbs || 0).toFixed(1)}g {(analysisData?.deficits?.carbs || 0) > 0 ? 'deficit' : 'surplus'}
+                    <StatArrow type={(analysisData?.deficits?.carbs ?? 0) > 0 ? 'increase' : 'decrease'} />
+                    {Math.abs(analysisData?.deficits?.carbs ?? 0).toFixed(1)}g {(analysisData?.deficits?.carbs ?? 0) > 0 ? 'deficit' : 'surplus'}
                   </StatHelpText>
                 </Stat>
 
@@ -429,8 +434,8 @@ const NutritionalAnalysis: React.FC<NutritionalAnalysisProps> = ({
                   <StatLabel>{t('fats', 'en')}</StatLabel>
                   <StatNumber>{analysisData?.totals?.fats?.toFixed(1) || 0}g</StatNumber>
                   <StatHelpText>
-                    <StatArrow type={(analysisData?.deficits?.fats || 0) > 0 ? 'increase' : 'decrease'} />
-                    {Math.abs(analysisData?.deficits?.fats || 0).toFixed(1)}g {(analysisData?.deficits?.fats || 0) > 0 ? 'deficit' : 'surplus'}
+                    <StatArrow type={(analysisData?.deficits?.fats ?? 0) > 0 ? 'increase' : 'decrease'} />
+                    {Math.abs(analysisData?.deficits?.fats ?? 0).toFixed(1)}g {(analysisData?.deficits?.fats ?? 0) > 0 ? 'deficit' : 'surplus'}
                   </StatHelpText>
                 </Stat>
               </SimpleGrid>
@@ -522,18 +527,18 @@ const NutritionalAnalysis: React.FC<NutritionalAnalysisProps> = ({
           {/* Macronutrient Visualization */}
           <MacronutrientVisualization
             currentData={{
-              calories: analysisData.totals.calories,
-              protein: analysisData.totals.protein,
-              carbs: analysisData.totals.carbs,
-              fats: analysisData.totals.fats
+              calories: analysisData?.totals?.calories || 0,
+              protein: analysisData?.totals?.protein || 0,
+              carbs: analysisData?.totals?.carbs || 0,
+              fats: analysisData?.totals?.fats || 0
             }}
             targets={{
-              calories: analysisData.targets.calories,
-              protein: analysisData.targets.protein,
-              carbs: analysisData.targets.carbs,
-              fats: analysisData.targets.fats
+              calories: analysisData?.targets?.calories || 2000,
+              protein: analysisData?.targets?.protein || 150,
+              carbs: analysisData?.targets?.carbs || 250,
+              fats: analysisData?.targets?.fats || 65
             }}
-            dailyBreakdown={analysisData.daily_breakdown || []}
+            dailyBreakdown={analysisData?.daily_breakdown || []}
             period={analysisType}
             onPeriodChange={setAnalysisType}
           />
@@ -592,7 +597,6 @@ const NutritionalAnalysis: React.FC<NutritionalAnalysisProps> = ({
             </Card>
           )}
         </VStack>
-        )
       ) : (
         <Alert status="info" borderRadius="lg">
           <AlertIcon />

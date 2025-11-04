@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>OAuth Test</title>
+</head>
+<body>
+    <h1>OAuth Test Page</h1>
+    <p>This page will help test your Google OAuth configuration.</p>
+    
+    <h2>Backend OAuth URL:</h2>
+    <div id="oauth-url">Loading...</div>
+    
+    <h2>Test OAuth Flow:</h2>
+    <button onclick="testOAuth()">Test Google OAuth</button>
+    
+    <h2>Manual OAuth URL:</h2>
+    <div id="manual-url"></div>
+    
+    <script>
+        // Get OAuth URL from backend
+        fetch('http://localhost:8000/auth/oauth/google')
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById('oauth-url').innerHTML = 
+                    '<a href="' + data.url + '" target="_blank">' + data.url + '</a>';
+                document.getElementById('manual-url').innerHTML = 
+                    '<a href="' + data.url + '" target="_blank">Click here to test OAuth</a>';
+            })
+            .catch(error => {
+                document.getElementById('oauth-url').innerHTML = 'Error: ' + error;
+            });
+        
+        function testOAuth() {
+            fetch('http://localhost:8000/auth/oauth/google')
+                .then(response => response.json())
+                .then(data => {
+                    window.open(data.url, '_blank');
+                })
+                .catch(error => {
+                    alert('Error: ' + error);
+                });
+        }
+    </script>
+</body>
+</html>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Box,
   VStack,
@@ -62,11 +62,7 @@ const GoalsDashboard: React.FC = () => {
   const borderColor = useColorModeValue('gray.200', 'gray.700');
   const textColor = useColorModeValue('gray.600', 'gray.400');
 
-  useEffect(() => {
-    loadDashboardData();
-  }, []);
-
-  const loadDashboardData = async () => {
+  const loadDashboardData = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
@@ -77,7 +73,24 @@ const GoalsDashboard: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+  
+  useEffect(() => {
+    loadDashboardData();
+  }, [loadDashboardData]);
+  
+  // Listen for daily log updates to refresh goals
+  useEffect(() => {
+    const handleDailyLogUpdate = () => {
+      // Refresh dashboard when daily log is updated
+      loadDashboardData();
+    };
+    
+    window.addEventListener('dailyLogUpdated', handleDailyLogUpdate);
+    return () => {
+      window.removeEventListener('dailyLogUpdated', handleDailyLogUpdate);
+    };
+  }, [loadDashboardData]);
 
   const handleRefresh = async () => {
     setRefreshing(true);

@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>OAuth Debug Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .url { background: #f0f0f0; padding: 10px; margin: 10px 0; word-break: break-all; }
+        button { padding: 10px 20px; background: #4285f4; color: white; border: none; cursor: pointer; margin: 5px; }
+        button:hover { background: #3367d6; }
+        .error { color: red; background: #ffe6e6; padding: 10px; margin: 10px 0; }
+        .success { color: green; background: #e6ffe6; padding: 10px; margin: 10px 0; }
+        .info { background: #e6f3ff; padding: 10px; margin: 10px 0; }
+    </style>
+</head>
+<body>
+    <h1>OAuth Debug Test</h1>
+    
+    <div id="status">Loading...</div>
+    <div id="oauth-url" class="url">Loading...</div>
+    
+    <button onclick="testOAuth()">Test Google OAuth</button>
+    <button onclick="testDirectURL()">Test Direct URL</button>
+    
+    <div id="debug-info"></div>
+    
+    <script>
+        console.log('Page loaded, starting debug...');
+        
+        async function testOAuth() {
+            const statusDiv = document.getElementById('status');
+            const urlDiv = document.getElementById('oauth-url');
+            const debugDiv = document.getElementById('debug-info');
+            
+            try {
+                statusDiv.innerHTML = 'Testing OAuth flow...';
+                console.log('Fetching OAuth URL from backend...');
+                
+                const response = await fetch('http://localhost:8000/auth/oauth/google');
+                console.log('Response status:', response.status);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const data = await response.json();
+                console.log('OAuth data:', data);
+                
+                if (data.url) {
+                    urlDiv.innerHTML = `<strong>OAuth URL:</strong><br>${data.url}`;
+                    statusDiv.innerHTML = '<span class="success">✅ Backend connection successful!</span>';
+                    
+                    // Open the OAuth URL in a new tab
+                    window.open(data.url, '_blank');
+                } else {
+                    throw new Error('No URL in response');
+                }
+                
+            } catch (error) {
+                console.error('Error:', error);
+                statusDiv.innerHTML = `<span class="error">❌ Error: ${error.message}</span>`;
+                debugDiv.innerHTML = `<div class="error">Debug info: ${error.stack}</div>`;
+            }
+        }
+        
+        async function testDirectURL() {
+            const debugDiv = document.getElementById('debug-info');
+            debugDiv.innerHTML = '<div class="info">Testing direct Google OAuth URL...</div>';
+            
+            // Test the direct URL
+            const testUrl = 'https://accounts.google.com/oauth/authorize?client_id=648667093069-fm40k77lpjutqfuie2ar5lhm11g0toag.apps.googleusercontent.com&redirect_uri=http://127.0.0.1:8000/auth/oauth/google/callback&scope=openid email profile&response_type=code';
+            
+            debugDiv.innerHTML += `<div class="url"><strong>Direct URL:</strong><br>${testUrl}</div>`;
+            debugDiv.innerHTML += '<div class="info">Opening direct URL in new tab...</div>';
+            
+            window.open(testUrl, '_blank');
+        }
+        
+        // Auto-test on page load
+        window.onload = function() {
+            testOAuth();
+        };
+    </script>
+</body>
+</html>

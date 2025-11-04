@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Debug OAuth Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .url { background: #f0f0f0; padding: 10px; margin: 10px 0; word-break: break-all; }
+        button { padding: 10px 20px; background: #4285f4; color: white; border: none; cursor: pointer; }
+        button:hover { background: #3367d6; }
+        .error { color: red; background: #ffe6e6; padding: 10px; margin: 10px 0; }
+        .success { color: green; background: #e6ffe6; padding: 10px; margin: 10px 0; }
+    </style>
+</head>
+<body>
+    <h1>Debug OAuth Test</h1>
+    
+    <div id="status">Loading...</div>
+    <div id="oauth-url" class="url">Loading...</div>
+    
+    <button onclick="testOAuth()">Test Google OAuth</button>
+    
+    <div id="debug-info"></div>
+    
+    <script>
+        console.log('Page loaded, starting debug...');
+        
+        // Test backend connection
+        fetch('http://localhost:8000/auth/oauth/google')
+            .then(response => {
+                console.log('Response status:', response.status);
+                console.log('Response headers:', response.headers);
+                return response.json();
+            })
+            .then(data => {
+                console.log('Success! Data:', data);
+                document.getElementById('status').innerHTML = '<div class="success">Backend connection successful!</div>';
+                document.getElementById('oauth-url').textContent = data.url;
+                document.getElementById('debug-info').innerHTML = '<p>Backend is working correctly. OAuth URL generated.</p>';
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                document.getElementById('status').innerHTML = '<div class="error">Error: ' + error.message + '</div>';
+                document.getElementById('debug-info').innerHTML = '<p>Check browser console for more details.</p>';
+            });
+        
+        function testOAuth() {
+            console.log('Testing OAuth...');
+            fetch('http://localhost:8000/auth/oauth/google')
+                .then(response => response.json())
+                .then(data => {
+                    console.log('Redirecting to:', data.url);
+                    window.location.href = data.url;
+                })
+                .catch(error => {
+                    console.error('OAuth error:', error);
+                    alert('Error: ' + error.message);
+                });
+        }
+    </script>
+</body>
+</html>

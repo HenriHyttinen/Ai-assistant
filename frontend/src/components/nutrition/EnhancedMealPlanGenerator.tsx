@@ -226,7 +226,7 @@ const EnhancedMealPlanGenerator: React.FC<EnhancedMealPlanGeneratorProps> = ({
                     </StatNumber>
                     <StatHelpText>
                       <StatArrow type="increase" />
-                      AI-powered personalization
+                      Personalized recommendations
                     </StatHelpText>
                   </Stat>
 

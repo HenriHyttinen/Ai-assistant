@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Final OAuth Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .url { background: #f0f0f0; padding: 10px; margin: 10px 0; word-break: break-all; }
+        button { padding: 10px 20px; background: #4285f4; color: white; border: none; cursor: pointer; margin: 5px; }
+        button:hover { background: #3367d6; }
+        .error { color: red; background: #ffe6e6; padding: 10px; margin: 10px 0; }
+        .success { color: green; background: #e6ffe6; padding: 10px; margin: 10px 0; }
+        .info { background: #e6f3ff; padding: 10px; margin: 10px 0; }
+    </style>
+</head>
+<body>
+    <h1>Final OAuth Test</h1>
+    
+    <div id="status">Loading...</div>
+    <div id="oauth-url" class="url">Loading...</div>
+    
+    <button onclick="testGoogleOAuth()">Test Google OAuth</button>
+    <button onclick="testGitHubOAuth()">Test GitHub OAuth</button>
+    <button onclick="testDirectGoogle()">Test Direct Google URL</button>
+    
+    <div id="debug-info"></div>
+    
+    <script>
+        console.log('Page loaded, starting debug...');
+        
+        async function testBackendConnection() {
+            try {
+                const response = await fetch('http://localhost:8000/auth/oauth/google');
+                const data = await response.json();
+                document.getElementById('status').innerHTML = '<div class="success">✅ Backend connection successful!</div>';
+                document.getElementById('oauth-url').innerHTML = data.url;
+                return data.url;
+            } catch (error) {
+                document.getElementById('status').innerHTML = '<div class="error">❌ Backend connection failed: ' + error.message + '</div>';
+                return null;
+            }
+        }
+        
+        async function testGoogleOAuth() {
+            const url = await testBackendConnection();
+            if (url) {
+                window.open(url, '_blank');
+            }
+        }
+        
+        async function testGitHubOAuth() {
+            try {
+                const response = await fetch('http://localhost:8000/auth/oauth/github');
+                const data = await response.json();
+                document.getElementById('debug-info').innerHTML = '<div class="info">GitHub OAuth URL: ' + data.url + '</div>';
+                window.open(data.url, '_blank');
+            } catch (error) {
+                document.getElementById('debug-info').innerHTML = '<div class="error">GitHub OAuth failed: ' + error.message + '</div>';
+            }
+        }
+        
+        function testDirectGoogle() {
+            const directUrl = 'https://accounts.google.com/oauth/authorize?client_id=648667093069-fm40k77lpjutqfuie2ar5lhm11g0toag.apps.googleusercontent.com&redirect_uri=http://127.0.0.1:8000/auth/oauth/google/callback&scope=openid%20email%20profile&response_type=code';
+            document.getElementById('debug-info').innerHTML = '<div class="info">Direct Google URL: ' + directUrl + '</div>';
+            window.open(directUrl, '_blank');
+        }
+        
+        // Test backend connection on page load
+        testBackendConnection();
+    </script>
+</body>
+</html>

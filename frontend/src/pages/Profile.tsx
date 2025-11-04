@@ -24,7 +24,6 @@ import { useState, useEffect } from 'react';
 import { healthProfile, analytics } from '../services/api';
 import ConsentModal from '../components/ConsentModal';
 import NutritionPreferencesSummary from '../components/profile/NutritionPreferencesSummary';
-import UserRatingHistory from '../components/profile/UserRatingHistory';
 import { getErrorMessage } from '../utils/errorUtils';
 import { 
   convertWeightForDisplay, 
@@ -1224,9 +1223,6 @@ const Profile = () => {
           <NutritionPreferencesSummary
             onLoad={loadNutritionPreferences}
           />
-
-          {/* User Rating History */}
-          <UserRatingHistory />
         </SimpleGrid>
 
         <Box mt={8} textAlign="center">
