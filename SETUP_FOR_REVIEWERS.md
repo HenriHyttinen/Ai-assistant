@@ -49,7 +49,9 @@ npm run dev
 ## Prerequisites
 
 - **Docker & Docker Compose** (for Docker setup)
-- **Python 3.8+** (for manual setup)
+- **Python 3.11 or 3.12** (for manual setup - recommended)
+  - ⚠️ **Python 3.14 is not recommended** - pandas 2.1.3 has compilation issues
+  - If using Python 3.14, upgrade pandas: `pip install "pandas>=2.2.0"`
 - **Node.js 16+** (for frontend)
 - **PostgreSQL 12+** (optional, SQLite works for development)
 
@@ -87,6 +89,31 @@ pytest tests/
 ```
 
 ## Troubleshooting
+
+### Python Version Issues
+
+**Error: `pandas` compilation fails with Python 3.14**
+```
+error: too few arguments to function call, expected 6, have 5
+_PyLong_AsByteArray
+```
+
+**Solution:**
+1. **Recommended**: Use Python 3.11 or 3.12 instead
+   ```bash
+   # Check Python version
+   python3 --version
+   
+   # If using Python 3.14, switch to 3.11 or 3.12
+   # Using pyenv or similar:
+   pyenv install 3.12.0
+   pyenv local 3.12.0
+   ```
+
+2. **Alternative** (if must use Python 3.14): Upgrade pandas
+   ```bash
+   pip install "pandas>=2.2.0"
+   ```
 
 **Docker issues:**
 - Make sure Docker is running

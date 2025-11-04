@@ -160,6 +160,7 @@ A health and nutrition tracking platform with meal planning, recipe management, 
 
 ### Prerequisites
 - Docker and Docker Compose installed (or Docker Compose v2)
+- **For manual setup**: Python 3.11 or 3.12 (Python 3.14 not recommended - see troubleshooting)
 - No other dependencies required
 
 **For detailed setup instructions, see [SETUP_FOR_REVIEWERS.md](./SETUP_FOR_REVIEWERS.md)**
@@ -439,7 +440,7 @@ python scripts/seed_goals_direct.py
 
 ### Test Coverage
 - Unit tests for backend services
-- Integration tests for API endpoints
+- Integration tests for API endpointsudo docker-compose exec app grep -A 12 "allow_origins" /app/backend/main.py 2>&1 | head -15
 - Frontend component testing
 - End-to-end tests for user journeys
 
@@ -459,9 +460,6 @@ python scripts/seed_goals_direct.py
 4. Add tests if applicable
 5. Submit a pull request
 
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
 
 ## Acknowledgments
 
