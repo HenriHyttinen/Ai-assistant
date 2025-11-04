@@ -77,7 +77,13 @@ Database is automatically set up when you run `docker-compose up`.
 ### Manual:
 ```bash
 cd backend
+# Option 1: Using init_db.py (must run from backend/ directory)
 python database_setup/init_db.py
+
+# Option 2: Using setup_database.py (handles path automatically)
+python database_setup/setup_database.py
+
+# Then seed recipes
 python scripts/comprehensive_seeder.py  # Seeds 500+ recipes
 ```
 
@@ -133,6 +139,32 @@ Building wheel for pydantic-core (pyproject.toml) ... error
 **Solution:**
 - **Use Python 3.11 or 3.12** - These packages have pre-built wheels for these versions
 - Python 3.14 requires building from source, which often fails on macOS
+
+**Error: `ModuleNotFoundError: No module named 'models'` when running `init_db.py`**
+```
+File "backend/database_setup/init_db.py", line 1, in <module>
+    from models import Base
+ModuleNotFoundError: No module named 'models'
+```
+
+**Solution:**
+1. **Make sure you're in the `backend/` directory** when running the script:
+   ```bash
+   cd backend
+   python database_setup/init_db.py
+   ```
+
+2. **Alternative**: Use `setup_database.py` which handles paths automatically:
+   ```bash
+   cd backend
+   python database_setup/setup_database.py
+   ```
+
+3. **Or use the Python one-liner** (works from any directory):
+   ```bash
+   cd backend
+   python -c "from database import engine; from models import Base; Base.metadata.create_all(bind=engine)"
+   ```
 
 **Error: `scikit-learn` compilation fails on macOS**
 ```

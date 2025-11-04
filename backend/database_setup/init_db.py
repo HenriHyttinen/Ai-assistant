@@ -1,3 +1,14 @@
+#!/usr/bin/env python3
+"""
+Database initialization script
+Creates all database tables using SQLAlchemy models
+"""
+import sys
+import os
+
+# Add parent directory (backend/) to Python path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from models import Base
 from database import engine
 # Import all models to ensure they're registered with Base.metadata
