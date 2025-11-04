@@ -160,7 +160,7 @@ A health and nutrition tracking platform with meal planning, recipe management, 
 
 ### Prerequisites
 - Docker and Docker Compose installed (or Docker Compose v2)
-- **For manual setup**: Python 3.11 or 3.12 (Python 3.14 not recommended - see troubleshooting)
+- **For manual setup**: **Python 3.11 or 3.12 REQUIRED** (Python 3.14 NOT supported - many packages lack pre-built wheels)
 - No other dependencies required
 
 **For detailed setup instructions, see [SETUP_FOR_REVIEWERS.md](./SETUP_FOR_REVIEWERS.md)**

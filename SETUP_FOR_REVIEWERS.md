@@ -36,7 +36,7 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 cp .env.example .env
 # Edit .env with your settings
-python init_db.py
+python database_setup/init_db.py
 python scripts/comprehensive_seeder.py  # Optional: seeds recipes
 uvicorn main:app --reload
 
@@ -49,9 +49,10 @@ npm run dev
 ## Prerequisites
 
 - **Docker & Docker Compose** (for Docker setup)
-- **Python 3.11 or 3.12** (for manual setup - recommended)
-  - ⚠️ **Python 3.14 is not recommended** - pandas 2.1.3 has compilation issues
-  - If using Python 3.14, upgrade pandas: `pip install "pandas>=2.2.0"`
+- **Python 3.11 or 3.12** (for manual setup - **STRONGLY RECOMMENDED**)
+  - ⚠️ **Python 3.14 is NOT recommended** - many packages don't have pre-built wheels yet
+  - Python 3.14 requires building from source, which often fails on macOS
+  - **Use Python 3.11 or 3.12 to avoid compilation issues**
 - **Node.js 16+** (for frontend)
 - **PostgreSQL 12+** (optional, SQLite works for development)
 
@@ -76,7 +77,7 @@ Database is automatically set up when you run `docker-compose up`.
 ### Manual:
 ```bash
 cd backend
-python init_db.py
+python database_setup/init_db.py
 python scripts/comprehensive_seeder.py  # Seeds 500+ recipes
 ```
 
@@ -92,28 +93,46 @@ pytest tests/
 
 ### Python Version Issues
 
-**Error: `pandas` compilation fails with Python 3.14**
+**⚠️ IMPORTANT: Use Python 3.11 or 3.12**
+
+Python 3.14 is too new and many packages don't have pre-built wheels yet, causing compilation errors:
+- `pandas` compilation fails
+- `scikit-learn` compilation fails
+- `psycopg2-binary` compilation fails
+- `pydantic-core` compilation fails
+
+**Solution: Use Python 3.11 or 3.12 (RECOMMENDED)**
+
+```bash
+# Check Python version
+python3 --version
+
+# If using Python 3.14, switch to 3.11 or 3.12
+# Using pyenv:
+pyenv install 3.12.0
+pyenv local 3.12.0
+
+# Or using Homebrew:
+brew install python@3.12
+python3.12 -m venv venv
+source venv/bin/activate
 ```
-error: too few arguments to function call, expected 6, have 5
-_PyLong_AsByteArray
+
+**If you must use Python 3.14** (not recommended):
+- Expect multiple compilation errors
+- May need to install build tools: `brew install gcc libomp`
+- May need to upgrade packages: `pip install "pandas>=2.2.0" "scikit-learn>=1.4.0"`
+- Compilation may still fail for some packages
+
+**Error: `psycopg2-binary` or `pydantic-core` compilation fails**
+```
+Building wheel for psycopg2-binary (pyproject.toml) ... error
+Building wheel for pydantic-core (pyproject.toml) ... error
 ```
 
 **Solution:**
-1. **Recommended**: Use Python 3.11 or 3.12 instead
-   ```bash
-   # Check Python version
-   python3 --version
-   
-   # If using Python 3.14, switch to 3.11 or 3.12
-   # Using pyenv or similar:
-   pyenv install 3.12.0
-   pyenv local 3.12.0
-   ```
-
-2. **Alternative** (if must use Python 3.14): Upgrade pandas
-   ```bash
-   pip install "pandas>=2.2.0"
-   ```
+- **Use Python 3.11 or 3.12** - These packages have pre-built wheels for these versions
+- Python 3.14 requires building from source, which often fails on macOS
 
 **Error: `scikit-learn` compilation fails on macOS**
 ```
@@ -122,17 +141,15 @@ scikit-learn cannot be built with OpenMP
 ```
 
 **Solution:**
-1. **Recommended**: Use Python 3.11 or 3.12 (fewer compilation issues)
-2. **Alternative**: Install newer scikit-learn with pre-built wheels
+1. **Recommended**: Use Python 3.11 or 3.12 (pre-built wheels available)
+2. **If using Python 3.14**: Install OpenMP and upgrade scikit-learn
    ```bash
-   pip install "scikit-learn>=1.4.0"
-   ```
-3. **If compilation still fails**: Install via conda or use pre-built wheels
-   ```bash
-   # Try installing OpenMP support first (macOS)
+   # Install OpenMP support (macOS)
    brew install libomp
+   export LDFLAGS="-L/opt/homebrew/opt/libomp/lib"
+   export CPPFLAGS="-I/opt/homebrew/opt/libomp/include"
    
-   # Then install scikit-learn
+   # Install newer scikit-learn
    pip install "scikit-learn>=1.4.0"
    ```
 

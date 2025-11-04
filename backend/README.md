@@ -44,7 +44,7 @@ ACCESS_TOKEN_EXPIRE_MINUTES=30
 
 4. Initialize the database:
 ```bash
-python init_db.py
+python database_setup/init_db.py
 ```
 
 5. Run database migrations:
@@ -197,7 +197,7 @@ See [`REVIEWER_SETUP_COMPLETE.md`](REVIEWER_SETUP_COMPLETE.md) for detailed setu
 
 1. **Create Database**:
    ```bash
-   python init_db.py
+   python database_setup/init_db.py
    ```
 
 2. **Seed Recipes and Ingredients**:
