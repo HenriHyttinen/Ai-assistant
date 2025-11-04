@@ -36,7 +36,7 @@ class NutritionGoal(Base, TimestampMixin):
     
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(String, ForeignKey("users.id"), nullable=False, index=True)
-    goal_type = Column(Enum(GoalType), nullable=False)
+    goal_type = Column(Enum(GoalType, native_enum=False), nullable=False)
     goal_name = Column(String, nullable=False)  # Custom name for the goal
     description = Column(Text, nullable=True)  # Optional description
     
@@ -46,13 +46,13 @@ class NutritionGoal(Base, TimestampMixin):
     unit = Column(String, nullable=False)  # Unit of measurement (g, mg, cal, etc.)
     
     # Goal settings
-    frequency = Column(Enum(GoalFrequency), default=GoalFrequency.DAILY)
+    frequency = Column(Enum(GoalFrequency, native_enum=False), default=GoalFrequency.DAILY)
     start_date = Column(DateTime, nullable=False)
     target_date = Column(DateTime, nullable=True)  # Optional end date
     is_flexible = Column(Boolean, default=True)  # Can be adjusted over time
     
     # Goal status
-    status = Column(Enum(GoalStatus), default=GoalStatus.ACTIVE)
+    status = Column(Enum(GoalStatus, native_enum=False), default=GoalStatus.ACTIVE)
     priority = Column(Integer, default=1)  # 1-5 priority level
     is_public = Column(Boolean, default=False)  # Share with community
     
@@ -120,7 +120,7 @@ class GoalTemplate(Base, TimestampMixin):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False)
     description = Column(Text, nullable=True)
-    goal_type = Column(Enum(GoalType), nullable=False)
+    goal_type = Column(Enum(GoalType, native_enum=False), nullable=False)
     
     # Template settings
     default_target_value = Column(Float, nullable=False)

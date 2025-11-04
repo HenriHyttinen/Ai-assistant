@@ -109,6 +109,8 @@ class NutritionalLog(Base, TimestampMixin):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     log_date = Column(Date, nullable=False, index=True)
     meal_type = Column(String, nullable=False)  # breakfast, lunch, dinner, snack
+    food_name = Column(String, nullable=True)  # Name of the food/meal (e.g., "Sunrise Surprise")
+    meal_id = Column(Integer, ForeignKey("meal_plan_meals.id"), nullable=True)  # Reference to meal plan meal
     
     # Nutritional values consumed
     calories = Column(Float, nullable=False, default=0.0)

@@ -10,7 +10,7 @@ import jwt
 import time
 from functools import lru_cache
 
-security = HTTPBearer()
+security = HTTPBearer(auto_error=False)
 
 @lru_cache(maxsize=1000)
 def get_cached_user(email: str, cache_timestamp: float) -> Optional[User]:
@@ -20,26 +20,29 @@ def get_cached_user(email: str, cache_timestamp: float) -> Optional[User]:
     return None
 
 def get_current_user_supabase(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
     db: Session = Depends(get_db)
 ) -> User:
     """Get current user from Supabase JWT token."""
+    # Handle OPTIONS requests (CORS preflight) - no auth required
+    # FastAPI's CORSMiddleware should handle OPTIONS, but if we get here
+    # without credentials, it means it's a real request without auth
+    if credentials is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
     token = credentials.credentials
     
     print(f"🔐 Received token: {token[:20]}..." if token else "❌ No token received")
     
-    # Check if Supabase client is available
-    if supabase is None:
-        print("❌ Supabase client not available")
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Authentication service temporarily unavailable",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+    # Note: Supabase is optional - we can authenticate with just JWT tokens
+    # If Supabase is not configured, we'll use direct JWT decoding instead
     
     try:
         import jwt
-        from jwt import PyJWKClient
         
         try:
             decoded_token = jwt.decode(token, options={"verify_signature": False})
@@ -64,30 +67,24 @@ def get_current_user_supabase(
                 )
             
             # Look up user in database by email
-            from database import SessionLocal
             from models.user import User
             
-            db = SessionLocal()
-            try:
-                user = db.query(User).filter(User.email == user_email).first()
-                if not user:
-                    print(f"👤 Creating new user for email: {user_email}")
-                    user = User(
-                        email=user_email,
-                        is_active=True,
-                        is_verified=True
-                    )
-                    db.add(user)
-                    db.commit()
-                    db.refresh(user)
-                    print(f"✅ Created user with ID: {user.id}")
-                else:
-                    print(f"👤 Found existing user with ID: {user.id}")
-                
-                return user
-                
-            finally:
-                db.close()
+            user = db.query(User).filter(User.email == user_email).first()
+            if not user:
+                print(f"👤 Creating new user for email: {user_email}")
+                user = User(
+                    email=user_email,
+                    is_active=True,
+                    is_verified=True
+                )
+                db.add(user)
+                db.commit()
+                db.refresh(user)
+                print(f"✅ Created user with ID: {user.id}")
+            else:
+                print(f"👤 Found existing user with ID: {user.id}")
+            
+            return user
             
         except jwt.InvalidTokenError as e:
             print(f"❌ Invalid token error: {e}")

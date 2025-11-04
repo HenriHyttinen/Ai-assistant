@@ -189,7 +189,7 @@ class EnhancedNutritionAI:
         cultural_text = self._format_cultural_context(personalization_context.get('cultural_adaptations', {}))
         
         return f"""
-        You are an expert nutritionist and meal planning specialist with advanced knowledge of dietary restrictions, cultural adaptations, and personalized nutrition.
+        Analyze user profile and create meal plans based on nutritional guidelines, dietary restrictions, cultural preferences, and personalization requirements.
 
         USER PROFILE:
         - Dietary Preferences: {user_preferences.get('dietary_preferences', [])}

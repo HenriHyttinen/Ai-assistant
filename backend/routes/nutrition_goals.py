@@ -257,9 +257,18 @@ def get_goal_templates(
     db: Session = Depends(get_db)
 ):
     """Get available goal templates"""
-    service = NutritionGoalsService()
-    templates = service.get_goal_templates(db, category)
-    return templates
+    try:
+        service = NutritionGoalsService()
+        templates = service.get_goal_templates(db, category)
+        return templates
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error getting goal templates: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error loading templates: {str(e)}"
+        )
 
 @router.post("/templates/{template_id}/create-goal", response_model=NutritionGoalResponse, status_code=status.HTTP_201_CREATED)
 def create_goal_from_template(
@@ -275,6 +284,14 @@ def create_goal_from_template(
         return goal
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error creating goal from template {template_id}: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error creating goal from template: {str(e)}"
+        )
 
 # Bulk operations
 @router.post("/bulk/progress", response_model=List[GoalProgressLogResponse], status_code=status.HTTP_201_CREATED)

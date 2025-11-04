@@ -277,7 +277,7 @@ class NutritionService:
             if not has_soy:
                 tags.add('soy-free')
             
-            # Add allergen warnings
+            # Add allergen warnings and content tags
             if has_dairy:
                 tags.add('contains-dairy')
             if has_eggs:
@@ -290,8 +290,13 @@ class NutritionService:
                 tags.add('contains-sesame')
             if has_soy:
                 tags.add('contains-soy')
+            if has_meat:
+                tags.add('contains-meat')
             if has_fish:
                 tags.add('contains-fish')
+                # Also add seafood tag for shellfish/crustaceans
+                if any(kw in text for kw in ['shrimp', 'prawn', 'crab', 'lobster', 'scallop', 'mussel', 'clam', 'oyster', 'shellfish', 'crustacean']):
+                    tags.add('contains-seafood')
             
             return sorted(list(tags))
             
@@ -1131,7 +1136,7 @@ class NutritionService:
                     # CRITICAL: Ensure we have exactly len(base_types) meals for this day
                     for mt in missing_types:
                         # Generate fallback meal for missing type
-                        logger.warning(f"⚠️ Missing {mt} for day {day_index+1} ({meal_date_for_day}) - generating fallback")
+                        logger.warning(f"Missing {mt} for day {day_index+1} ({meal_date_for_day}) - generating fallback")
                         fallback = fallback_generator.generate_unique_recipe(mt, target_calories, 'International', used_names)
                         if 'recipe' not in fallback:
                             fallback['recipe'] = {}
@@ -1161,11 +1166,11 @@ class NutritionService:
                     
                     # CRITICAL: Final validation - ensure we have exactly len(base_types) meals
                     if len(day_meals) < len(base_types):
-                        logger.error(f"❌ CRITICAL: Day {day_index+1} ({meal_date_for_day}) only has {len(day_meals)} meals but need {len(base_types)} - filling remaining")
+                        logger.error(f"CRITICAL: Day {day_index+1} ({meal_date_for_day}) only has {len(day_meals)} meals but need {len(base_types)} - filling remaining")
                         meal_types_present_now = {m.get('meal_type', '').strip() for m in day_meals if m.get('meal_type')}
                         for mt in base_types:
                             if mt not in meal_types_present_now:
-                                logger.error(f"❌ Still missing {mt} for day {day_index+1} - generating emergency fallback")
+                                logger.error(f"Still missing {mt} for day {day_index+1} - generating emergency fallback")
                                 fallback = fallback_generator.generate_unique_recipe(mt, target_calories, 'International', used_names)
                                 if 'recipe' not in fallback:
                                     fallback['recipe'] = {}
@@ -1193,7 +1198,7 @@ class NutritionService:
                     
                     # CRITICAL: Final check before processing
                     if len(day_meals) != len(base_types):
-                        logger.error(f"❌❌❌ FATAL: Day {day_index+1} ({meal_date_for_day}) has {len(day_meals)} meals but need {len(base_types)} - THIS SHOULD NOT HAPPEN")
+                        logger.error(f"FATAL: Day {day_index+1} ({meal_date_for_day}) has {len(day_meals)} meals but need {len(base_types)} - THIS SHOULD NOT HAPPEN")
                     
                     # Process all meals for this day (including filled ones)
                     for meal_data in day_meals:
@@ -1326,7 +1331,7 @@ class NutritionService:
                         # CRITICAL: Ensure meal_type is set - if not, use sanitized_meal_type or fallback
                         final_meal_type = sanitized_meal_type or meal_data.get('meal_type') or 'dinner'
                         if not final_meal_type or final_meal_type.strip() not in ['breakfast', 'lunch', 'dinner', 'snack']:
-                            logger.warning(f"⚠️ Invalid meal_type '{final_meal_type}' for meal '{meal_data.get('meal_name')}' on day {day_index+1}, defaulting to 'dinner'")
+                            logger.warning(f"Invalid meal_type '{final_meal_type}' for meal '{meal_data.get('meal_name')}' on day {day_index+1}, defaulting to 'dinner'")
                             final_meal_type = 'dinner'
                         else:
                             final_meal_type = final_meal_type.strip()
@@ -1341,7 +1346,7 @@ class NutritionService:
                             
                             if existing_meal:
                                 # Update existing meal instead of creating duplicate
-                                logger.warning(f"⚠️ Meal already exists for day {day_index+1} ({meal_date_for_day}), type {final_meal_type} - updating instead of creating duplicate")
+                                logger.warning(f"Meal already exists for day {day_index+1} ({meal_date_for_day}), type {final_meal_type} - updating instead of creating duplicate")
                                 meal = existing_meal
                                 meal.meal_name = meal_data.get("meal_name", recipe_data.get("title", "Meal"))
                                 meal.calories = meal_calories
@@ -1365,11 +1370,11 @@ class NutritionService:
                             
                             # CRITICAL: Verify meal was added
                             if not meal.id:
-                                logger.error(f"❌ Meal not properly added for day {day_index+1} ({meal_date_for_day}), type {final_meal_type}, name: {meal.meal_name}")
+                                logger.error(f"Meal not properly added for day {day_index+1} ({meal_date_for_day}), type {final_meal_type}, name: {meal.meal_name}")
                             else:
-                                logger.debug(f"✅ Added meal: Day {day_index+1}, {final_meal_type}, {meal.meal_name}, ID: {meal.id}")
+                                logger.debug(f"Added meal: Day {day_index+1}, {final_meal_type}, {meal.meal_name}, ID: {meal.id}")
                         except Exception as meal_err:
-                            logger.error(f"❌ ERROR adding meal for day {day_index+1} ({meal_date_for_day}), type {final_meal_type}: {meal_err}")
+                            logger.error(f"ERROR adding meal for day {day_index+1} ({meal_date_for_day}), type {final_meal_type}: {meal_err}")
                             # Try to continue with next meal
                             continue
                         if recipe_data:
@@ -1382,11 +1387,11 @@ class NutritionService:
                                 has_explicit_db = recipe_data.get("database_source", False) == True
                                 if has_explicit_db:
                                     ai_flag = False  # Explicitly marked as database
-                                    logger.debug(f"🔧 Inferred ai_generated=False for meal '{meal_data.get('meal_name')}' (has explicit database_source=True)")
+                                    logger.debug(f"Inferred ai_generated=False for meal '{meal_data.get('meal_name')}' (has explicit database_source=True)")
                                 else:
                                     # No explicit flags - default to AI (AI-only mode)
                                     ai_flag = True
-                                    logger.warning(f"⚠️ Missing ai_generated flag for meal '{meal_data.get('meal_name')}' - defaulting to AI (True) in AI-only mode")
+                                    logger.warning(f"Missing ai_generated flag for meal '{meal_data.get('meal_name')}' - defaulting to AI (True) in AI-only mode")
                             else:
                                 ai_flag = bool(ai_flag_raw)
                             
@@ -1596,7 +1601,7 @@ class NutritionService:
             if meal_plan.plan_type == 'weekly' and not is_progressive_plan:
                 expected_count = 28  # 7 days × 4 meals (default)
                 if saved_meals_count < expected_count:
-                    logger.warning(f"⚠️ Only saved {saved_meals_count}/{expected_count} meals for weekly meal plan {meal_plan.id}")
+                    logger.warning(f"Only saved {saved_meals_count}/{expected_count} meals for weekly meal plan {meal_plan.id}")
                     # Try to count by meal_date to see distribution
                     from sqlalchemy import func
                     date_counts = db.query(
@@ -1606,6 +1611,23 @@ class NutritionService:
                         MealPlanMeal.meal_plan_id == meal_plan.id
                     ).group_by(MealPlanMeal.meal_date).all()
                     logger.warning(f"   Date distribution: {dict(date_counts)}")
+                    
+                    # Determine base meal types for validation (same logic as generation)
+                    def build_meal_types(meals_per_day: int) -> list:
+                        if meals_per_day <= 3:
+                            return ['breakfast','lunch','dinner']
+                        if meals_per_day == 4:
+                            return ['breakfast','lunch','dinner','snack']
+                        return ['breakfast','snack','lunch','snack','dinner']
+                    
+                    # Get meals_per_day from plan request or defaults
+                    _override = getattr(plan_request, 'preferences_override', None)
+                    meals_per_day = (_override.get('meals_per_day', 4) if isinstance(_override, dict) else 4) if _override else 4
+                    base_types = build_meal_types(meals_per_day)
+                    
+                    # Calculate target calories for fallback generation
+                    daily_target = (_override.get('daily_calorie_target', 2000) if isinstance(_override, dict) else 2000) if _override else 2000
+                    target_calories = int(daily_target / max(1, len(base_types)))
                     
                     # CRITICAL: Check which days/meal types are missing and fill them
                     for day_idx in range(7):
@@ -1617,7 +1639,7 @@ class NutritionService:
                                 MealPlanMeal.meal_type == meal_type
                             ).first()
                             if not existing:
-                                logger.error(f"❌ MISSING MEAL: Day {day_idx+1} ({day_date}), type {meal_type} - generating emergency fallback")
+                                logger.error(f"MISSING MEAL: Day {day_idx+1} ({day_date}), type {meal_type} - generating emergency fallback")
                                 try:
                                     from ai.fallback_recipes import fallback_generator
                                     all_used = [m.meal_name for m in db.query(MealPlanMeal).filter(MealPlanMeal.meal_plan_id == meal_plan.id).all()]
@@ -1646,9 +1668,9 @@ class NutritionService:
                                     db.flush()
                                     if fallback.get('recipe'):
                                         missing_meal.recipe_details = fallback['recipe']
-                                    logger.info(f"✅ Created emergency fallback meal for day {day_idx+1}, {meal_type}")
+                                    logger.info(f"Created emergency fallback meal for day {day_idx+1}, {meal_type}")
                                 except Exception as fill_err:
-                                    logger.error(f"❌ Failed to create emergency fallback: {fill_err}")
+                                    logger.error(f"Failed to create emergency fallback: {fill_err}")
                     
                     # Commit any emergency fixes
                     db.commit()
@@ -1658,13 +1680,13 @@ class NutritionService:
                         MealPlanMeal.meal_plan_id == meal_plan.id
                     ).count()
                     if saved_meals_count >= expected_count:
-                        logger.info(f"✅ After emergency fixes: {saved_meals_count} meals saved (expected {expected_count})")
+                        logger.info(f"After emergency fixes: {saved_meals_count} meals saved (expected {expected_count})")
                     else:
-                        logger.error(f"❌❌❌ Still missing meals after emergency fixes: {saved_meals_count}/{expected_count}")
+                        logger.error(f"Still missing meals after emergency fixes: {saved_meals_count}/{expected_count}")
                 else:
-                    logger.info(f"✅ Saved {saved_meals_count} meals to database for meal plan {meal_plan.id} (expected {expected_count})")
+                    logger.info(f"Saved {saved_meals_count} meals to database for meal plan {meal_plan.id} (expected {expected_count})")
             else:
-                logger.info(f"✅ Saved {saved_meals_count} meals to database for meal plan {meal_plan.id}")
+                logger.info(f"Saved {saved_meals_count} meals to database for meal plan {meal_plan.id}")
             
             # Reload meal plan with meals relationship using explicit query
             # CRITICAL: Use joinedload to ensure all meals are loaded
@@ -1676,7 +1698,7 @@ class NutritionService:
             # Verify meals are loaded
             if meal_plan:
                 meals_loaded = len(list(meal_plan.meals)) if hasattr(meal_plan, 'meals') else 0
-                logger.info(f"✅ Reloaded meal plan {meal_plan.id} with {meals_loaded} meals in memory")
+                logger.info(f"Reloaded meal plan {meal_plan.id} with {meals_loaded} meals in memory")
             
             return meal_plan
             
@@ -2118,7 +2140,7 @@ class NutritionService:
             
             # Get ALL recipes first (no pagination yet)
             all_recipes = query.all()
-            print(f"🔍 DATABASE SEARCH: Found {len(all_recipes)} recipes")
+            logger.info(f"Database search found {len(all_recipes)} recipes")
             
             # Calculate nutritional data for each recipe
             for recipe in all_recipes:
@@ -2244,8 +2266,8 @@ class NutritionService:
                     
                 elif sort_field == 'prep_time':
                     # Sort by prep_time - ensure it's treated as integer
-                    print(f"🔍 SORTING BY PREP_TIME: {sort_order}")
-                    print(f"🔍 BEFORE SORTING: {[r.get('title', 'Unknown') + ': ' + str(r.get('prep_time', 0)) + 'min' for r in all_recipe_responses[:5]]}")
+                    logger.debug(f"Sorting by prep_time: {sort_order}")
+                    logger.debug(f"Before sorting: {[r.get('title', 'Unknown') + ': ' + str(r.get('prep_time', 0)) + 'min' for r in all_recipe_responses[:5]]}")
                     def get_prep_time_value(recipe):
                         prep_time = recipe.get('prep_time', 0)
                         # Ensure it's an integer for proper sorting
@@ -2254,7 +2276,7 @@ class NutritionService:
                         except (ValueError, TypeError):
                             return 0
                     all_recipe_responses.sort(key=get_prep_time_value, reverse=reverse)
-                    print(f"🔍 AFTER SORTING: {[r.get('title', 'Unknown') + ': ' + str(r.get('prep_time', 0)) + 'min' for r in all_recipe_responses[:5]]}")
+                    logger.debug(f"After sorting: {[r.get('title', 'Unknown') + ': ' + str(r.get('prep_time', 0)) + 'min' for r in all_recipe_responses[:5]]}")
             
             # Now apply pagination to the sorted results
             offset = (search_request.page - 1) * search_request.limit
@@ -2387,15 +2409,15 @@ class NutritionService:
                 
                 # CRITICAL FIX: If meals still aren't loaded and we have a db session, query directly
                 if (not meals_list or len(meals_list) == 0) and db is not None:
-                    logger.warning(f"⚠️ No meals found via relationship for meal plan {meal_plan.id}, querying directly from database")
+                    logger.warning(f"No meals found via relationship for meal plan {meal_plan.id}, querying directly from database")
                     from models.nutrition import MealPlanMeal
                     meals_list = db.query(MealPlanMeal).filter(
                         MealPlanMeal.meal_plan_id == meal_plan.id
                     ).order_by(MealPlanMeal.meal_date, MealPlanMeal.meal_type).all()
-                    logger.info(f"✅ Queried {len(meals_list)} meals directly from database for meal plan {meal_plan.id}")
+                    logger.info(f"Queried {len(meals_list)} meals directly from database for meal plan {meal_plan.id}")
                 elif not meals_list or len(meals_list) == 0:
                     # This shouldn't happen if joinedload was used, but safety check
-                    logger.warning(f"⚠️ No meals found via relationship for meal plan {meal_plan.id}, and no db session available to query directly")
+                    logger.warning(f"No meals found via relationship for meal plan {meal_plan.id}, and no db session available to query directly")
             except Exception as e:
                 logger.error(f"Error accessing meals relationship: {e}", exc_info=True)
                 # Last resort: try to query directly if db session is available
@@ -2405,14 +2427,14 @@ class NutritionService:
                         meals_list = db.query(MealPlanMeal).filter(
                             MealPlanMeal.meal_plan_id == meal_plan.id
                         ).order_by(MealPlanMeal.meal_date, MealPlanMeal.meal_type).all()
-                        logger.info(f"✅ Fallback: Queried {len(meals_list)} meals directly from database after exception")
+                        logger.info(f"Fallback: Queried {len(meals_list)} meals directly from database after exception")
                     except Exception as db_error:
-                        logger.error(f"❌ Failed to query meals directly: {db_error}", exc_info=True)
+                        logger.error(f"Failed to query meals directly: {db_error}", exc_info=True)
                         meals_list = []
                 else:
                     meals_list = []
             
-            logger.info(f"📊 Converting meal plan {meal_plan.id} to response: {len(meals_list)} meals found")
+            logger.info(f"Converting meal plan {meal_plan.id} to response: {len(meals_list)} meals found")
             
             # ROOT CAUSE FIX: Don't validate meal count for progressive meal plans (empty structure)
             # Progressive generation starts empty and is filled one slot at a time
@@ -2428,17 +2450,17 @@ class NutritionService:
                 meals_per_day = 4  # Default, can be calculated from user preferences if needed
                 expected_meals = 7 * meals_per_day  # 7 days × meals_per_day
                 if len(meals_list) < expected_meals:
-                    logger.warning(f"⚠️ Weekly meal plan {meal_plan.id} has only {len(meals_list)} meals, expected {expected_meals} (7 days × {meals_per_day} meals)")
+                    logger.warning(f"Weekly meal plan {meal_plan.id} has only {len(meals_list)} meals, expected {expected_meals} (7 days × {meals_per_day} meals)")
                     # Log meal distribution by date to debug (only for bulk-generated plans with missing meals)
                     from collections import Counter
                     meal_dates = [str(m.meal_date) for m in meals_list if hasattr(m, 'meal_date') and m.meal_date]
                     date_counts = Counter(meal_dates)
                     logger.warning(f"   Meal distribution by date: {dict(date_counts)}")
                 else:
-                    logger.info(f"✅ Weekly meal plan {meal_plan.id} has {len(meals_list)} meals (expected {expected_meals})")
+                    logger.info(f"Weekly meal plan {meal_plan.id} has {len(meals_list)} meals (expected {expected_meals})")
             elif meal_plan.plan_type == 'weekly' and is_progressive_plan:
                 # Progressive plan - log info only, no validation
-                logger.info(f"📋 Progressive meal plan {meal_plan.id} has {len(meals_list)} meals (filling progressively)")
+                logger.info(f"Progressive meal plan {meal_plan.id} has {len(meals_list)} meals (filling progressively)")
             
             meals_response: List[Dict[str, Any]] = []
             total_cal = 0.0
@@ -2463,26 +2485,26 @@ class NutritionService:
                         ai_meals_in_plan.append(m)
                     if is_db:
                         db_meals_in_plan.append(m)
-            # CRITICAL: AI-only mode = no database meals at all (or 90%+ AI meals)
+            # AI-only mode = no database meals at all (or 90%+ AI meals)
             # If we have any database meals, it's NOT AI-only
             total_meals = len(meals_list)
             ai_ratio = len(ai_meals_in_plan) / total_meals if total_meals > 0 else 0
             is_ai_only_plan = len(db_meals_in_plan) == 0 and ai_ratio > 0.9
-            logger.info(f"📊 AI-only detection: {len(ai_meals_in_plan)} AI, {len(db_meals_in_plan)} DB out of {total_meals} total (ratio: {ai_ratio:.1%}) -> AI-only: {is_ai_only_plan}")
+            logger.info(f"AI-only detection: {len(ai_meals_in_plan)} AI, {len(db_meals_in_plan)} DB out of {total_meals} total (ratio: {ai_ratio:.1%}) -> AI-only: {is_ai_only_plan}")
 
             for meal in meals_list:
                 recipe_details = meal.recipe_details or {}
                 
-                # CRITICAL DEBUG: Log meal_type from recipe_details to diagnose snack slot assignment
+                # Log meal_type from recipe_details to diagnose snack slot assignment
                 if isinstance(recipe_details, dict):
                     preserved_meal_type = recipe_details.get('meal_type', None)
                     if preserved_meal_type and preserved_meal_type != meal.meal_type:
-                        logger.info(f"🔍 Meal {meal.id} '{meal.meal_name}': DB meal_type='{meal.meal_type}', recipe_details.meal_type='{preserved_meal_type}'")
+                        logger.info(f"Meal {meal.id} '{meal.meal_name}': DB meal_type='{meal.meal_type}', recipe_details.meal_type='{preserved_meal_type}'")
                     elif meal.meal_type == 'snack':
-                        logger.warning(f"⚠️ Snack meal {meal.id} '{meal.meal_name}' has no preserved meal_type in recipe_details (DB meal_type='snack')")
+                        logger.warning(f"Snack meal {meal.id} '{meal.meal_name}' has no preserved meal_type in recipe_details (DB meal_type='snack')")
                 
                 # Check if this meal is a beverage/sauce/dessert and should be excluded
-                # CRITICAL FIX: Only filter if the meal is CLEARLY a beverage/sauce/dessert, not just because a keyword appears in instructions
+                # Only filter if the meal is clearly a beverage/sauce/dessert, not just because a keyword appears in instructions
                 meal_name = (meal.meal_name or "").lower()
                 meal_type = meal.meal_type or ""
                 
@@ -2517,7 +2539,7 @@ class NutritionService:
                 # Exclude beverages/sauces/desserts from breakfast, lunch, dinner (but allow snacks)
                 # CRITICAL: Only filter if we're CERTAIN it's a beverage/sauce/dessert
                 if meal_type in ("breakfast", "lunch", "dinner") and is_beverage_sauce_dessert:
-                    logger.warning(f"⚠️ Filtering out beverage/sauce/dessert meal: {meal.meal_name} (type: {meal_type})")
+                    logger.warning(f"Filtering out beverage/sauce/dessert meal: {meal.meal_name} (type: {meal_type})")
                     # Replace with a fallback meal
                     try:
                         # Use meal calories or estimate from meal type
@@ -2548,9 +2570,9 @@ class NutritionService:
                             target_cal_for_fallback = int(target_cal_for_fallback * (1.1 if attempt % 2 == 0 else 0.9))
                         
                         if not fallback or not fallback.get('meal_name'):
-                            logger.error(f"❌ Failed to generate unique fallback for {meal_type} after {max_attempts} attempts")
+                            logger.error(f"Failed to generate unique fallback for {meal_type} after {max_attempts} attempts")
                             # Keep the original meal rather than creating empty slot - it's better than nothing
-                            logger.warning(f"⚠️ Keeping original meal '{meal.meal_name}' (could not generate unique fallback)")
+                            logger.warning(f"Keeping original meal '{meal.meal_name}' (could not generate unique fallback)")
                             # Don't replace - keep original meal and continue processing
                         else:
                             # Update meal data with fallback
@@ -2572,12 +2594,12 @@ class NutritionService:
                             # This prevents old database meal plans from getting more database meals when beverages are filtered
                             recipe_details['ai_generated'] = True
                             recipe_details['database_source'] = False
-                            logger.info(f"✅ Replaced beverage meal with AI fallback: {meal.meal_name} (AI-ONLY MODE - always AI)")
+                            logger.info(f"Replaced beverage meal with AI fallback: {meal.meal_name} (AI-ONLY MODE - always AI)")
                             meal.recipe_details = recipe_details
                     except Exception as e:
                         logger.error(f"Error replacing beverage meal with fallback: {e}")
                         # Keep the original meal rather than creating empty slot
-                        logger.warning(f"⚠️ Keeping original meal '{meal.meal_name}' (exception during fallback generation)")
+                        logger.warning(f"Keeping original meal '{meal.meal_name}' (exception during fallback generation)")
                         # Continue processing this meal normally (don't skip it)
                 
                 # Standardize measurements in recipe details
@@ -2632,12 +2654,12 @@ class NutritionService:
                     has_explicit_db = recipe_details.get('database_source', False) == True
                     if not has_explicit_db:
                         ai_flag = True  # No explicit DB flag - assume AI (fix old meal plans)
-                        logger.warning(f"⚠️ FIXED: Meal '{meal.meal_name}' had ai_generated=False but no explicit database_source - marking as AI")
+                        logger.warning(f"FIXED: Meal '{meal.meal_name}' had ai_generated=False but no explicit database_source - marking as AI")
                         # Update the recipe_details to fix it
                         recipe_details['ai_generated'] = True
                         recipe_details['database_source'] = False
                 
-                # CRITICAL: Ensure meal_date is properly formatted as string for frontend
+                # Ensure meal_date is properly formatted as ISO 8601 string for frontend
                 meal_date_str = meal.meal_date.isoformat() if hasattr(meal.meal_date, 'isoformat') else str(meal.meal_date)
                 
                 meals_response.append({
@@ -2661,8 +2683,8 @@ class NutritionService:
                     "total_fat": meal.fats,
                     "total_fiber": getattr(meal, 'fiber', None),
                     "total_sodium": getattr(meal, 'sodium', None),
-                    "created_at": getattr(meal, 'created_at', datetime.utcnow()),
-                    "updated_at": getattr(meal, 'updated_at', None)
+                    "created_at": (getattr(meal, 'created_at', datetime.utcnow()).isoformat() if hasattr(getattr(meal, 'created_at', datetime.utcnow()), 'isoformat') else str(getattr(meal, 'created_at', datetime.utcnow()))),
+                    "updated_at": (getattr(meal, 'updated_at').isoformat() if getattr(meal, 'updated_at', None) and hasattr(getattr(meal, 'updated_at'), 'isoformat') else (str(getattr(meal, 'updated_at')) if getattr(meal, 'updated_at', None) else None))
                 })
                 total_cal += float(per_serving_cal or meal.calories or 0)  # Use per-serving calories for total
                 total_pro += float(meal.protein or 0)
@@ -2673,8 +2695,8 @@ class NutritionService:
                 "id": meal_plan.id,
                 "user_id": meal_plan.user_id,
                 "plan_type": meal_plan.plan_type,
-                "start_date": meal_plan.start_date,
-                "end_date": meal_plan.end_date,
+                "start_date": meal_plan.start_date.isoformat() if hasattr(meal_plan.start_date, 'isoformat') else str(meal_plan.start_date),
+                "end_date": meal_plan.end_date.isoformat() if meal_plan.end_date and hasattr(meal_plan.end_date, 'isoformat') else (str(meal_plan.end_date) if meal_plan.end_date else None),
                 "version": meal_plan.version,
                 "is_active": getattr(meal_plan, 'is_active', True),
                 "meals": meals_response,
@@ -2684,8 +2706,8 @@ class NutritionService:
                     "carbs": round(total_carbs, 1),
                     "fats": round(total_fats, 1)
                 },
-                "created_at": getattr(meal_plan, 'created_at', datetime.utcnow()),
-                "updated_at": getattr(meal_plan, 'updated_at', datetime.utcnow())
+                "created_at": (getattr(meal_plan, 'created_at', datetime.utcnow()).isoformat() if hasattr(getattr(meal_plan, 'created_at', datetime.utcnow()), 'isoformat') else str(getattr(meal_plan, 'created_at', datetime.utcnow()))),
+                "updated_at": (getattr(meal_plan, 'updated_at', datetime.utcnow()).isoformat() if getattr(meal_plan, 'updated_at', None) and hasattr(getattr(meal_plan, 'updated_at'), 'isoformat') else (str(getattr(meal_plan, 'updated_at')) if getattr(meal_plan, 'updated_at', None) else None))
             }
             return response
         except Exception as e:
@@ -2694,14 +2716,92 @@ class NutritionService:
                 "id": meal_plan.id,
                 "user_id": meal_plan.user_id,
                 "plan_type": meal_plan.plan_type,
-                "start_date": meal_plan.start_date,
-                "end_date": meal_plan.end_date,
+                "start_date": meal_plan.start_date.isoformat() if hasattr(meal_plan.start_date, 'isoformat') else str(meal_plan.start_date),
+                "end_date": meal_plan.end_date.isoformat() if meal_plan.end_date and hasattr(meal_plan.end_date, 'isoformat') else (str(meal_plan.end_date) if meal_plan.end_date else None),
                 "version": meal_plan.version,
                 "is_active": getattr(meal_plan, 'is_active', True),
                 "meals": [],
                 "total_nutrition": {"calories": 0, "protein": 0, "carbs": 0, "fats": 0},
-                "created_at": getattr(meal_plan, 'created_at', datetime.utcnow()),
-                "updated_at": getattr(meal_plan, 'updated_at', datetime.utcnow())
+                "created_at": (getattr(meal_plan, 'created_at', datetime.utcnow()).isoformat() if hasattr(getattr(meal_plan, 'created_at', datetime.utcnow()), 'isoformat') else str(getattr(meal_plan, 'created_at', datetime.utcnow()))),
+                "updated_at": (getattr(meal_plan, 'updated_at', datetime.utcnow()).isoformat() if getattr(meal_plan, 'updated_at', None) and hasattr(getattr(meal_plan, 'updated_at'), 'isoformat') else (str(getattr(meal_plan, 'updated_at')) if getattr(meal_plan, 'updated_at', None) else None))
+            }
+    
+    def _convert_shopping_list_to_response(self, shopping_list: ShoppingList, db: Session = None) -> Dict[str, Any]:
+        """Convert ShoppingList ORM to ShoppingListResponse-compatible dict."""
+        try:
+            # Ensure items are loaded
+            items_list = []
+            try:
+                if hasattr(shopping_list, 'items'):
+                    items_list = list(shopping_list.items)
+                if not items_list:
+                    items_list = list(getattr(shopping_list, 'items', []))
+                
+                # If items still aren't loaded and we have a db session, query directly
+                if (not items_list or len(items_list) == 0) and db is not None:
+                    logger.warning(f"No items found via relationship for shopping list {shopping_list.id}, querying directly from database")
+                    items_list = db.query(ShoppingListItem).filter(
+                        ShoppingListItem.shopping_list_id == shopping_list.id
+                    ).all()
+            except Exception as e:
+                logger.error(f"Error loading shopping list items: {str(e)}")
+            
+            # Convert items to dict format
+            items_response = []
+            purchased_count = 0
+            for item in items_list:
+                # Get ingredient name if available
+                ingredient_name = None
+                if hasattr(item, 'ingredient') and item.ingredient:
+                    ingredient_name = item.ingredient.name
+                elif db is not None:
+                    # Try to fetch ingredient from database
+                    try:
+                        ingredient = db.query(Ingredient).filter(Ingredient.id == item.ingredient_id).first()
+                        if ingredient:
+                            ingredient_name = ingredient.name
+                    except Exception as e:
+                        logger.warning(f"Could not load ingredient {item.ingredient_id}: {str(e)}")
+                
+                items_response.append({
+                    "id": item.id,
+                    "ingredient_id": item.ingredient_id,
+                    "ingredient_name": ingredient_name or f"ingredient_{item.ingredient_id}",
+                    "quantity": float(item.quantity),
+                    "unit": item.unit,
+                    "category": item.category,
+                    "is_purchased": bool(item.is_purchased),
+                    "notes": item.notes or ""
+                })
+                if item.is_purchased:
+                    purchased_count += 1
+            
+            return {
+                "id": shopping_list.id,
+                "user_id": shopping_list.user_id,
+                "list_name": shopping_list.list_name,
+                "meal_plan_id": shopping_list.meal_plan_id,
+                "is_active": getattr(shopping_list, 'is_active', True),
+                "items": items_response,
+                "total_items": len(items_response),
+                "purchased_items": purchased_count,
+                "created_at": (getattr(shopping_list, 'created_at', datetime.utcnow()).isoformat() if hasattr(getattr(shopping_list, 'created_at', datetime.utcnow()), 'isoformat') else str(getattr(shopping_list, 'created_at', datetime.utcnow()))),
+                "updated_at": (getattr(shopping_list, 'updated_at', datetime.utcnow()).isoformat() if getattr(shopping_list, 'updated_at', None) and hasattr(getattr(shopping_list, 'updated_at'), 'isoformat') else (str(getattr(shopping_list, 'updated_at')) if getattr(shopping_list, 'updated_at', None) else None))
+            }
+        except Exception as e:
+            logger.error(f"Error converting shopping list to response: {str(e)}")
+            # Return minimal response on error
+            return {
+                "id": shopping_list.id,
+                "user_id": shopping_list.user_id,
+                "list_name": shopping_list.list_name,
+                "meal_plan_id": shopping_list.meal_plan_id,
+                "is_active": getattr(shopping_list, 'is_active', True),
+                "items": [],
+                "total_items": 0,
+                "purchased_items": 0,
+                "created_at": (getattr(shopping_list, 'created_at', datetime.utcnow()).isoformat() if hasattr(getattr(shopping_list, 'created_at', datetime.utcnow()), 'isoformat') else str(getattr(shopping_list, 'created_at', datetime.utcnow()))),
+                "updated_at": (getattr(shopping_list, 'updated_at', datetime.utcnow()).isoformat() if getattr(shopping_list, 'updated_at', None) and hasattr(getattr(shopping_list, 'updated_at'), 'isoformat') else (str(getattr(shopping_list, 'updated_at')) if getattr(shopping_list, 'updated_at', None) else None))
             }
     
     def get_nutritional_analysis(self, db: Session, user_id: int, start_date: date, end_date: date, analysis_type: str = "daily") -> Dict[str, Any]:

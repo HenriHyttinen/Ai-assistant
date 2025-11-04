@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.base import BaseHTTPMiddleware
 import time
 from typing import Callable
 from contextlib import asynccontextmanager
@@ -92,38 +93,76 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+# CORS middleware - must be added FIRST to process all responses, including errors
+# Allow all common localhost origins for development
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
+        "http://localhost",  # No port (defaults to 80)
+        "http://localhost:3000",
         "http://localhost:5173",
-        "http://127.0.0.1:5173",
         "http://localhost:5174",
-        "http://127.0.0.1:5174",
         "http://localhost:8080",
+        "http://127.0.0.1",  # No port (defaults to 80)
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:5173",
+        "http://127.0.0.1:5174",
         "http://127.0.0.1:8080",
     ],
-    allow_origin_regex=r"^https://.*\\.ngrok-free\\.app$|^http://(localhost|127\\.0\\.0\\.1):(5173|5174|8080)$",
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_origin_regex=r"^https://.*\.ngrok-free\.app$|^http://(localhost|127\.0\.0\.1)(:\d+)?$",
+    allow_credentials=True,  # Can be True with explicit origins
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
 
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.add_middleware(SecurityMiddleware, force_https=False)
+
 app.middleware("http")(rate_limit_middleware)
 app.middleware("http")(auth_rate_limit_middleware)
 
-# Add error handling middleware
+# Add error handling middleware - runs BEFORE CORS middleware
 @app.middleware("http")
 async def error_handling_middleware(request: Request, call_next: Callable):
     try:
-        return await call_next(request)
+        response = await call_next(request)
+        # Ensure CORS headers are present on successful responses too
+        # (in case CORS middleware didn't run for some reason)
+        origin = request.headers.get("origin")
+        if origin and origin in [
+            "http://localhost", "http://127.0.0.1",
+            "http://localhost:5173", "http://127.0.0.1:5173",
+            "http://localhost:5174", "http://127.0.0.1:5174",
+            "http://localhost:8080", "http://127.0.0.1:8080",
+        ]:
+            if "Access-Control-Allow-Origin" not in response.headers:
+                response.headers["Access-Control-Allow-Origin"] = origin
+                response.headers["Access-Control-Allow-Credentials"] = "true"
+        return response
+    except HTTPException as e:
+        # Re-raise HTTPException so CORS middleware can process it
+        raise
     except Exception as e:
         logger.error(f"Unhandled error: {str(e)}", exc_info=True)
-        return JSONResponse(
+        # Ensure CORS headers are included even on errors
+        response = JSONResponse(
             status_code=500,
             content={"detail": "Internal server error"}
         )
+        # Add CORS headers manually
+        origin = request.headers.get("origin")
+        if origin and origin in [
+            "http://localhost", "http://127.0.0.1",
+            "http://localhost:5173", "http://127.0.0.1:5173",
+            "http://localhost:5174", "http://127.0.0.1:5174",
+            "http://localhost:8080", "http://127.0.0.1:8080",
+        ]:
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Access-Control-Allow-Credentials"] = "true"
+            response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS, PATCH"
+            response.headers["Access-Control-Allow-Headers"] = "*"
+        return response
 
 # Mount static files
 app.mount("/static", StaticFiles(directory="static"), name="static")

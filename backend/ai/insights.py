@@ -308,7 +308,7 @@ def generate_health_insights(health_data: Dict[str, Any], user_settings: Dict[st
         response = openai_client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
-                {"role": "system", "content": f"You're a friendly health coach. Give practical, personalized advice that actually helps people. {language_instruction}"},
+                {"role": "system", "content": f"Provide practical, personalized health advice based on user data. {language_instruction}"},
                 {"role": "user", "content": prompt}
             ],
             temperature=0.7,

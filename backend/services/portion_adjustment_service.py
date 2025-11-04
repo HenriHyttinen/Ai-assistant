@@ -46,40 +46,118 @@ class PortionAdjustmentService:
             if meal.recipe_details and isinstance(meal.recipe_details, dict):
                 ingredients = meal.recipe_details.get('ingredients', [])
                 
+                logger.info(f"📊 Adjusting {len(ingredients)} ingredients by {multiplier:.2f}x (servings: {original_servings} → {new_servings})")
+                
                 for ingredient in ingredients:
-                    if isinstance(ingredient, dict) and 'quantity' in ingredient:
-                        original_quantity = float(ingredient.get('quantity', 0))
-                        original_unit = ingredient.get('unit', 'g')
-                        
-                        # Calculate adjusted quantity
-                        adjusted_quantity = original_quantity * multiplier
-                        
-                        # Standardize measurement (ensures grams/ml/piece)
+                    if not isinstance(ingredient, dict):
+                        # Skip invalid ingredients
+                        adjusted_ingredients.append(ingredient)
+                        continue
+                    
+                    # Get original quantity and unit
+                    original_quantity = float(ingredient.get('quantity', 0))
+                    original_unit = ingredient.get('unit', 'g')
+                    ingredient_name = ingredient.get('name', '')
+                    
+                    if original_quantity <= 0:
+                        # Skip ingredients with invalid quantities
+                        adjusted_ingredients.append(ingredient)
+                        continue
+                    
+                    # Calculate adjusted quantity
+                    adjusted_quantity = original_quantity * multiplier
+                    
+                    # Standardize measurement (ensures grams/ml/piece)
+                    try:
                         standardized = self.measurement_service.standardize_ingredient_measurement(
-                            ingredient.get('name', ''),
+                            ingredient_name,
                             adjusted_quantity,
                             original_unit
                         )
                         
+                        # Create adjusted ingredient with updated quantities
+                        # Preserve all original fields but update quantity and unit
                         adjusted_ingredient = {
-                            **ingredient,
+                            **ingredient,  # Preserve all original fields (name, notes, etc.)
                             'quantity': round(standardized['standardized_quantity'], 2),
                             'unit': standardized['standardized_unit'],  # Standardized unit
-                            'original_quantity': original_quantity,
-                            'original_unit': original_unit,
-                            'multiplier': round(multiplier, 2),
-                            'measurement_type': standardized.get('measurement_type', 'weight')
                         }
-                        adjusted_ingredients.append(adjusted_ingredient)
+                        
+                        logger.debug(f"  {ingredient_name}: {original_quantity}{original_unit} → {adjusted_ingredient['quantity']}{adjusted_ingredient['unit']} ({multiplier:.2f}x)")
+                        
+                    except Exception as e:
+                        logger.warning(f"Failed to standardize {ingredient_name}: {e}. Using proportional scaling.")
+                        # Fallback: simple proportional scaling
+                        adjusted_ingredient = {
+                            **ingredient,
+                            'quantity': round(adjusted_quantity, 2),
+                            'unit': original_unit
+                        }
+                    
+                    adjusted_ingredients.append(adjusted_ingredient)
+                
+                logger.info(f"✅ Adjusted {len(adjusted_ingredients)} ingredients")
             
-            # Adjust nutrition values
-            nutrition_multiplier = multiplier
-            adjusted_nutrition = {
-                'calories': round((meal.calories or 0) * nutrition_multiplier, 1),
-                'protein': round((meal.protein or 0) * nutrition_multiplier, 1),
-                'carbs': round((meal.carbs or 0) * nutrition_multiplier, 1),
-                'fats': round((meal.fats or 0) * nutrition_multiplier, 1)
-            }
+            # CRITICAL: Recalculate nutrition from scaled ingredients for accuracy
+            # This ensures nutrition matches actual ingredient quantities (like in meal generation)
+            from services.hybrid_meal_generator import HybridMealGenerator
+            hybrid_gen = HybridMealGenerator()
+            
+            # Prepare ingredients for nutrition calculation (extract quantity, unit, name)
+            # Only if we have adjusted ingredients (recipe details exist)
+            ingredients_for_calc = []
+            if adjusted_ingredients:
+                for ing in adjusted_ingredients:
+                    if isinstance(ing, dict) and 'name' in ing:
+                        ingredients_for_calc.append({
+                            'name': ing.get('name', ''),
+                            'quantity': ing.get('quantity', 0),
+                            'unit': ing.get('unit', 'g')
+                        })
+            
+            # Calculate nutrition from scaled ingredients (more accurate than proportional scaling)
+            # Only if we have ingredient data
+            recalculated_nutrition = None
+            if ingredients_for_calc and len(ingredients_for_calc) > 0:
+                try:
+                    logger.info(f"🔬 Recalculating nutrition from {len(ingredients_for_calc)} scaled ingredients...")
+                    recalculated_nutrition = hybrid_gen.nutrition_ai._calculate_recipe_nutrition(
+                        ingredients_for_calc, db
+                    )
+                    if recalculated_nutrition and recalculated_nutrition.get('calories', 0) > 0:
+                        logger.info(f"✅ Nutrition recalculated: {recalculated_nutrition.get('calories', 0)} cal")
+                    else:
+                        logger.warning(f"⚠️ Nutrition recalculation returned 0 calories")
+                except Exception as e:
+                    logger.warning(f"⚠️ Failed to recalculate nutrition from ingredients: {e}")
+            
+            # Use recalculated values if available, otherwise fall back to proportional scaling
+            if recalculated_nutrition and recalculated_nutrition.get('calories', 0) > 0:
+                adjusted_nutrition = {
+                    'calories': int(recalculated_nutrition.get('calories', 0)),
+                    'protein': int(recalculated_nutrition.get('protein', 0)),
+                    'carbs': int(recalculated_nutrition.get('carbs', 0)),
+                    'fats': int(recalculated_nutrition.get('fats', 0)),
+                    'per_serving_calories': int(recalculated_nutrition.get('calories', 0)),
+                    'per_serving_protein': int(recalculated_nutrition.get('protein', 0)),
+                    'per_serving_carbs': int(recalculated_nutrition.get('carbs', 0)),
+                    'per_serving_fats': int(recalculated_nutrition.get('fats', 0))
+                }
+                logger.info(f"✅ Recalculated nutrition from scaled ingredients: {adjusted_nutrition['calories']} cal")
+            else:
+                # Fallback: proportional scaling if recalculation fails
+                nutrition_multiplier = multiplier
+                adjusted_nutrition = {
+                    'calories': int(round((meal.calories or 0) * nutrition_multiplier)),
+                    'protein': int(round((meal.protein or 0) * nutrition_multiplier)),
+                    'carbs': int(round((meal.carbs or 0) * nutrition_multiplier)),
+                    'fats': int(round((meal.fats or 0) * nutrition_multiplier)),
+                    'per_serving_calories': int(round((meal.calories or 0) * nutrition_multiplier)),
+                    'per_serving_protein': int(round((meal.protein or 0) * nutrition_multiplier)),
+                    'per_serving_carbs': int(round((meal.carbs or 0) * nutrition_multiplier)),
+                    'per_serving_fats': int(round((meal.fats or 0) * nutrition_multiplier))
+                }
+                logger.warning(f"⚠️ Using proportional scaling (recalculation failed): {adjusted_nutrition['calories']} cal")
             
             # Update the meal in the database
             meal.calories = adjusted_nutrition['calories']
@@ -87,18 +165,25 @@ class PortionAdjustmentService:
             meal.carbs = adjusted_nutrition['carbs']
             meal.fats = adjusted_nutrition['fats']
             
-            # Update recipe details with adjusted ingredients
+            # Update recipe details with adjusted ingredients and nutrition
             if meal.recipe_details and isinstance(meal.recipe_details, dict):
                 updated_recipe_details = meal.recipe_details.copy()
                 updated_recipe_details['servings'] = new_servings
                 updated_recipe_details['ingredients'] = adjusted_ingredients
-                updated_recipe_details['nutrition'] = adjusted_nutrition
+                
+                # Update nutrition in recipe_details
+                if 'nutrition' not in updated_recipe_details:
+                    updated_recipe_details['nutrition'] = {}
+                updated_recipe_details['nutrition'].update(adjusted_nutrition)
+                
                 meal.recipe_details = updated_recipe_details
             
             db.commit()
             db.refresh(meal)
             
-            logger.info(f"Adjusted meal {meal_id} from {original_servings} to {new_servings} servings")
+            logger.info(f"✅ Adjusted meal {meal_id} from {original_servings} to {new_servings} servings")
+            logger.info(f"   Calories: {(meal.calories or 0) / multiplier:.1f} → {meal.calories} cal ({multiplier:.2f}x)")
+            logger.info(f"   Ingredients: {len(adjusted_ingredients)} scaled")
             
             return {
                 "message": "Meal portion adjusted successfully",
@@ -107,8 +192,9 @@ class PortionAdjustmentService:
                 "original_servings": original_servings,
                 "new_servings": new_servings,
                 "multiplier": round(multiplier, 2),
-                "adjusted_ingredients": adjusted_ingredients,
+                "adjusted_ingredients": adjusted_ingredients,  # All ingredients with updated quantities
                 "adjusted_nutrition": adjusted_nutrition,
+                "recipe_details": meal.recipe_details,  # Include full recipe_details with adjusted ingredients
                 "updated_meal": {
                     "id": meal.id,
                     "meal_name": meal.meal_name,
@@ -116,7 +202,8 @@ class PortionAdjustmentService:
                     "protein": meal.protein,
                     "carbs": meal.carbs,
                     "fats": meal.fats,
-                    "servings": new_servings
+                    "servings": new_servings,
+                    "recipe": meal.recipe_details  # Full recipe with adjusted ingredients
                 }
             }
             

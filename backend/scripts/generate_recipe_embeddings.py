@@ -18,22 +18,17 @@ import logging
 import numpy as np
 from typing import List, Dict, Any
 
-# Try to import sentence transformers
+# Use model_cache which handles embedding model initialization
 try:
-    from sentence_transformers import SentenceTransformer
+    from ai.model_cache import model_cache
     SENTENCE_TRANSFORMERS_AVAILABLE = True
 except ImportError:
     SENTENCE_TRANSFORMERS_AVAILABLE = False
-    print("❌ sentence-transformers not available. Install with: pip install sentence-transformers")
+    print("❌ model_cache not available")
 
-# Fallback: Use a simple TF-IDF based embedding
-try:
-    from sklearn.feature_extraction.text import TfidfVectorizer
-    from sklearn.metrics.pairwise import cosine_similarity
-    SKLEARN_AVAILABLE = True
-except ImportError:
-    SKLEARN_AVAILABLE = False
-    print("❌ scikit-learn not available for fallback embeddings")
+# Note: sklearn fallback removed due to scipy/numpy compatibility issues
+# We'll rely solely on sentence-transformers via model_cache
+SKLEARN_AVAILABLE = False
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -43,26 +38,21 @@ class RecipeEmbeddingGenerator:
     def __init__(self, db: Session):
         self.db = db
         self.embedding_model = None
-        self.vectorizer = None
         self.embedding_dimension = 384  # all-MiniLM-L6-v2 dimension
-        self.use_tfidf = False
         
         if SENTENCE_TRANSFORMERS_AVAILABLE:
             try:
-                self.embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
-                logger.info("✅ Loaded sentence transformer model: all-MiniLM-L6-v2")
+                # Use model_cache which already handles embedding model initialization
+                self.embedding_model = model_cache.embedding_model
+                if self.embedding_model:
+                    logger.info("✅ Loaded sentence transformer model from model_cache: all-MiniLM-L6-v2")
+                else:
+                    logger.error("❌ model_cache embedding_model is None - embedding generation will not work")
+                    logger.error("   This is likely due to scipy/numpy version compatibility issues")
+                    self.embedding_model = None
             except Exception as e:
-                logger.error(f"❌ Failed to load sentence transformer model: {e}")
+                logger.error(f"❌ Failed to load embedding model from model_cache: {e}")
                 self.embedding_model = None
-        elif SKLEARN_AVAILABLE:
-            try:
-                self.vectorizer = TfidfVectorizer(max_features=1000, stop_words='english')
-                self.use_tfidf = True
-                self.embedding_dimension = 1000  # TF-IDF dimension
-                logger.info("✅ Using TF-IDF vectorizer as fallback")
-            except Exception as e:
-                logger.error(f"❌ Failed to initialize TF-IDF vectorizer: {e}")
-                self.vectorizer = None
         else:
             logger.error("❌ No embedding method available")
     
@@ -132,8 +122,10 @@ class RecipeEmbeddingGenerator:
     
     def generate_embeddings_for_all_recipes(self) -> int:
         """Generate embeddings for all recipes in the database"""
-        if not self.embedding_model and not self.vectorizer:
-            logger.error("❌ Cannot generate embeddings: no model available")
+        if not self.embedding_model:
+            logger.error("❌ Cannot generate embeddings: embedding model not available")
+            logger.error("   This may be due to scipy/numpy version compatibility issues")
+            logger.error("   Try: pip install --upgrade numpy scipy")
             return 0
         
         # Get all active recipes
@@ -162,12 +154,6 @@ class RecipeEmbeddingGenerator:
                 if self.embedding_model:
                     # Use sentence transformers
                     embeddings = self.embedding_model.encode(recipe_texts, convert_to_numpy=True)
-                elif self.vectorizer:
-                    # Use TF-IDF
-                    if i == 0:  # Fit vectorizer on first batch
-                        embeddings = self.vectorizer.fit_transform(recipe_texts).toarray()
-                    else:
-                        embeddings = self.vectorizer.transform(recipe_texts).toarray()
                 else:
                     logger.error("❌ No embedding method available")
                     continue
@@ -240,8 +226,6 @@ class RecipeEmbeddingGenerator:
             test_query = "chicken pasta italian"
             if self.embedding_model:
                 query_embedding = self.embedding_model.encode([test_query])[0]
-            elif self.vectorizer:
-                query_embedding = self.vectorizer.transform([test_query]).toarray()[0]
             else:
                 return {"error": "No embedding method available", "status": "failed"}
             
@@ -280,9 +264,15 @@ def main():
     db = SessionLocal()
     
     try:
-        if not SENTENCE_TRANSFORMERS_AVAILABLE and not SKLEARN_AVAILABLE:
-            logger.error("❌ Cannot proceed: no embedding method available")
-            logger.error("Install with: pip install sentence-transformers OR pip install scikit-learn")
+        if not SENTENCE_TRANSFORMERS_AVAILABLE:
+            logger.error("❌ Cannot proceed: model_cache not available")
+            logger.error("Install with: pip install sentence-transformers")
+            return
+        
+        if not model_cache.embedding_model:
+            logger.error("❌ Cannot proceed: embedding model failed to initialize")
+            logger.error("   This may be due to scipy/numpy version compatibility issues")
+            logger.error("   Try: pip install --upgrade numpy scipy sentence-transformers")
             return
         
         generator = RecipeEmbeddingGenerator(db)

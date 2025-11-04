@@ -11,10 +11,13 @@ from schemas.nutrition_goals import (
     GoalMilestoneCreate, GoalMilestoneUpdate, GoalMilestoneResponse,
     GoalTemplateCreate, GoalTemplateResponse,
     GoalSummary, GoalProgressSummary, GoalDashboard,
-    GoalFilter, GoalSearch, GoalAnalytics, GoalInsights
+    GoalFilter, GoalSearch, GoalAnalytics, GoalInsights,
+    GoalType as SchemaGoalType, GoalFrequency as SchemaGoalFrequency,
+    GoalStatus as SchemaGoalStatus
 )
 from typing import List, Optional, Dict, Any
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
+from dateutil import parser as date_parser
 import math
 
 class NutritionGoalsService:
@@ -22,9 +25,81 @@ class NutritionGoalsService:
     # Goal CRUD operations
     def create_goal(self, db: Session, user_id: str, goal_data: NutritionGoalCreate) -> NutritionGoalResponse:
         """Create a new nutrition goal for a user"""
+        # Convert schema enums to model enums for database storage
+        goal_dict = goal_data.model_dump()
+        
+        # Convert goal_type from schema enum to model enum (or string)
+        goal_type_value = goal_dict.get('goal_type')
+        if isinstance(goal_type_value, SchemaGoalType):
+            goal_type_value = goal_type_value.value
+        elif hasattr(goal_type_value, 'value'):
+            goal_type_value = goal_type_value.value
+        # Try to convert to model enum, fallback to string
+        try:
+            goal_type_enum = GoalType(goal_type_value) if isinstance(goal_type_value, str) else goal_type_value
+        except (ValueError, TypeError):
+            goal_type_enum = goal_type_value  # Use string value directly with native_enum=False
+        goal_dict['goal_type'] = goal_type_enum
+        
+        # Convert frequency from schema enum to model enum (or string)
+        frequency_value = goal_dict.get('frequency')
+        if isinstance(frequency_value, SchemaGoalFrequency):
+            frequency_value = frequency_value.value
+        elif hasattr(frequency_value, 'value'):
+            frequency_value = frequency_value.value
+        # Try to convert to model enum, fallback to string
+        try:
+            frequency_enum = GoalFrequency(frequency_value) if isinstance(frequency_value, str) else frequency_value
+        except (ValueError, TypeError):
+            frequency_enum = frequency_value  # Use string value directly with native_enum=False
+        goal_dict['frequency'] = frequency_enum
+        
+        # Convert date strings to datetime objects if needed
+        start_date = goal_dict.get('start_date')
+        if isinstance(start_date, str):
+            try:
+                # Try ISO format first (most common)
+                # Handle simple date strings like '2025-11-01'
+                if len(start_date) == 10 and start_date.count('-') == 2:
+                    date_obj = date.fromisoformat(start_date)
+                    start_date = datetime.combine(date_obj, datetime.min.time())
+                else:
+                    start_date = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+            except (ValueError, AttributeError):
+                try:
+                    # Fallback to dateutil parser for other formats
+                    start_date = date_parser.parse(start_date)
+                except (ValueError, TypeError):
+                    # Fallback to datetime.now() if parsing fails
+                    start_date = datetime.now()
+        elif not isinstance(start_date, datetime):
+            start_date = datetime.now()
+        goal_dict['start_date'] = start_date
+        
+        target_date = goal_dict.get('target_date')
+        if target_date is not None:
+            if isinstance(target_date, str):
+                try:
+                    # Try ISO format first (most common)
+                    # Handle simple date strings like '2025-12-01'
+                    if len(target_date) == 10 and target_date.count('-') == 2:
+                        date_obj = date.fromisoformat(target_date)
+                        target_date = datetime.combine(date_obj, datetime.min.time())
+                    else:
+                        target_date = datetime.fromisoformat(target_date.replace('Z', '+00:00'))
+                except (ValueError, AttributeError):
+                    try:
+                        # Fallback to dateutil parser for other formats
+                        target_date = date_parser.parse(target_date)
+                    except (ValueError, TypeError):
+                        target_date = None
+            elif not isinstance(target_date, datetime):
+                target_date = None
+        goal_dict['target_date'] = target_date
+        
         db_goal = NutritionGoal(
             user_id=user_id,
-            **goal_data.model_dump()
+            **goal_dict
         )
         db.add(db_goal)
         db.commit()
@@ -329,30 +404,134 @@ class NutritionGoalsService:
     # Template management
     def get_goal_templates(self, db: Session, category: Optional[str] = None) -> List[GoalTemplateResponse]:
         """Get available goal templates"""
-        query = db.query(GoalTemplate).filter(GoalTemplate.is_public == True)
-        
-        if category:
-            query = query.filter(GoalTemplate.category == category)
-        
-        templates = query.order_by(desc(GoalTemplate.usage_count)).all()
-        return [self._format_template_response(template) for template in templates]
+        try:
+            # Query with raw enum values to avoid SQLAlchemy enum mapping issues
+            from sqlalchemy import text
+            
+            query_sql = """
+                SELECT id, name, description, goal_type, default_target_value, 
+                       default_unit, default_frequency, default_duration_days,
+                       category, difficulty_level, is_public, usage_count,
+                       instructions, tips, common_challenges, success_metrics,
+                       created_at, updated_at
+                FROM goal_templates
+                WHERE is_public = true
+            """
+            
+            params = {}
+            if category:
+                query_sql += " AND category = :category"
+                params['category'] = category
+            
+            query_sql += " ORDER BY usage_count DESC"
+            
+            result = db.execute(text(query_sql), params)
+            
+            # Format templates manually from raw database values
+            formatted_templates = []
+            for row in result:
+                try:
+                    # Create a mock template object from row data
+                    template_dict = {
+                        'id': row[0],
+                        'name': row[1],
+                        'description': row[2],
+                        'goal_type': row[3],  # Raw string value
+                        'default_target_value': row[4],
+                        'default_unit': row[5],
+                        'default_frequency': row[6],  # Raw string value
+                        'default_duration_days': row[7],
+                        'category': row[8],
+                        'difficulty_level': row[9],
+                        'is_public': row[10],
+                        'usage_count': row[11],
+                        'instructions': row[12],
+                        'tips': row[13],
+                        'common_challenges': row[14],
+                        'success_metrics': row[15],
+                        'created_at': row[16],
+                        'updated_at': row[17]
+                    }
+                    # Use the formatting method with dict-like object
+                    formatted = self._format_template_response_from_dict(template_dict)
+                    formatted_templates.append(formatted)
+                except Exception as e:
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.error(f"Error formatting template {row[0]}: {str(e)}", exc_info=True)
+                    continue
+            
+            return formatted_templates
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error getting goal templates: {str(e)}", exc_info=True)
+            raise
     
     def create_goal_from_template(self, db: Session, user_id: str, template_id: int, customizations: Optional[Dict] = None) -> NutritionGoalResponse:
         """Create a goal from a template"""
-        template = db.query(GoalTemplate).filter(GoalTemplate.id == template_id).first()
-        if not template:
+        # Query template with raw SQL to avoid enum mapping issues
+        from sqlalchemy import text
+        
+        result = db.execute(
+            text("SELECT goal_type, name, description, default_target_value, default_unit, default_frequency, default_duration_days FROM goal_templates WHERE id = :id"),
+            {'id': template_id}
+        ).first()
+        
+        if not result:
             raise ValueError("Template not found")
+        
+        # Extract values from raw query result
+        goal_type_value = result[0]  # Raw string value
+        template_name = result[1]
+        template_description = result[2]
+        default_target_value = result[3]
+        default_unit = result[4]
+        frequency_value = result[5]  # Raw string value
+        default_duration_days = result[6]
+        
+        # Convert enum values properly
+        if isinstance(goal_type_value, GoalType):
+            goal_type_value = goal_type_value.value
+        elif hasattr(goal_type_value, 'value'):
+            goal_type_value = goal_type_value.value
+        elif not isinstance(goal_type_value, str):
+            goal_type_value = str(goal_type_value) if goal_type_value else "calories"
+        
+        if isinstance(frequency_value, GoalFrequency):
+            frequency_value = frequency_value.value
+        elif hasattr(frequency_value, 'value'):
+            frequency_value = frequency_value.value
+        elif not isinstance(frequency_value, str):
+            frequency_value = str(frequency_value) if frequency_value else "daily"
+        
+        # Convert to schema enums
+        try:
+            goal_type_enum = SchemaGoalType(goal_type_value)
+            frequency_enum = SchemaGoalFrequency(frequency_value)
+        except (ValueError, TypeError) as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Invalid enum value in template {template_id}: goal_type={goal_type_value}, frequency={frequency_value}. Using defaults.")
+            # Try to map common values
+            goal_type_map = {
+                "weight_loss": SchemaGoalType.WEIGHT_LOSS,
+                "weight_gain": SchemaGoalType.WEIGHT_GAIN,
+                "weight_maintenance": SchemaGoalType.WEIGHT_MAINTENANCE,
+            }
+            goal_type_enum = goal_type_map.get(goal_type_value.lower() if goal_type_value else "", SchemaGoalType.CALORIES)
+            frequency_enum = SchemaGoalFrequency.DAILY
         
         # Create goal from template
         goal_data = NutritionGoalCreate(
-            goal_type=template.goal_type,
-            goal_name=template.name,
-            description=template.description,
-            target_value=template.default_target_value,
-            unit=template.default_unit,
-            frequency=template.default_frequency,
+            goal_type=goal_type_enum,
+            goal_name=template_name,
+            description=template_description,
+            target_value=default_target_value,
+            unit=default_unit,
+            frequency=frequency_enum,
             start_date=datetime.now(),
-            target_date=datetime.now() + timedelta(days=template.default_duration_days) if template.default_duration_days else None
+            target_date=datetime.now() + timedelta(days=default_duration_days) if default_duration_days else None
         )
         
         # Apply customizations
@@ -361,11 +540,24 @@ class NutritionGoalsService:
                 if hasattr(goal_data, key):
                     setattr(goal_data, key, value)
         
-        # Increment template usage
-        template.usage_count += 1
-        db.add(template)
+        # Create the goal first
+        goal_response = self.create_goal(db, user_id, goal_data)
         
-        return self.create_goal(db, user_id, goal_data)
+        # Increment template usage (commit happens in create_goal)
+        try:
+            db.execute(
+                text("UPDATE goal_templates SET usage_count = usage_count + 1 WHERE id = :id"),
+                {'id': template_id}
+            )
+            db.commit()
+        except Exception as e:
+            # Log but don't fail if usage count update fails
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Failed to increment template usage count for template {template_id}: {str(e)}")
+            db.rollback()
+        
+        return goal_response
     
     # Helper methods
     def _create_automatic_milestones(self, db: Session, goal: NutritionGoal):
@@ -473,6 +665,44 @@ class NutritionGoalsService:
         if not goal:
             return None
         
+        # Convert enum values from model to schema enums
+        goal_type_value = goal.goal_type
+        if isinstance(goal_type_value, GoalType):
+            goal_type_value = goal_type_value.value
+        elif hasattr(goal_type_value, 'value'):
+            goal_type_value = goal_type_value.value
+        elif not isinstance(goal_type_value, str):
+            goal_type_value = str(goal_type_value) if goal_type_value else "calories"
+        
+        frequency_value = goal.frequency
+        if isinstance(frequency_value, GoalFrequency):
+            frequency_value = frequency_value.value
+        elif hasattr(frequency_value, 'value'):
+            frequency_value = frequency_value.value
+        elif not isinstance(frequency_value, str):
+            frequency_value = str(frequency_value) if frequency_value else "daily"
+        
+        status_value = goal.status
+        if isinstance(status_value, GoalStatus):
+            status_value = status_value.value
+        elif hasattr(status_value, 'value'):
+            status_value = status_value.value
+        elif not isinstance(status_value, str):
+            status_value = str(status_value) if status_value else "active"
+        
+        # Convert to schema enums
+        try:
+            goal_type_enum = SchemaGoalType(goal_type_value)
+            frequency_enum = SchemaGoalFrequency(frequency_value)
+            status_enum = SchemaGoalStatus(status_value)
+        except (ValueError, TypeError) as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Error converting enum values for goal {goal.id}: {str(e)}")
+            goal_type_enum = SchemaGoalType.CALORIES
+            frequency_enum = SchemaGoalFrequency.DAILY
+            status_enum = SchemaGoalStatus.ACTIVE
+        
         # Load related data
         progress_logs = db.query(GoalProgressLog).filter(GoalProgressLog.goal_id == goal.id).all()
         milestones = db.query(GoalMilestone).filter(GoalMilestone.goal_id == goal.id).all()
@@ -480,17 +710,17 @@ class NutritionGoalsService:
         return NutritionGoalResponse(
             id=goal.id,
             user_id=goal.user_id,
-            goal_type=goal.goal_type,
+            goal_type=goal_type_enum,
             goal_name=goal.goal_name,
             description=goal.description,
             target_value=goal.target_value,
             current_value=goal.current_value,
             unit=goal.unit,
-            frequency=goal.frequency,
+            frequency=frequency_enum,
             start_date=goal.start_date,
             target_date=goal.target_date,
             is_flexible=goal.is_flexible,
-            status=goal.status,
+            status=status_enum,
             priority=goal.priority,
             is_public=goal.is_public,
             progress_percentage=goal.progress_percentage,
@@ -540,16 +770,137 @@ class NutritionGoalsService:
             updated_at=milestone.updated_at
         )
     
+    def _format_template_response_from_dict(self, template_dict: dict) -> GoalTemplateResponse:
+        """Format template from dictionary (for raw database queries)"""
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        # Convert enum values properly - handle both enum objects and string values
+        goal_type_value = template_dict.get('goal_type')
+        if isinstance(goal_type_value, GoalType):
+            goal_type_value = goal_type_value.value  # Get the string value
+        elif hasattr(goal_type_value, 'value'):
+            goal_type_value = goal_type_value.value
+        elif isinstance(goal_type_value, str):
+            # Already a string, use as-is
+            pass
+        else:
+            # Fallback: try to get string representation
+            goal_type_value = str(goal_type_value) if goal_type_value else "calories"
+        
+        frequency_value = template_dict.get('default_frequency')
+        if isinstance(frequency_value, GoalFrequency):
+            frequency_value = frequency_value.value
+        elif hasattr(frequency_value, 'value'):
+            frequency_value = frequency_value.value
+        elif isinstance(frequency_value, str):
+            # Already a string, use as-is
+            pass
+        else:
+            # Fallback: try to get string representation
+            frequency_value = str(frequency_value) if frequency_value else "daily"
+        
+        # Validate and convert to schema enum
+        try:
+            goal_type_enum = SchemaGoalType(goal_type_value)
+            frequency_enum = SchemaGoalFrequency(frequency_value)
+        except (ValueError, TypeError) as e:
+            # If enum value doesn't match, log warning with details and use a default
+            logger.warning(
+                f"Invalid enum value in template {template_dict.get('id')}: "
+                f"goal_type={goal_type_value} (type: {type(goal_type_value)}), "
+                f"frequency={frequency_value} (type: {type(frequency_value)}). "
+                f"Error: {str(e)}. Using defaults."
+            )
+            # Try to map common values
+            goal_type_map = {
+                "weight_loss": SchemaGoalType.WEIGHT_LOSS,
+                "weight_gain": SchemaGoalType.WEIGHT_GAIN,
+                "weight_maintenance": SchemaGoalType.WEIGHT_MAINTENANCE,
+            }
+            goal_type_enum = goal_type_map.get(goal_type_value.lower() if goal_type_value else "", SchemaGoalType.CALORIES)
+            frequency_enum = SchemaGoalFrequency.DAILY  # Default fallback
+        
+        return GoalTemplateResponse(
+            id=template_dict.get('id'),
+            name=template_dict.get('name'),
+            description=template_dict.get('description'),
+            goal_type=goal_type_enum,
+            default_target_value=template_dict.get('default_target_value'),
+            default_unit=template_dict.get('default_unit'),
+            default_frequency=frequency_enum,
+            default_duration_days=template_dict.get('default_duration_days'),
+            category=template_dict.get('category'),
+            difficulty_level=template_dict.get('difficulty_level'),
+            is_public=template_dict.get('is_public'),
+            usage_count=template_dict.get('usage_count'),
+            instructions=template_dict.get('instructions'),
+            tips=template_dict.get('tips'),
+            common_challenges=template_dict.get('common_challenges'),
+            success_metrics=template_dict.get('success_metrics'),
+            created_at=template_dict.get('created_at'),
+            updated_at=template_dict.get('updated_at')
+        )
+    
     def _format_template_response(self, template: GoalTemplate) -> GoalTemplateResponse:
         """Format template for API response"""
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        # Convert enum values properly - handle both enum objects and string values
+        goal_type_value = template.goal_type
+        if isinstance(goal_type_value, GoalType):
+            goal_type_value = goal_type_value.value  # Get the string value
+        elif hasattr(goal_type_value, 'value'):
+            goal_type_value = goal_type_value.value
+        elif isinstance(goal_type_value, str):
+            # Already a string, use as-is
+            pass
+        else:
+            # Fallback: try to get string representation
+            goal_type_value = str(goal_type_value) if goal_type_value else "calories"
+        
+        frequency_value = template.default_frequency
+        if isinstance(frequency_value, GoalFrequency):
+            frequency_value = frequency_value.value
+        elif hasattr(frequency_value, 'value'):
+            frequency_value = frequency_value.value
+        elif isinstance(frequency_value, str):
+            # Already a string, use as-is
+            pass
+        else:
+            # Fallback: try to get string representation
+            frequency_value = str(frequency_value) if frequency_value else "daily"
+        
+        # Validate and convert to schema enum
+        try:
+            goal_type_enum = SchemaGoalType(goal_type_value)
+            frequency_enum = SchemaGoalFrequency(frequency_value)
+        except (ValueError, TypeError) as e:
+            # If enum value doesn't match, log warning with details and use a default
+            logger.warning(
+                f"Invalid enum value in template {template.id}: "
+                f"goal_type={goal_type_value} (type: {type(goal_type_value)}), "
+                f"frequency={frequency_value} (type: {type(frequency_value)}). "
+                f"Error: {str(e)}. Using defaults."
+            )
+            # Try to map common values
+            goal_type_map = {
+                "weight_loss": SchemaGoalType.WEIGHT_LOSS,
+                "weight_gain": SchemaGoalType.WEIGHT_GAIN,
+                "weight_maintenance": SchemaGoalType.WEIGHT_MAINTENANCE,
+            }
+            goal_type_enum = goal_type_map.get(goal_type_value.lower(), SchemaGoalType.CALORIES)
+            frequency_enum = SchemaGoalFrequency.DAILY  # Default fallback
+        
         return GoalTemplateResponse(
             id=template.id,
             name=template.name,
             description=template.description,
-            goal_type=template.goal_type,
+            goal_type=goal_type_enum,
             default_target_value=template.default_target_value,
             default_unit=template.default_unit,
-            default_frequency=template.default_frequency,
+            default_frequency=frequency_enum,
             default_duration_days=template.default_duration_days,
             category=template.category,
             difficulty_level=template.difficulty_level,
