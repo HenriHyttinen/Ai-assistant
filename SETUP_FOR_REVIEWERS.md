@@ -115,6 +115,27 @@ _PyLong_AsByteArray
    pip install "pandas>=2.2.0"
    ```
 
+**Error: `scikit-learn` compilation fails on macOS**
+```
+clang: error: unsupported option '-fopenmp'
+scikit-learn cannot be built with OpenMP
+```
+
+**Solution:**
+1. **Recommended**: Use Python 3.11 or 3.12 (fewer compilation issues)
+2. **Alternative**: Install newer scikit-learn with pre-built wheels
+   ```bash
+   pip install "scikit-learn>=1.4.0"
+   ```
+3. **If compilation still fails**: Install via conda or use pre-built wheels
+   ```bash
+   # Try installing OpenMP support first (macOS)
+   brew install libomp
+   
+   # Then install scikit-learn
+   pip install "scikit-learn>=1.4.0"
+   ```
+
 **Docker issues:**
 - Make sure Docker is running
 - Check logs: `docker-compose logs -f`
