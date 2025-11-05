@@ -1270,30 +1270,88 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
       } else {
         // Structure creation failed
         let errorData: any = { detail: 'Failed to create meal plan structure' };
+        let responseText = '';
         try {
-          const responseText = await createResponse.text();
+          responseText = await createResponse.text();
+          console.error('❌ Meal plan creation failed:', {
+            status: createResponse.status,
+            statusText: createResponse.statusText,
+            responseText: responseText.substring(0, 500) // First 500 chars
+          });
+          
           if (responseText) {
-            errorData = JSON.parse(responseText);
+            try {
+              errorData = JSON.parse(responseText);
+            } catch (parseErr) {
+              // Response is not JSON, use the text as error message
+              errorData = { 
+                detail: responseText || createResponse.statusText || `Server returned ${createResponse.status} error` 
+              };
+            }
           }
-        } catch (parseError) {
-          // If response is not JSON, use status text
+        } catch (fetchError) {
+          console.error('❌ Error fetching error response:', fetchError);
           errorData = { 
             detail: createResponse.statusText || `Server returned ${createResponse.status} error` 
           };
         }
         
+        // Log the extracted error data
+        console.error('❌ Extracted error data:', errorData);
+        
         if (createResponse.status === 400 && errorData.detail && errorData.detail.includes('nutrition preferences')) {
           setError('Please set up your nutrition preferences first. Go to the Nutrition Dashboard to configure your preferences.');
           toast({ title: 'Set up nutrition preferences first', status: 'info', duration: 3000, isClosable: true });
         } else {
-          const errorMessage = errorData.detail || errorData.message || `Server error (${createResponse.status})`;
+          // Extract error message from multiple possible fields
+          let errorMessage = errorData.detail || errorData.message || errorData.error || responseText;
+          
+          // If error message is empty or just whitespace, provide a default based on status code
+          if (!errorMessage || errorMessage.trim() === '' || errorMessage === 'Error generating meal plan: ') {
+            if (createResponse.status === 500) {
+              errorMessage = 'Internal server error. Please check backend logs for details.';
+            } else if (createResponse.status === 401) {
+              errorMessage = 'Authentication failed. Please log in again.';
+            } else if (createResponse.status === 403) {
+              errorMessage = 'Permission denied.';
+            } else if (createResponse.status === 404) {
+              errorMessage = 'Endpoint not found.';
+            } else {
+              errorMessage = `Server error (${createResponse.status}): ${createResponse.statusText || 'Unknown error'}`;
+            }
+          }
+          
+          // Remove redundant "Error generating meal plan: " prefix if present
+          if (errorMessage.startsWith('Error generating meal plan: ')) {
+            errorMessage = errorMessage.substring('Error generating meal plan: '.length).trim() || 'Unknown error occurred';
+          }
+          
+          console.error('❌ Throwing error with message:', errorMessage);
           throw new Error(errorMessage);
         }
       }
     } catch (err: any) {
-      console.error('Error generating meal plan:', err);
+      console.error('❌ Error generating meal plan - Full error object:', err);
+      console.error('❌ Error type:', typeof err);
+      console.error('❌ Error keys:', Object.keys(err || {}));
+      
       // Extract error message from various possible error formats
-      const errorMessage = err?.message || err?.response?.data?.detail || err?.detail || 'Failed to generate meal plan';
+      let errorMessage = 'Failed to generate meal plan';
+      if (err?.message) {
+        errorMessage = err.message;
+      } else if (err?.response?.data?.detail) {
+        errorMessage = err.response.data.detail;
+      } else if (err?.response?.data?.message) {
+        errorMessage = err.response.data.message;
+      } else if (err?.detail) {
+        errorMessage = err.detail;
+      } else if (typeof err === 'string') {
+        errorMessage = err;
+      } else if (err?.toString && err.toString() !== '[object Object]') {
+        errorMessage = err.toString();
+      }
+      
+      console.error('❌ Final error message to display:', errorMessage);
       setError(errorMessage);
       toast({ 
         title: 'Failed to generate meal plan', 
