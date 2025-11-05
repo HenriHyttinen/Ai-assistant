@@ -1,4 +1,4 @@
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Optional
 from functools import lru_cache
 
@@ -60,9 +60,11 @@ class Settings(BaseSettings):
         "social_connection": 0.1
     }
     
-    class Config:
-        env_file = ".env"
-        case_sensitive = True
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        case_sensitive=True,
+        extra="ignore"  # Ignore extra fields from .env (e.g., old SECRET_KEY, ALGORITHM names)
+    )
 
 @lru_cache()
 def get_settings() -> Settings:
