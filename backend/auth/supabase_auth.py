@@ -1,7 +1,6 @@
 from fastapi import HTTPException, status, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from supabase import Client
-from lib.supabase import supabase
 from models.user import User
 from database import get_db
 from sqlalchemy.orm import Session
@@ -9,6 +8,15 @@ from typing import Optional
 import jwt
 import time
 from functools import lru_cache
+
+# Optional Supabase import - if lib.supabase can't be imported, supabase will be None
+# This is fine since the function uses direct JWT decoding anyway
+try:
+    from lib.supabase import supabase
+except ImportError:
+    # If lib.supabase can't be imported (e.g., on macOS), set supabase to None
+    # The function will still work with direct JWT decoding
+    supabase = None
 
 security = HTTPBearer(auto_error=False)
 
