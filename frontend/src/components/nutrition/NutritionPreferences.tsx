@@ -65,6 +65,37 @@ const NutritionPreferences: React.FC<NutritionPreferencesProps> = ({
 
   useEffect(() => {
     if (preferences) {
+      // Convert ISO 8601 datetime strings back to "HH:MM" format for display
+      const convertTimeFromISO = (time: string | undefined): string => {
+        if (!time) return '12:00';
+        // If already in "HH:MM" format, return as-is
+        if (typeof time === 'string' && time.match(/^\d{2}:\d{2}$/)) {
+          return time;
+        }
+        // If in ISO 8601 format (e.g., "2000-01-01T08:00:00"), extract time
+        if (typeof time === 'string' && time.includes('T')) {
+          const match = time.match(/T(\d{2}):(\d{2})/);
+          if (match) {
+            return `${match[1]}:${match[2]}`;
+          }
+        }
+        return '12:00'; // Default fallback
+      };
+
+      const mealTimes = preferences.preferred_meal_times || {
+        breakfast: '08:00',
+        lunch: '12:30',
+        dinner: '19:00'
+      };
+
+      // Convert all meal times from ISO format to HH:MM format
+      const convertedMealTimes = Object.fromEntries(
+        Object.entries(mealTimes).map(([meal, time]) => [
+          meal,
+          convertTimeFromISO(time as string)
+        ])
+      );
+
       setFormData({
         dietary_preferences: preferences.dietary_preferences || [],
         allergies: preferences.allergies || [],
@@ -76,11 +107,7 @@ const NutritionPreferences: React.FC<NutritionPreferencesProps> = ({
         fats_target: preferences.fats_target || 60,
         meals_per_day: preferences.meals_per_day || 3,
         snacks_per_day: preferences.snacks_per_day || 2,
-        preferred_meal_times: preferences.preferred_meal_times || {
-          breakfast: '08:00',
-          lunch: '12:30',
-          dinner: '19:00'
-        },
+        preferred_meal_times: convertedMealTimes,
         timezone: preferences.timezone || 'UTC'
       });
     }
@@ -218,13 +245,34 @@ const NutritionPreferences: React.FC<NutritionPreferencesProps> = ({
         return;
       }
       
-      const response = await fetch('http://localhost:8000/nutrition/preferences', {
+      // Convert time format "HH:MM" to ISO 8601 datetime format
+      // Backend expects ISO 8601 datetime strings, not just time strings
+      const preparedData = {
+        ...formData,
+        preferred_meal_times: formData.preferred_meal_times ? 
+          Object.fromEntries(
+            Object.entries(formData.preferred_meal_times).map(([meal, time]) => {
+              // Convert "08:00" to "2000-01-01T08:00:00" (ISO 8601 format)
+              // Using a fixed date since we only care about the time
+              if (typeof time === 'string' && time.match(/^\d{2}:\d{2}$/)) {
+                return [meal, `2000-01-01T${time}:00`];
+              }
+              // If already in ISO format, keep it
+              return [meal, time];
+            })
+          ) : undefined
+      };
+
+      // Get API base URL from environment or use default
+      const API_BASE_URL = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8000';
+
+      const response = await fetch(`${API_BASE_URL}/nutrition/preferences`, {
         method: preferences ? 'PUT' : 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${session.access_token}`,
         },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(preparedData),
       });
 
       if (response.ok) {
@@ -237,14 +285,49 @@ const NutritionPreferences: React.FC<NutritionPreferencesProps> = ({
         });
         onUpdate();
       } else {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || 'Failed to save preferences');
+        // Extract error message from response
+        let errorMessage = 'Failed to save preferences';
+        try {
+          const errorData = await response.json();
+          // Handle Pydantic validation errors (422 response)
+          if (errorData.detail && Array.isArray(errorData.detail)) {
+            // Extract error messages from validation errors
+            errorMessage = errorData.detail
+              .map((err: any) => err.msg || err.message || JSON.stringify(err))
+              .join(', ');
+          } else if (errorData.detail) {
+            errorMessage = typeof errorData.detail === 'string' 
+              ? errorData.detail 
+              : JSON.stringify(errorData.detail);
+          } else if (errorData.message) {
+            errorMessage = errorData.message;
+          }
+        } catch (parseError) {
+          // If response is not JSON, use status text
+          errorMessage = response.statusText || `Server returned ${response.status} error`;
+        }
+        throw new Error(errorMessage);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error saving preferences:', error);
+      // Extract error message from various possible formats
+      let errorMessage = 'Please try again.';
+      if (error?.message) {
+        errorMessage = error.message;
+      } else if (typeof error === 'string') {
+        errorMessage = error;
+      } else if (error?.response?.data?.detail) {
+        const detail = error.response.data.detail;
+        if (Array.isArray(detail)) {
+          errorMessage = detail.map((err: any) => err.msg || err.message || JSON.stringify(err)).join(', ');
+        } else {
+          errorMessage = typeof detail === 'string' ? detail : JSON.stringify(detail);
+        }
+      }
+      
       toast({
         title: 'Error saving preferences',
-        description: error.message || 'Please try again.',
+        description: errorMessage,
         status: 'error',
         duration: 5000,
         isClosable: true,
