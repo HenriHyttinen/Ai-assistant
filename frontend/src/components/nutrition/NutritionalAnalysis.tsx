@@ -100,7 +100,7 @@ const NutritionalAnalysis: React.FC<NutritionalAnalysisProps> = () => {
       console.log(`📊 Loading ${analysisType} analysis: ${startDateStr} to ${endDateStr}`);
 
       // Get Supabase session token
-      const { supabase } = await import('../../lib/supabase');
+      const { supabase } = await import('@/lib/supabase');
       const { data: { session } } = await supabase.auth.getSession();
       
       if (!session?.access_token) {

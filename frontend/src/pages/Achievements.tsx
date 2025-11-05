@@ -62,7 +62,7 @@ const Achievements = () => {
       setError(null);
       
       // Get Supabase session token for authentication
-      const { supabase } = await import('../lib/supabase');
+      const { supabase } = await import('@/lib/supabase');
       const { data: { session } } = await supabase.auth.getSession();
       const headers = session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
       

@@ -127,7 +127,7 @@ const EnhancedShoppingListGenerator: React.FC<EnhancedShoppingListGeneratorProps
     try {
       setGenerating(true);
       
-      const { supabase } = await import('../../lib/supabase');
+      const { supabase } = await import('@/lib/supabase');
       const { data: { session } } = await supabase.auth.getSession();
       
       if (!session?.access_token) {
@@ -212,7 +212,7 @@ const EnhancedShoppingListGenerator: React.FC<EnhancedShoppingListGeneratorProps
 
   const loadShoppingListSummary = async (shoppingListId: string) => {
     try {
-      const { supabase } = await import('../../lib/supabase');
+      const { supabase } = await import('@/lib/supabase');
       const { data: { session } } = await supabase.auth.getSession();
       
       const response = await fetch(`http://localhost:8000/nutrition/shopping-lists/${shoppingListId}/summary`, {

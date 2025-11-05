@@ -83,7 +83,7 @@ const MealPlanVersionHistory: React.FC<MealPlanVersionHistoryProps> = ({
     setLoading(true);
     try {
       // Get Supabase session token for authentication
-      const { supabase } = await import('../../lib/supabase');
+      const { supabase } = await import('@/lib/supabase');
       const { data: { session } } = await supabase.auth.getSession();
 
       console.log('🔐 Session token:', session?.access_token ? 'Present' : 'Missing');
@@ -119,7 +119,7 @@ const MealPlanVersionHistory: React.FC<MealPlanVersionHistoryProps> = ({
     setRestoring(versionId);
     try {
       // Get Supabase session token for authentication
-      const { supabase } = await import('../../lib/supabase');
+      const { supabase } = await import('@/lib/supabase');
       const { data: { session } } = await supabase.auth.getSession();
 
       const response = await fetch(`http://localhost:8000/nutrition/meal-plans/restore/${versionId}`, {
@@ -166,7 +166,7 @@ const MealPlanVersionHistory: React.FC<MealPlanVersionHistoryProps> = ({
     setDeleting(versionId);
     try {
       // Get Supabase session token for authentication
-      const { supabase } = await import('../../lib/supabase');
+      const { supabase } = await import('@/lib/supabase');
       const { data: { session } } = await supabase.auth.getSession();
 
       const response = await fetch(`http://localhost:8000/nutrition/meal-plans/${mealPlanId}/versions/${versionId}`, {

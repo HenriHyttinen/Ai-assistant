@@ -183,7 +183,7 @@ const NutritionDashboard: React.FC<NutritionDashboardProps> = ({ user = null }) 
   const setupDefaultPreferences = async () => {
     try {
       // Get Supabase session token for authentication
-      const { supabase } = await import('../../lib/supabase');
+      const { supabase } = await import('@/lib/supabase');
       const { data: { session } } = await supabase.auth.getSession();
       const headers = session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
       
@@ -230,7 +230,7 @@ const NutritionDashboard: React.FC<NutritionDashboardProps> = ({ user = null }) 
       setLoading(true);
       
       // Get Supabase session token for authentication
-      const { supabase } = await import('../../lib/supabase');
+      const { supabase } = await import('@/lib/supabase');
       const { data: { session } } = await supabase.auth.getSession();
       
       if (!session?.access_token) {
@@ -628,7 +628,7 @@ const NutritionDashboard: React.FC<NutritionDashboardProps> = ({ user = null }) 
                       <Button size="xs" variant="outline" colorScheme="green"
                         onClick={async () => {
                           try {
-                            const { supabase } = await import('../../lib/supabase');
+                            const { supabase } = await import('@/lib/supabase');
                             const { data: { session } } = await supabase.auth.getSession();
                             if (!session?.access_token || !mealPlan?.id) return;
                             const today = new Date().toISOString().split('T')[0];

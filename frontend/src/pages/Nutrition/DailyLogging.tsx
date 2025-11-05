@@ -91,7 +91,7 @@ const DailyLogging: React.FC = () => {
     try {
       setLoading(true);
       
-      const { supabase } = await import('../../lib/supabase');
+      const { supabase } = await import('@/lib/supabase');
       const { data: { session } } = await supabase.auth.getSession();
       
       if (!session?.access_token) {
@@ -157,7 +157,7 @@ const DailyLogging: React.FC = () => {
     try {
       setLoading(true);
       
-      const { supabase } = await import('../../lib/supabase');
+      const { supabase } = await import('@/lib/supabase');
       const { data: { session } } = await supabase.auth.getSession();
       
       if (!session?.access_token) {
@@ -224,7 +224,7 @@ const DailyLogging: React.FC = () => {
   const addFromMealPlan = async () => {
     try {
       setLoading(true);
-      const { supabase } = await import('../../lib/supabase');
+      const { supabase } = await import('@/lib/supabase');
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.access_token) {
         toast({ title: 'Please log in', status: 'warning', duration: 2500, isClosable: true });
@@ -321,7 +321,7 @@ const DailyLogging: React.FC = () => {
     try {
       setLoading(true);
       
-      const { supabase } = await import('../../lib/supabase');
+      const { supabase } = await import('@/lib/supabase');
       const { data: { session } } = await supabase.auth.getSession();
       
       if (!session?.access_token) {

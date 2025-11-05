@@ -182,7 +182,7 @@ const ShoppingList: React.FC<ShoppingListProps> = ({
     const attemptFetch = async (attempt: number): Promise<void> => {
     try {
       setLoading(true);
-      const { supabase } = await import('../../lib/supabase');
+      const { supabase } = await import('@/lib/supabase');
       const { data: { session } } = await supabase.auth.getSession();
       const response = await fetch('http://localhost:8000/nutrition/shopping-lists', {
         method: 'GET',
@@ -213,7 +213,7 @@ const ShoppingList: React.FC<ShoppingListProps> = ({
 
   const loadRecentMealPlans = async () => {
     try {
-      const { supabase } = await import('../../lib/supabase');
+      const { supabase } = await import('@/lib/supabase');
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token || '';
       const today = new Date();
@@ -243,7 +243,7 @@ const ShoppingList: React.FC<ShoppingListProps> = ({
       setGenerating(true);
       
       // Get Supabase session token
-      const { supabase } = await import('../../lib/supabase');
+      const { supabase } = await import('@/lib/supabase');
       const { data: { session } } = await supabase.auth.getSession();
       if (!selectedMealPlanId) {
         toast({ title: 'Select a meal plan first', status: 'info', duration: 2500, isClosable: true });
@@ -338,7 +338,7 @@ const ShoppingList: React.FC<ShoppingListProps> = ({
   const handleDeleteList = async (listId: string) => {
     try {
       // Get Supabase session token
-      const { supabase } = await import('../../lib/supabase');
+      const { supabase } = await import('@/lib/supabase');
       const { data: { session } } = await supabase.auth.getSession();
       
       const response = await fetch(`http://localhost:8000/nutrition/shopping-lists/${listId}`, {
@@ -373,7 +373,7 @@ const ShoppingList: React.FC<ShoppingListProps> = ({
   const toggleItemPurchased = async (itemId: string) => {
     try {
       // Get Supabase session token
-      const { supabase } = await import('../../lib/supabase');
+      const { supabase } = await import('@/lib/supabase');
       const { data: { session } } = await supabase.auth.getSession();
       
       const response = await fetch(`http://localhost:8000/nutrition/shopping-lists/items/${itemId}/purchased`, {
@@ -416,7 +416,7 @@ const ShoppingList: React.FC<ShoppingListProps> = ({
   const removeItem = async (itemId: string) => {
     try {
       // Get Supabase session token
-      const { supabase } = await import('../../lib/supabase');
+      const { supabase } = await import('@/lib/supabase');
       const { data: { session } } = await supabase.auth.getSession();
       
       const response = await fetch(`http://localhost:8000/nutrition/shopping-lists/items/${itemId}`, {
@@ -455,7 +455,7 @@ const ShoppingList: React.FC<ShoppingListProps> = ({
   const updateItemQuantity = async (itemId: string, newQuantity: number) => {
     try {
       // Get Supabase session token
-      const { supabase } = await import('../../lib/supabase');
+      const { supabase } = await import('@/lib/supabase');
       const { data: { session } } = await supabase.auth.getSession();
       
       const response = await fetch(`http://localhost:8000/nutrition/shopping-lists/items/${itemId}/quantity`, {
@@ -499,7 +499,7 @@ const ShoppingList: React.FC<ShoppingListProps> = ({
 
   const handleTogglePurchased = async (listId: string, itemId: string) => {
     try {
-      const { supabase } = await import('../../lib/supabase');
+      const { supabase } = await import('@/lib/supabase');
       const { data: { session } } = await supabase.auth.getSession();
       
       const response = await fetch(`http://localhost:8000/nutrition/shopping-lists/items/${itemId}/purchased`, {

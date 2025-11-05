@@ -120,7 +120,7 @@ const MicronutrientRecipeSearch: React.FC<MicronutrientRecipeSearchProps> = ({
         Object.entries(filters).filter(([_, value]) => value !== '')
       );
 
-      const { supabase } = await import('../../lib/supabase');
+      const { supabase } = await import('@/lib/supabase');
       const { data: { session } } = await supabase.auth.getSession();
       
       if (!session?.access_token) {

@@ -92,7 +92,7 @@ const DEBOUNCE_DELAY = 1; // 1ms - only block truly identical requests within mi
 //     }
 //     
 //     try {
-//       const { supabase } = await import('../lib/supabase');
+//       const { supabase } = await import('@/lib/supabase');
 //       const { data: { session } } = await supabase.auth.getSession();
 //       
 //       // Ensure headers object exists
@@ -323,7 +323,7 @@ interface Settings {
 // Health Profile API calls
 export const healthProfile = {
   getProfile: async () => {
-    const { supabase } = await import('../lib/supabase');
+    const { supabase } = await import('@/lib/supabase');
     const { data: { session } } = await supabase.auth.getSession();
     const headers = session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
     // no t param to allow caching
@@ -333,20 +333,20 @@ export const healthProfile = {
     return api.get<HealthProfile>(url, { headers });
   },
   updateProfile: async (data: Partial<HealthProfile>) => {
-    const { supabase } = await import('../lib/supabase');
+    const { supabase } = await import('@/lib/supabase');
     const { data: { session } } = await supabase.auth.getSession();
     const headers = session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
     return api.put<HealthProfile>('/health/profiles/me', data, { headers });
   },
   createProfile: async (data: Partial<HealthProfile>) => {
-    const { supabase } = await import('../lib/supabase');
+    const { supabase } = await import('@/lib/supabase');
     const { data: { session } } = await supabase.auth.getSession();
     const headers = session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
     return api.post<HealthProfile>('/health/profiles', data, { headers });
   },
   getInsights: async () => {
     try {
-      const { supabase } = await import('../lib/supabase');
+      const { supabase } = await import('@/lib/supabase');
       const { data: { session } } = await supabase.auth.getSession();
       
       if (!session?.access_token) {
@@ -369,7 +369,7 @@ export const healthProfile = {
 // Analytics API calls
 export const analytics = {
   getAnalytics: async () => {
-    const { supabase } = await import('../lib/supabase');
+    const { supabase } = await import('@/lib/supabase');
     const { data: { session } } = await supabase.auth.getSession();
     const headers = session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
     const url = `/health/profiles/me/analytics`;
@@ -378,43 +378,43 @@ export const analytics = {
     return api.get<HealthAnalytics>(`/health/profiles/me/analytics?t=${Date.now()}`, { headers });
   },
   getMetrics: async (days: number = 30) => {
-    const { supabase } = await import('../lib/supabase');
+    const { supabase } = await import('@/lib/supabase');
     const { data: { session } } = await supabase.auth.getSession();
     const headers = session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
     return api.get<MetricsHistory[]>(`/health/profiles/me/metrics?days=${days}`, { headers });
   },
   getActivities: async (days: number = 7, sortOrder: string = 'desc') => {
-    const { supabase } = await import('../lib/supabase');
+    const { supabase } = await import('@/lib/supabase');
     const { data: { session } } = await supabase.auth.getSession();
     const headers = session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
     return api.get<ActivityLog[]>(`/health/profiles/me/activities?days=${days}&sort_order=${sortOrder}`, { headers });
   },
   createActivity: async (data: Partial<ActivityLog>) => {
-    const { supabase } = await import('../lib/supabase');
+    const { supabase } = await import('@/lib/supabase');
     const { data: { session } } = await supabase.auth.getSession();
     const headers = session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
     return api.post<ActivityLog>('/health/profiles/me/activities', data, { headers });
   },
   getWeeklySummary: async () => {
-    const { supabase } = await import('../lib/supabase');
+    const { supabase } = await import('@/lib/supabase');
     const { data: { session } } = await supabase.auth.getSession();
     const headers = session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
     return api.get('/health/profiles/me/weekly-summary', { headers });
   },
   getMonthlySummary: async () => {
-    const { supabase } = await import('../lib/supabase');
+    const { supabase } = await import('@/lib/supabase');
     const { data: { session } } = await supabase.auth.getSession();
     const headers = session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
     return api.get('/health/profiles/me/monthly-summary', { headers });
   },
   exportActivities: async (days: number = 30, format: string = 'csv') => {
-    const { supabase } = await import('../lib/supabase');
+    const { supabase } = await import('@/lib/supabase');
     const { data: { session } } = await supabase.auth.getSession();
     const headers = session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
     return api.get(`/export/activities?days=${days}&format=${format}`, { responseType: 'blob', headers });
   },
   exportHealthData: async (format: string = 'json') => {
-    const { supabase } = await import('../lib/supabase');
+    const { supabase } = await import('@/lib/supabase');
     const { data: { session } } = await supabase.auth.getSession();
     const headers = session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
     return api.get(`/export/health-data?format=${format}`, { responseType: 'blob', headers });
@@ -424,19 +424,19 @@ export const analytics = {
 // Settings API calls - RE-ENABLED
 export const settings = {
   getSettings: async () => {
-    const { supabase } = await import('../lib/supabase');
+    const { supabase } = await import('@/lib/supabase');
     const { data: { session } } = await supabase.auth.getSession();
     const headers = session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
     return api.get<Settings>('/settings/me', { headers });
   },
   updateSettings: async (data: Partial<Settings>) => {
-    const { supabase } = await import('../lib/supabase');
+    const { supabase } = await import('@/lib/supabase');
     const { data: { session } } = await supabase.auth.getSession();
     const headers = session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
     return api.put<Settings>('/settings/me', data, { headers });
   },
   createSettings: async (data: Settings) => {
-    const { supabase } = await import('../lib/supabase');
+    const { supabase } = await import('@/lib/supabase');
     const { data: { session } } = await supabase.auth.getSession();
     const headers = session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
     return api.post<Settings>('/settings/me', data, { headers });
@@ -448,7 +448,7 @@ export const goals = {
   getGoals: async () => {
     try {
       // Simple auth without interceptor
-      const { supabase } = await import('../lib/supabase');
+      const { supabase } = await import('@/lib/supabase');
       const { data: { session } } = await supabase.auth.getSession();
       const headers = session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
       console.log('API CALL: GET /goals');
@@ -460,7 +460,7 @@ export const goals = {
   },
   createGoal: async (data: Omit<Goal, 'id'>) => {
     try {
-      const { supabase } = await import('../lib/supabase');
+      const { supabase } = await import('@/lib/supabase');
       const { data: { session } } = await supabase.auth.getSession();
       const headers = session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
       return api.post<Goal>('/goals', data, { headers });
@@ -471,7 +471,7 @@ export const goals = {
   },
   updateGoal: async (id: string, data: Partial<Goal>) => {
     try {
-      const { supabase } = await import('../lib/supabase');
+      const { supabase } = await import('@/lib/supabase');
       const { data: { session } } = await supabase.auth.getSession();
       const headers = session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
       return api.put<Goal>(`/goals/${id}`, data, { headers });
@@ -482,7 +482,7 @@ export const goals = {
   },
   deleteGoal: async (id: string) => {
     try {
-      const { supabase } = await import('../lib/supabase');
+      const { supabase } = await import('@/lib/supabase');
       const { data: { session } } = await supabase.auth.getSession();
       const headers = session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
       return api.delete(`/goals/${id}`, { headers });
