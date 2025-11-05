@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Box, Spinner, Text, VStack, Button } from '@chakra-ui/react';
-import { supabase } from '../lib/supabase';
+import { supabase } from '../lib/supabase.ts';
 
 const OAuthCallback = () => {
   const navigate = useNavigate();

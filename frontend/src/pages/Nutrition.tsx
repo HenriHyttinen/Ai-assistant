@@ -94,7 +94,7 @@ const Nutrition: React.FC = () => {
       setError(null);
       
       // Get Supabase session token for authentication
-      const { supabase } = await import('../lib/supabase');
+      const { supabase } = await import('../lib/supabase.ts');
       const { data: { session } } = await supabase.auth.getSession();
       
       if (!session?.access_token) {
