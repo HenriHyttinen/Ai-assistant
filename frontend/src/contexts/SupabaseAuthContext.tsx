@@ -49,10 +49,17 @@ export const SupabaseAuthProvider: React.FC<SupabaseAuthProviderProps> = ({ chil
     // Listen for auth changes
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      setLoading(false);
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      // Only update state if we have a session, or if it's a SIGNED_OUT event
+      // This prevents temporary null sessions during token refresh from clearing the user
+      if (session || event === 'SIGNED_OUT') {
+        setSession(session);
+        setUser(session?.user ?? null);
+      }
+      // Only set loading to false if we have a definitive state
+      if (event === 'SIGNED_IN' || event === 'SIGNED_OUT' || event === 'TOKEN_REFRESHED') {
+        setLoading(false);
+      }
     });
 
     return () => subscription.unsubscribe();
