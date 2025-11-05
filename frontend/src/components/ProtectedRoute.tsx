@@ -2,6 +2,7 @@
 import { Navigate, useLocation } from 'react-router-dom';
 import { useSupabaseAuth } from '../contexts/SupabaseAuthContext';
 import { Spinner, Center } from '@chakra-ui/react';
+import { useEffect, useState } from 'react';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -11,6 +12,14 @@ interface ProtectedRouteProps {
 const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, require2FA = false }) => {
   const { user, loading, session } = useSupabaseAuth();
   const location = useLocation();
+  const [hasToken, setHasToken] = useState(false);
+
+  // Check for stored token as fallback
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    const supabaseSession = sessionStorage.getItem('supabase.auth.token');
+    setHasToken(!!(token || supabaseSession));
+  }, [session]);
 
   if (loading) {
     return (
@@ -26,13 +35,16 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, require2FA = 
     );
   }
 
-  if (!user || !session) {
+  // Allow access if user exists OR if we have a token (backend auth might still be valid)
+  // Only redirect if both user and session are null AND no token exists
+  if (!user && !session && !hasToken) {
     // Redirect to login page but save the attempted url
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
   // Check if email is verified (Supabase handles this automatically)
-  if (!user.email_confirmed_at) {
+  // Only check if user exists
+  if (user && !user.email_confirmed_at) {
     return <Navigate to="/verify-email" state={{ from: location }} replace />;
   }
 
