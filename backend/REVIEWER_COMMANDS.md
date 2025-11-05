@@ -133,6 +133,20 @@ python3 scripts/import_ingredients_from_json.py --file ../backend/ingredients_li
 - If the file doesn't exist in your repository, it may not have been committed (check `.gitignore`)
 - If the file is missing, use Option 1 (comprehensive seeder) instead, which creates 155 ingredients from code
 - The script will automatically search for the file in common locations
+- **Important:** The JSON file contains 5,388 entries but only ~3,062 unique ingredient names. The script correctly skips duplicates, so you'll get fewer ingredients than the total JSON entries. This is normal and expected behavior.
+
+**Why you might get ~3,161 ingredients:**
+- If you run the seeder first: 155 ingredients
+- Then import from JSON: ~3,062 unique ingredients
+- Some overlap between seeder and JSON (e.g., "butter", "eggs") gets skipped
+- Result: ~155 + ~3,006 = ~3,161 ingredients (which exceeds the 500 minimum requirement!)
+
+**About nutritional data:**
+- The JSON file contains many entries that are cooking instructions (e.g., "tops and roots trimmed", "plus more to taste") rather than actual food ingredients
+- Out of ~3,062 unique ingredient names in JSON, only ~1,322 have nutritional data (~43%)
+- If you have 3,161 ingredients, expect ~1,452 with nutritional data (46%)
+- This is normal - many entries are recipe parsing artifacts, not actual ingredients
+- Your production database (15,694 ingredients) has 68.3% with nutrition because it was cleaned/filtered
 
 ### Current Status
 
@@ -174,4 +188,30 @@ cat .env | grep DATABASE
 ### If you get "minimum requirement not met"
 
 The seeder script (`comprehensive_seeder.py`) only creates 155 ingredients, which is below the minimum of 500. This is expected - the script is designed for basic testing, not full production data. The production database has 15,694 ingredients from a comprehensive source that is not included in the repository.
+
+### If you get "❌ Embedding requirement not met"
+
+This means fewer than 500 ingredients have vector embeddings. Embeddings are required for RAG (Retrieval-Augmented Generation) functionality, which enables semantic search for similar ingredients.
+
+**To fix this, generate embeddings:**
+
+```bash
+cd backend
+source .venv/bin/activate  # On macOS/Linux
+python3 scripts/generate_ingredient_embeddings.py
+```
+
+**Note:** If you get "ModuleNotFoundError: No module named 'database'", make sure you're running from the `backend/` directory and the virtual environment is activated.
+
+**What embeddings do:**
+- Vector representations of ingredients for semantic search
+- Required for RAG functionality (finding similar ingredients)
+- Stored in `Ingredient.embedding` column (384-dimensional vectors)
+
+**Note:** Generating embeddings requires the `sentence-transformers` library. If you get import errors, install dependencies:
+```bash
+pip install -r requirements.txt
+```
+
+**Time:** Generating embeddings for 3,161 ingredients takes ~5-10 minutes.
 
