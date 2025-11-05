@@ -282,7 +282,7 @@ const Settings = () => {
     if (!user) return null;
     
     try {
-      const { supabase } = await import('@/lib/supabase');
+      const { supabase } = await import('../lib/supabase');
       const { data: { session } } = await supabase.auth.getSession();
       
       if (!session?.access_token) {
@@ -314,7 +314,7 @@ const Settings = () => {
     if (!user) throw new Error('User not authenticated');
     
     try {
-      const { supabase } = await import('@/lib/supabase');
+      const { supabase } = await import('../lib/supabase');
       const { data: { session } } = await supabase.auth.getSession();
       
       if (!session?.access_token) {

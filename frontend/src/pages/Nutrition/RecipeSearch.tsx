@@ -151,7 +151,7 @@ const RecipeSearch: React.FC<RecipeSearchProps> = () => {
 
   const loadUserPreferences = async () => {
     try {
-      const { supabase } = await import('@/lib/supabase');
+      const { supabase } = await import('../../lib/supabase');
       const { data: { session } } = await supabase.auth.getSession();
       
       if (!session?.access_token) {
@@ -185,7 +185,7 @@ const RecipeSearch: React.FC<RecipeSearchProps> = () => {
       setError(null);
       
       // Get Supabase session token for authentication
-      const { supabase } = await import('@/lib/supabase');
+      const { supabase } = await import('../../lib/supabase');
       const { data: { session } } = await supabase.auth.getSession();
       
       if (!session?.access_token) {
@@ -277,7 +277,7 @@ const RecipeSearch: React.FC<RecipeSearchProps> = () => {
       setPageKey(prev => prev + 1);
       
       // Get Supabase session token for authentication
-      const { supabase } = await import('@/lib/supabase');
+      const { supabase } = await import('../../lib/supabase');
       const { data: { session } } = await supabase.auth.getSession();
       
       if (!session?.access_token) {

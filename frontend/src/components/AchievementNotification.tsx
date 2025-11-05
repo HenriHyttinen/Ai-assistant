@@ -70,7 +70,7 @@ const AchievementNotification: React.FC<AchievementNotificationProps> = ({
           return;
         }
         // Get Supabase session token for authentication
-        const { supabase } = await import('@/lib/supabase');
+        const { supabase } = await import('../lib/supabase');
         const { data: { session } } = await supabase.auth.getSession();
         
         // Only make API calls if user is authenticated

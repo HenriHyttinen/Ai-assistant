@@ -239,7 +239,7 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
     
     // Load available recipes
     try {
-      const { supabase } = await import('@/lib/supabase');
+      const { supabase } = await import('../../lib/supabase');
       const { data: { session } } = await supabase.auth.getSession();
       
       if (!session?.access_token) {
@@ -291,7 +291,7 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
     const slotKey = `${date}-${mealType}`;
     try {
       setGeneratingMeals(prev => new Set(prev).add(slotKey));
-      const { supabase } = await import('@/lib/supabase');
+      const { supabase } = await import('../../lib/supabase');
       const { data: { session } } = await supabase.auth.getSession();
       
       if (!session?.access_token) {
@@ -428,7 +428,7 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
     
     try {
       setLoading(true);
-      const { supabase } = await import('@/lib/supabase');
+      const { supabase } = await import('../../lib/supabase');
       const { data: { session } } = await supabase.auth.getSession();
       
       if (!session?.access_token) {
@@ -827,7 +827,7 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
   useEffect(() => {
     const loadUserPreferences = async () => {
       try {
-        const { supabase } = await import('@/lib/supabase');
+        const { supabase } = await import('../../lib/supabase');
         const { data: { session } } = await supabase.auth.getSession();
         if (!session?.access_token) return;
 
@@ -898,7 +898,7 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
       setError(null);
       
       // Get Supabase session token for authentication
-      const { supabase } = await import('@/lib/supabase');
+      const { supabase } = await import('../../lib/supabase');
       const { data: { session } } = await supabase.auth.getSession();
       const headers: Record<string, string> = {
         'Content-Type': 'application/json'
@@ -1209,7 +1209,7 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
       setMealPlan(null);
       
       // Get Supabase session token for authentication
-      const { supabase } = await import('@/lib/supabase');
+      const { supabase } = await import('../../lib/supabase');
       const { data: { session } } = await supabase.auth.getSession();
       
       if (!session?.access_token) {
@@ -1487,7 +1487,7 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
       return;
     }
     try {
-      const { supabase } = await import('@/lib/supabase');
+      const { supabase } = await import('../../lib/supabase');
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.access_token) return;
       // Abort any in-flight request for this meal type
@@ -1543,7 +1543,7 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
     
     // Perform swap via API
     try {
-      const { supabase } = await import('@/lib/supabase');
+      const { supabase } = await import('../../lib/supabase');
       const { data: { session } } = await supabase.auth.getSession();
       
       if (!session?.access_token) {
@@ -1605,7 +1605,7 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
     setLoadingAlternatives((prev: {[key: string]: boolean}) => ({ ...prev, [mealType]: true }));
     
     try {
-      const { supabase } = await import('@/lib/supabase');
+      const { supabase } = await import('../../lib/supabase');
       const { data: { session } } = await supabase.auth.getSession();
       
       if (!session?.access_token) {
@@ -1709,7 +1709,7 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
     
     // Save order to backend
     try {
-      const { supabase } = await import('@/lib/supabase');
+      const { supabase } = await import('../../lib/supabase');
       const { data: { session } } = await supabase.auth.getSession();
       
       if (session?.access_token) {
@@ -1741,7 +1741,7 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
       return;
     }
     try {
-      const { supabase } = await import('@/lib/supabase');
+      const { supabase } = await import('../../lib/supabase');
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.access_token) return;
       const params = new URLSearchParams({ target_date: targetDate });
@@ -1811,7 +1811,7 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
       setLoading(true);
       
       // Get Supabase session token for authentication
-      const { supabase } = await import('@/lib/supabase');
+      const { supabase } = await import('../../lib/supabase');
       const { data: { session } } = await supabase.auth.getSession();
       
       if (!session?.access_token) {
@@ -1888,7 +1888,7 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
       setLoading(true);
       
       // Get Supabase session token for authentication
-      const { supabase } = await import('@/lib/supabase');
+      const { supabase } = await import('../../lib/supabase');
       const { data: { session } } = await supabase.auth.getSession();
       
       if (!session?.access_token) {
@@ -1948,7 +1948,7 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
       setLoading(true);
       
       // Get Supabase session token for authentication
-      const { supabase } = await import('@/lib/supabase');
+      const { supabase } = await import('../../lib/supabase');
       const { data: { session } } = await supabase.auth.getSession();
       
       if (!session?.access_token) {
@@ -2013,7 +2013,7 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
     setGeneratingMeals(new Set());
     
     try {
-      const { supabase } = await import('@/lib/supabase');
+      const { supabase } = await import('../../lib/supabase');
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.access_token) {
         setError('Please log in to regenerate meal plan');
@@ -2244,7 +2244,7 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
       setLoading(true);
       
       // Get Supabase session token for authentication
-      const { supabase } = await import('@/lib/supabase');
+      const { supabase } = await import('../../lib/supabase');
       const { data: { session } } = await supabase.auth.getSession();
       
       if (!session?.access_token) {
@@ -2280,7 +2280,7 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
       setLoading(true);
       
       // Get Supabase session token for authentication
-      const { supabase } = await import('@/lib/supabase');
+      const { supabase } = await import('../../lib/supabase');
       const { data: { session } } = await supabase.auth.getSession();
       
       if (!session?.access_token) {
@@ -2318,7 +2318,7 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
       setLoading(true);
       
       // Get Supabase session token for authentication
-      const { supabase } = await import('@/lib/supabase');
+      const { supabase } = await import('../../lib/supabase');
       const { data: { session } } = await supabase.auth.getSession();
       
       if (!session?.access_token) {
@@ -2358,7 +2358,7 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
       setLoading(true);
       
       // Get Supabase session token for authentication
-      const { supabase } = await import('@/lib/supabase');
+      const { supabase } = await import('../../lib/supabase');
       const { data: { session } } = await supabase.auth.getSession();
       
       if (!session?.access_token) {
@@ -2447,7 +2447,7 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
       setLoading(true);
       
       // Get Supabase session token for authentication
-      const { supabase } = await import('@/lib/supabase');
+      const { supabase } = await import('../../lib/supabase');
       const { data: { session } } = await supabase.auth.getSession();
       
       if (!session?.access_token) {
@@ -2492,7 +2492,7 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
     setLoading(true);
     try {
       // Get Supabase session token for authentication
-      const { supabase } = await import('@/lib/supabase');
+      const { supabase } = await import('../../lib/supabase');
       const { data: { session } } = await supabase.auth.getSession();
       
       if (!session?.access_token) {
@@ -2553,7 +2553,7 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
     try {
       setLoading(true);
       
-      const { supabase } = await import('@/lib/supabase');
+      const { supabase } = await import('../../lib/supabase');
       const { data: { session } } = await supabase.auth.getSession();
       
       if (!session?.access_token) {
@@ -2592,7 +2592,7 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
     if (!mealPlan) return;
     setLoading(true);
     try {
-      const { supabase } = await import('@/lib/supabase');
+      const { supabase } = await import('../../lib/supabase');
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.access_token) {
         toast({ title: 'Please log in', status: 'warning', duration: 2500, isClosable: true });
@@ -2641,7 +2641,7 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
     if (!mealPlan) return;
     setLoading(true);
     try {
-      const { supabase } = await import('@/lib/supabase');
+      const { supabase } = await import('../../lib/supabase');
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.access_token) {
         toast({ title: 'Please log in', status: 'warning', duration: 2500, isClosable: true });
@@ -2693,7 +2693,7 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
               console.log('✅ Meal plan reloaded successfully');
               
               // Also try to refetch directly via API to ensure we have latest data
-              const { supabase } = await import('@/lib/supabase');
+              const { supabase } = await import('../../lib/supabase');
               const { data: { session } } = await supabase.auth.getSession();
               if (session?.access_token) {
                 const response = await fetch(
@@ -2854,7 +2854,7 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
                       
                       try {
                         setLoading(true);
-                        const { supabase } = await import('@/lib/supabase');
+                        const { supabase } = await import('../../lib/supabase');
                         const { data: { session } } = await supabase.auth.getSession();
                         
                         if (!session?.access_token) {
