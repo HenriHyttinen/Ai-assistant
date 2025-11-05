@@ -257,9 +257,11 @@ datasets/
 !backend/ingredients_list.csv
 !backend/ingredients_list_cleaned.csv
 
-# Development test files (not test suite)
+# Development test files (not test suite - but allow tests/ directory)
 test_*.py
+!tests/**/test_*.py
 *_test.py
+!tests/**/*_test.py
 test_*.csv
 test_*.json
 

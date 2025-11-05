@@ -19,10 +19,37 @@ tests/
 
 ## Running Tests
 
+### Prerequisites
+
+1. Make sure you're in the `backend` directory:
+   ```bash
+   cd backend
+   ```
+
+2. Activate the virtual environment:
+   ```bash
+   source .venv/bin/activate  # On macOS/Linux
+   # or
+   .venv\Scripts\activate  # On Windows
+   ```
+
+3. Install test dependencies (if not already installed):
+   ```bash
+   pip install -r requirements.txt
+   ```
+
 ### Run All Tests
 ```bash
+# From backend directory
 pytest
+# or
+python -m pytest
 ```
+
+**Note:** If you get "collected 0 items", make sure:
+- You're running from the `backend/` directory (not `backend/tests/`)
+- The virtual environment is activated
+- Test files are not ignored by `.gitignore` (they should be tracked by git)
 
 ### Run Specific Test Categories
 ```bash
