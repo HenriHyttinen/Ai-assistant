@@ -89,6 +89,39 @@ db.close()
 "
 ```
 
+## Seed More Ingredients (If Below Minimum)
+
+If you have less than 500 ingredients (minimum requirement), you can seed the database:
+
+### Option 1: Run Comprehensive Seeder (Creates 155 ingredients)
+
+**Note:** This seeder only creates 155 ingredients, which is below the minimum requirement of 500. It will replace existing ingredients.
+
+```bash
+python3 scripts/comprehensive_seeder.py
+```
+
+**What it does:**
+- Creates 155 ingredients with nutritional data
+- Creates 500+ recipes
+- ⚠️ **WARNING:** This will DELETE all existing ingredients and recipes!
+
+### Option 2: Add More Ingredients Without Losing Existing Data
+
+If you want to add more ingredients without deleting existing ones, you can modify the seeder script or manually add ingredients. However, the comprehensive seeder is designed to replace all data.
+
+### Current Status
+
+- **Minimum requirement:** 500+ ingredients
+- **Comprehensive database:** 15,532+ ingredients (production has 15,694)
+- **Current seeder:** Only creates 155 ingredients
+
+If you only have 155 ingredients, you're missing the full ingredient database. The production database has 15,694 ingredients imported from a comprehensive source.
+
+### Recommendation
+
+For testing purposes, 155 ingredients from the seeder should be sufficient for basic functionality testing. However, for full RAG functionality with comprehensive ingredient search, you would need the full 15,532+ ingredient database.
+
 ## Troubleshooting
 
 ### If you get "ModuleNotFoundError: No module named 'sqlalchemy'"
@@ -113,4 +146,8 @@ Check that your `.env` file has the correct database connection string:
 ```bash
 cat .env | grep DATABASE
 ```
+
+### If you get "minimum requirement not met"
+
+The seeder script (`comprehensive_seeder.py`) only creates 155 ingredients, which is below the minimum of 500. This is expected - the script is designed for basic testing, not full production data. The production database has 15,694 ingredients from a comprehensive source that is not included in the repository.
 
