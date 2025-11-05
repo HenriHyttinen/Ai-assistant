@@ -238,8 +238,14 @@ def create_ingredients():
     print("🥕 Creating comprehensive ingredient database...")
     db = SessionLocal()
     try:
-        # Clear existing ingredients
+        # Clear existing data in correct order to avoid foreign key violations
+        # Delete recipe_ingredients first (references ingredients)
+        db.execute(text("DELETE FROM recipe_ingredients"))
+        db.execute(text("DELETE FROM recipe_instructions"))
+        db.execute(text("DELETE FROM recipes"))
+        # Now safe to delete ingredients
         db.execute(text("DELETE FROM ingredients"))
+        db.commit()
         
         ingredients_created = 0
         for ing_data in COMPREHENSIVE_INGREDIENTS:
