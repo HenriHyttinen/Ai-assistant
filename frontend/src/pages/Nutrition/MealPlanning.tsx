@@ -1222,8 +1222,11 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
       console.log('🚀 PROGRESSIVE GENERATION: Creating meal plan structure first (lighter approach)');
       console.log('Calorie target:', preferences.calorieTarget);
       
+      // Get API base URL from environment or use default
+      const API_BASE_URL = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8000';
+      
       // STEP 1: Create empty meal plan structure first (lightweight - PROGRESSIVE MODE)
-      const createResponse = await fetch(`http://localhost:8000/nutrition/meal-plans/generate?progressive=true`, {
+      const createResponse = await fetch(`${API_BASE_URL}/nutrition/meal-plans/generate?progressive=true`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1266,18 +1269,39 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
         return; // Exit early - user fills slots progressively
       } else {
         // Structure creation failed
-        const errorData = await createResponse.json().catch(() => ({ detail: 'Failed to create meal plan structure' }));
+        let errorData: any = { detail: 'Failed to create meal plan structure' };
+        try {
+          const responseText = await createResponse.text();
+          if (responseText) {
+            errorData = JSON.parse(responseText);
+          }
+        } catch (parseError) {
+          // If response is not JSON, use status text
+          errorData = { 
+            detail: createResponse.statusText || `Server returned ${createResponse.status} error` 
+          };
+        }
+        
         if (createResponse.status === 400 && errorData.detail && errorData.detail.includes('nutrition preferences')) {
           setError('Please set up your nutrition preferences first. Go to the Nutrition Dashboard to configure your preferences.');
           toast({ title: 'Set up nutrition preferences first', status: 'info', duration: 3000, isClosable: true });
         } else {
-          throw new Error(errorData.detail || 'Failed to create meal plan structure');
+          const errorMessage = errorData.detail || errorData.message || `Server error (${createResponse.status})`;
+          throw new Error(errorMessage);
         }
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error generating meal plan:', err);
-      setError('Failed to generate meal plan');
-      toast({ title: 'Failed to generate meal plan', status: 'error', duration: 3000, isClosable: true });
+      // Extract error message from various possible error formats
+      const errorMessage = err?.message || err?.response?.data?.detail || err?.detail || 'Failed to generate meal plan';
+      setError(errorMessage);
+      toast({ 
+        title: 'Failed to generate meal plan', 
+        description: errorMessage,
+        status: 'error', 
+        duration: 5000, 
+        isClosable: true 
+      });
     } finally {
       setIsGenerating(false); // CRITICAL: Clear generation flag
       // CRITICAL: Clear the "just generated" ref after generation completes
