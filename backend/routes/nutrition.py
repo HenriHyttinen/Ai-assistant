@@ -379,41 +379,84 @@ def generate_meal_plan(
         # PROGRESSIVE MODE: Create empty meal plan structure (lighter approach)
         if progressive:
             logger.info(f"🚀 PROGRESSIVE MODE: Creating empty meal plan structure (lighter - fill slots one by one)")
-            # Create empty meal plan structure
-            from datetime import timedelta
-            import time
-            unique_id = f"mp_{current_user.id}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}_{int(time.time() * 1000) % 10000}"
-            
-            # Normalize weekly plan dates to start on Monday
-            normalized_start = plan_request.start_date
-            normalized_end = plan_request.end_date
-            if plan_request.plan_type == 'weekly':
-                try:
-                    from datetime import datetime as _dt
-                    _sd = plan_request.start_date if isinstance(plan_request.start_date, _dt) else _dt.combine(plan_request.start_date, _dt.min.time())
-                    monday_date = (_sd + timedelta(days=-_sd.weekday())).date()
-                    normalized_start = monday_date
-                    normalized_end = monday_date + timedelta(days=6)
-                except Exception:
-                    pass
+            try:
+                # Create empty meal plan structure
+                from datetime import timedelta
+                import time
+                unique_id = f"mp_{current_user.id}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}_{int(time.time() * 1000) % 10000}"
+                
+                # Normalize weekly plan dates to start on Monday
+                normalized_start = plan_request.start_date
+                normalized_end = plan_request.end_date
+                
+                # Ensure dates are date objects, not strings
+                if isinstance(normalized_start, str):
+                    normalized_start = datetime.strptime(normalized_start, '%Y-%m-%d').date()
+                elif isinstance(normalized_start, datetime):
+                    normalized_start = normalized_start.date()
+                
+                if isinstance(normalized_end, str):
+                    normalized_end = datetime.strptime(normalized_end, '%Y-%m-%d').date()
+                elif isinstance(normalized_end, datetime):
+                    normalized_end = normalized_end.date()
+                
+                if plan_request.plan_type == 'weekly':
+                    try:
+                        # Normalize to Monday
+                        if isinstance(normalized_start, date):
+                            monday_date = normalized_start - timedelta(days=normalized_start.weekday())
+                            normalized_start = monday_date
+                            normalized_end = monday_date + timedelta(days=6)
+                        logger.info(f"Normalized weekly plan dates: {normalized_start} to {normalized_end}")
+                    except Exception as date_err:
+                        logger.warning(f"Date normalization failed, using original dates: {date_err}")
+                        # Keep original dates if normalization fails
 
-            # Create empty meal plan (no meals - user fills progressively)
-            empty_meal_plan = MealPlan(
-                id=unique_id,
-                user_id=current_user.id,
-                plan_type=plan_request.plan_type,
-                start_date=normalized_start,
-                end_date=normalized_end,
-                version="1.0",
-                generation_strategy={"strategy": "progressive", "mode": "empty_structure"},
-                ai_model_used="progressive"
-            )
-            db.add(empty_meal_plan)
-            db.commit()
-            db.refresh(empty_meal_plan)
-            
-            logger.info(f"Created empty meal plan structure: {unique_id} (0 meals - ready for progressive generation)")
-            return nutrition_service._convert_meal_plan_to_response(empty_meal_plan, db)
+                # Create empty meal plan (no meals - user fills progressively)
+                empty_meal_plan = MealPlan(
+                    id=unique_id,
+                    user_id=current_user.id,
+                    plan_type=plan_request.plan_type,
+                    start_date=normalized_start,
+                    end_date=normalized_end,
+                    version="1.0",
+                    generation_strategy={"strategy": "progressive", "mode": "empty_structure"},
+                    ai_model_used="progressive"
+                )
+                db.add(empty_meal_plan)
+                db.commit()
+                db.refresh(empty_meal_plan)
+                
+                logger.info(f"Created empty meal plan structure: {unique_id} (0 meals - ready for progressive generation)")
+                
+                # Convert to response format
+                try:
+                    meal_plan_response = nutrition_service._convert_meal_plan_to_response(empty_meal_plan, db)
+                    return meal_plan_response
+                except Exception as convert_err:
+                    logger.error(f"Error converting meal plan to response: {convert_err}", exc_info=True)
+                    # Return a minimal response if conversion fails
+                    return {
+                        "id": unique_id,
+                        "user_id": current_user.id,
+                        "plan_type": plan_request.plan_type,
+                        "start_date": str(normalized_start),
+                        "end_date": str(normalized_end) if normalized_end else None,
+                        "version": "1.0",
+                        "is_active": True,
+                        "meals": [],
+                        "total_nutrition": {
+                            "calories": 0,
+                            "protein": 0,
+                            "carbs": 0,
+                            "fats": 0
+                        },
+                        "created_at": datetime.utcnow().isoformat()
+                    }
+            except Exception as progressive_err:
+                logger.error(f"Error in progressive mode: {progressive_err}", exc_info=True)
+                db.rollback()
+                raise  # Re-raise to be caught by outer exception handler
         
         # STANDARD MODE: Generate all meals at once (heavier but complete)
         logger.info(f"STANDARD MODE: Generating all meals at once")
@@ -458,10 +501,23 @@ def generate_meal_plan(
         # Convert to response format
         return nutrition_service._convert_meal_plan_to_response(meal_plan, db)
         
+    except HTTPException:
+        # Re-raise HTTP exceptions as-is
+        raise
     except Exception as e:
+        # Log the full exception with traceback for debugging
+        import traceback
+        error_traceback = traceback.format_exc()
+        logger.error(f"Error generating meal plan: {str(e)}\n{error_traceback}")
+        
+        # Extract meaningful error message
+        error_message = str(e) if str(e) else repr(e)
+        if not error_message or error_message.strip() == '':
+            error_message = f"Unknown error occurred: {type(e).__name__}"
+        
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error generating meal plan: {str(e)}"
+            detail=f"Error generating meal plan: {error_message}"
         )
 
 @router.get("/meal-plans/{meal_plan_id}/alternatives/{meal_type}")
