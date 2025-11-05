@@ -51,6 +51,36 @@ python -m pytest
 - The virtual environment is activated
 - Test files are not ignored by `.gitignore` (they should be tracked by git)
 
+**Troubleshooting "collected 0 items":**
+
+1. **Check your current directory:**
+   ```bash
+   pwd  # Should show: .../backend (NOT .../backend/tests)
+   ```
+
+2. **Run pytest from backend directory:**
+   ```bash
+   cd backend  # Make sure you're here
+   pytest
+   ```
+
+3. **Or specify the test path explicitly:**
+   ```bash
+   pytest tests/
+   ```
+
+4. **Check if test files exist:**
+   ```bash
+   ls tests/unit/
+   ls tests/integration/
+   ```
+
+5. **If test files are missing, pull from git:**
+   ```bash
+   git pull
+   git status tests/
+   ```
+
 ### Run Specific Test Categories
 ```bash
 # Unit tests only
