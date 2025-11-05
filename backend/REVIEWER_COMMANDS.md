@@ -106,9 +106,25 @@ python3 scripts/comprehensive_seeder.py
 - Creates 500+ recipes
 - ⚠️ **WARNING:** This will DELETE all existing ingredients and recipes!
 
-### Option 2: Add More Ingredients Without Losing Existing Data
+### Option 2: Import Ingredients from JSON File (Recommended)
 
-If you want to add more ingredients without deleting existing ones, you can modify the seeder script or manually add ingredients. However, the comprehensive seeder is designed to replace all data.
+If you have the `ingredients_list.json` file in the backend directory, you can import more ingredients:
+
+```bash
+# Import all ingredients from JSON (can take a few minutes)
+python3 scripts/import_ingredients_from_json.py
+
+# Or import a specific number (e.g., 500 to meet minimum requirement)
+python3 scripts/import_ingredients_from_json.py --max 500
+```
+
+**What it does:**
+- Reads ingredients from `ingredients_list.json` file
+- Adds new ingredients without deleting existing ones
+- Skips duplicates (by name)
+- Preserves existing ingredient IDs
+
+**Note:** This script requires the `ingredients_list.json` file to be in the `backend/` directory. If you don't have this file, use Option 1 instead.
 
 ### Current Status
 
