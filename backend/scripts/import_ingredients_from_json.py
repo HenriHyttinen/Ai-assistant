@@ -14,14 +14,41 @@ from database import SessionLocal
 from models.recipe import Ingredient
 from sqlalchemy import text
 
-def import_ingredients_from_json(json_file_path='ingredients_list.json', max_ingredients=None):
+def import_ingredients_from_json(json_file_path=None, max_ingredients=None):
     """
     Import ingredients from JSON file
     
     Args:
-        json_file_path: Path to the JSON file containing ingredients
+        json_file_path: Path to the JSON file containing ingredients (None = auto-detect)
         max_ingredients: Maximum number of ingredients to import (None = all)
     """
+    # Auto-detect file location if not provided
+    if json_file_path is None:
+        # Try multiple possible locations
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        backend_dir = os.path.dirname(script_dir)
+        possible_paths = [
+            os.path.join(backend_dir, 'ingredients_list.json'),
+            os.path.join(backend_dir, 'ingredients_list_cleaned.csv'),
+            os.path.join(os.path.dirname(backend_dir), 'backend', 'ingredients_list.json'),
+            'ingredients_list.json',
+            os.path.join('..', 'ingredients_list.json'),
+        ]
+        
+        json_file_path = None
+        for path in possible_paths:
+            if os.path.exists(path):
+                json_file_path = path
+                break
+        
+        if json_file_path is None:
+            print(f"❌ ingredients_list.json file not found!")
+            print(f"   Searched in:")
+            for path in possible_paths:
+                print(f"     - {os.path.abspath(path)}")
+            print(f"\n   Please ensure the file exists in one of these locations.")
+            return
+    
     print(f"📥 Loading ingredients from {json_file_path}...")
     
     # Check if file exists
@@ -116,18 +143,20 @@ def import_ingredients_from_json(json_file_path='ingredients_list.json', max_ing
 
 if __name__ == "__main__":
     import argparse
-    parser = argparse.ArgumentParser(description='Import ingredients from JSON file')
-    parser.add_argument('--file', default='ingredients_list.json', help='Path to JSON file')
+    parser = argparse.ArgumentParser(description='Import ingredients from JSON or CSV file')
+    parser.add_argument('--file', default=None, help='Path to JSON/CSV file (auto-detects if not provided)')
     parser.add_argument('--max', type=int, default=None, help='Maximum number of ingredients to import')
     args = parser.parse_args()
     
-    # Adjust path if running from scripts directory
+    # Auto-detect file location if not provided
     json_path = args.file
-    if not os.path.exists(json_path):
-        # Try parent directory
-        parent_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), args.file)
-        if os.path.exists(parent_path):
-            json_path = parent_path
+    if json_path and not os.path.exists(json_path):
+        # Try relative to backend directory
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        backend_dir = os.path.dirname(script_dir)
+        possible_path = os.path.join(backend_dir, json_path)
+        if os.path.exists(possible_path):
+            json_path = possible_path
     
     import_ingredients_from_json(json_path, args.max)
 

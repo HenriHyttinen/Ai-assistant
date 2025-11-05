@@ -111,20 +111,28 @@ python3 scripts/comprehensive_seeder.py
 If you have the `ingredients_list.json` file in the backend directory, you can import more ingredients:
 
 ```bash
-# Import all ingredients from JSON (can take a few minutes)
+# Auto-detect and import all ingredients from JSON (can take a few minutes)
 python3 scripts/import_ingredients_from_json.py
 
 # Or import a specific number (e.g., 500 to meet minimum requirement)
 python3 scripts/import_ingredients_from_json.py --max 500
+
+# Or specify the file path explicitly
+python3 scripts/import_ingredients_from_json.py --file ../backend/ingredients_list.json
 ```
 
 **What it does:**
-- Reads ingredients from `ingredients_list.json` file
+- Auto-detects `ingredients_list.json` file location (searches in backend directory)
+- Reads ingredients from JSON file
 - Adds new ingredients without deleting existing ones
 - Skips duplicates (by name)
 - Preserves existing ingredient IDs
 
-**Note:** This script requires the `ingredients_list.json` file to be in the `backend/` directory. If you don't have this file, use Option 1 instead.
+**Note:** 
+- The `ingredients_list.json` file should be in the `backend/` directory
+- If the file doesn't exist in your repository, it may not have been committed (check `.gitignore`)
+- If the file is missing, use Option 1 (comprehensive seeder) instead, which creates 155 ingredients from code
+- The script will automatically search for the file in common locations
 
 ### Current Status
 

@@ -252,6 +252,10 @@ datasets/
 !vite.config.ts
 !tailwind.config.js
 !postcss.config.js
+# Allow ingredient data files for reviewers
+!backend/ingredients_list.json
+!backend/ingredients_list.csv
+!backend/ingredients_list_cleaned.csv
 
 # Development test files (not test suite)
 test_*.py
