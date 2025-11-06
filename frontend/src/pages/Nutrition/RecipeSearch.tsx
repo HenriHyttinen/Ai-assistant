@@ -1818,7 +1818,17 @@ const RecipeSearch: React.FC<RecipeSearchProps> = () => {
                           )}
                           {suggestion.nutrition_adjustment && (
                             <Text fontSize="xs" color="gray.500" fontStyle="italic">
-                              {suggestion.nutrition_adjustment}
+                              {typeof suggestion.nutrition_adjustment === 'object' 
+                                ? (() => {
+                                    const adj = suggestion.nutrition_adjustment;
+                                    const changes = [];
+                                    if (adj.calories_change) changes.push(`Calories: ${adj.calories_change > 0 ? '+' : ''}${adj.calories_change}`);
+                                    if (adj.protein_change) changes.push(`Protein: ${adj.protein_change > 0 ? '+' : ''}${adj.protein_change}g`);
+                                    if (adj.carbs_change) changes.push(`Carbs: ${adj.carbs_change > 0 ? '+' : ''}${adj.carbs_change}g`);
+                                    if (adj.fats_change) changes.push(`Fats: ${adj.fats_change > 0 ? '+' : ''}${adj.fats_change}g`);
+                                    return changes.length > 0 ? changes.join(', ') : 'Nutrition may change';
+                                  })()
+                                : suggestion.nutrition_adjustment}
                             </Text>
                           )}
                           <Button

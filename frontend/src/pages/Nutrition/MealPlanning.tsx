@@ -200,6 +200,12 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
   // Ingredient graphs modal state
   const { isOpen: isIngredientGraphsOpen, onOpen: onIngredientGraphsOpen, onClose: onIngredientGraphsClose } = useDisclosure();
 
+  // Ingredient substitution state
+  const [substitutionIngredient, setSubstitutionIngredient] = useState<string | null>(null);
+  const [substitutionSuggestions, setSubstitutionSuggestions] = useState<any[]>([]);
+  const [loadingSubstitutions, setLoadingSubstitutions] = useState(false);
+  const { isOpen: isSubstitutionOpen, onOpen: onSubstitutionOpen, onClose: onSubstitutionClose } = useDisclosure();
+
   // Simple swap state - first click selects meal, second click swaps
   const [swapMode, setSwapMode] = useState(false);
   const [swapSourceMeal, setSwapSourceMeal] = useState<{id: string, date: string, mealType: string} | null>(null);
@@ -1709,6 +1715,286 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
     onOpen();
   };
 
+  // Load ingredient substitution suggestions for meal plan recipes
+  const loadSubstitutionSuggestions = async (ingredientName: string) => {
+    if (!selectedRecipe) return;
+    
+    // CRITICAL: Check if meal has recipe_details with ingredients in database before making API call
+    // We MUST check the original meal object from mealPlan.meals, not the normalized selectedRecipe
+    // because the backend checks the database, not the frontend state
+    const mealId = (selectedRecipe as any).meal_id || selectedRecipe.id;
+    const mealFromPlan = mealPlan?.meals?.find((m: any) => 
+      (m.id === mealId) || (m.meal_id === mealId)
+    );
+    
+    // Check recipe_details from the original meal object (what's in the database)
+    const recipeDetailsFromDB = mealFromPlan?.recipe_details || mealFromPlan?.recipe?.recipe_details;
+    
+    // Check if recipe_details exists in database and has ingredients
+    const hasRecipeDetailsWithIngredients = recipeDetailsFromDB && 
+      recipeDetailsFromDB.ingredients && 
+      Array.isArray(recipeDetailsFromDB.ingredients) &&
+      recipeDetailsFromDB.ingredients.length > 0;
+    
+    if (!hasRecipeDetailsWithIngredients) {
+      console.warn('⚠️ Cannot substitute - missing recipe_details with ingredients in database:', {
+        mealId,
+        hasMealFromPlan: !!mealFromPlan,
+        hasRecipeDetails: !!recipeDetailsFromDB,
+        recipeDetailsStructure: recipeDetailsFromDB ? JSON.stringify(recipeDetailsFromDB, null, 2) : 'null'
+      });
+      toast({
+        title: 'Cannot substitute ingredients',
+        description: 'This meal does not have detailed recipe information stored. Please regenerate this meal to enable ingredient substitution.',
+        status: 'warning',
+        duration: 5000,
+        isClosable: true,
+      });
+      return;
+    }
+    
+    try {
+      setLoadingSubstitutions(true);
+      setSubstitutionIngredient(ingredientName);
+      
+      const { supabase } = await import('../../lib/supabase.ts');
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session?.access_token) {
+        toast({ title: 'Please log in', status: 'warning', duration: 2500, isClosable: true });
+        return;
+      }
+      
+      const API_BASE_URL = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8000';
+      
+      // Check if this is a meal plan meal (has meal_id) or AI-generated recipe
+      const mealId = (selectedRecipe as any).meal_id || (selectedRecipe as any).id;
+      const mealPlanId = mealPlan?.id;
+      
+      if (!mealPlanId || !mealId) {
+        toast({
+          title: 'Cannot substitute',
+          description: 'This recipe is not part of a meal plan',
+          status: 'warning',
+          duration: 3000,
+          isClosable: true,
+        });
+        return;
+      }
+      
+      // Convert mealId to integer if it's a string
+      const mealIdInt = typeof mealId === 'string' ? parseInt(mealId, 10) : mealId;
+      if (isNaN(mealIdInt)) {
+        toast({
+          title: 'Invalid meal ID',
+          description: 'Cannot determine meal ID',
+          status: 'error',
+          duration: 3000,
+          isClosable: true,
+        });
+        return;
+      }
+      
+      // Use meal plan meal substitution endpoint
+      const response = await fetch(
+        `${API_BASE_URL}/nutrition/meal-plans/${mealPlanId}/meals/${mealIdInt}/substitutions/${encodeURIComponent(ingredientName)}?reason=dietary_preference`,
+        {
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+      
+      if (response.ok) {
+        const data = await response.json();
+        setSubstitutionSuggestions(data.suggestions || []);
+        onSubstitutionOpen();
+      } else {
+        const errorData = await response.json().catch(() => ({ detail: 'Failed to load substitutions' }));
+        const errorMessage = errorData.detail || 'Please try again';
+        
+        // Check if error is about missing recipe details
+        if (errorMessage.includes('recipe details') || errorMessage.includes('ingredient information')) {
+          toast({
+            title: 'Cannot substitute ingredients',
+            description: 'This meal does not have detailed recipe information. Only AI-generated recipes or meals with full recipe details can have ingredients substituted.',
+            status: 'warning',
+            duration: 5000,
+            isClosable: true,
+          });
+        } else {
+          toast({
+            title: 'Failed to load substitutions',
+            description: errorMessage,
+            status: 'error',
+            duration: 3000,
+            isClosable: true,
+          });
+        }
+      }
+    } catch (err: any) {
+      console.error('Error loading substitutions:', err);
+      toast({
+        title: 'Error loading substitutions',
+        description: err.message || 'Please try again',
+        status: 'error',
+        duration: 3000,
+        isClosable: true,
+      });
+    } finally {
+      setLoadingSubstitutions(false);
+    }
+  };
+
+  // Apply ingredient substitution to meal plan meal
+  const applySubstitution = async (substitution: any) => {
+    if (!selectedRecipe || !substitutionIngredient || !mealPlan) return;
+    
+    try {
+      setLoading(true);
+      const { supabase } = await import('../../lib/supabase.ts');
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session?.access_token) {
+        toast({ title: 'Please log in', status: 'warning', duration: 2500, isClosable: true });
+        return;
+      }
+      
+      const mealId = (selectedRecipe as any).meal_id || (selectedRecipe as any).id;
+      if (!mealId) {
+        toast({
+          title: 'Cannot substitute',
+          description: 'This recipe is not part of a meal plan',
+          status: 'warning',
+          duration: 3000,
+          isClosable: true,
+        });
+        return;
+      }
+      
+      // Convert mealId to integer if it's a string
+      const mealIdInt = typeof mealId === 'string' ? parseInt(mealId, 10) : mealId;
+      if (isNaN(mealIdInt)) {
+        toast({
+          title: 'Invalid meal ID',
+          description: 'Cannot determine meal ID',
+          status: 'error',
+          duration: 3000,
+          isClosable: true,
+        });
+        return;
+      }
+      
+      const API_BASE_URL = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8000';
+      const response = await fetch(
+        `${API_BASE_URL}/nutrition/meal-plans/${mealPlan.id}/meals/${mealIdInt}/substitutions/apply`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            ingredient_name: substitutionIngredient,
+            substitution: substitution
+          }),
+        }
+      );
+      
+      if (response.ok) {
+        const data = await response.json();
+        toast({
+          title: 'Substitution applied!',
+          description: `${substitutionIngredient} replaced with ${substitution.name}`,
+          status: 'success',
+          duration: 3000,
+          isClosable: true,
+        });
+        onSubstitutionClose();
+        
+        // CRITICAL FIX: Update selectedRecipe with the updated recipe_details from backend
+        // This ensures the recipe card doesn't go empty after substitution
+        if (data.updated_recipe_details && selectedRecipe) {
+          const updatedRecipeDetails = data.updated_recipe_details;
+          
+          // Store the updated recipe data in a variable to preserve it
+          const updatedSelectedRecipe = {
+            ...selectedRecipe,
+            recipe_details: updatedRecipeDetails,
+            ingredients: updatedRecipeDetails.ingredients || selectedRecipe.ingredients || [],
+            instructions: updatedRecipeDetails.instructions || selectedRecipe.instructions || [],
+            calories: updatedRecipeDetails.per_serving_calories || updatedRecipeDetails.calories || selectedRecipe.calories,
+            protein: updatedRecipeDetails.per_serving_protein || updatedRecipeDetails.protein || selectedRecipe.protein,
+            carbs: updatedRecipeDetails.per_serving_carbs || updatedRecipeDetails.carbs || selectedRecipe.carbs,
+            fats: updatedRecipeDetails.per_serving_fats || updatedRecipeDetails.fats || selectedRecipe.fats,
+            nutrition: updatedRecipeDetails.nutrition || selectedRecipe.nutrition
+          };
+          
+          // CRITICAL: Update selectedRecipe immediately using functional update
+          // This ensures the updated data persists even after loadMealPlan updates state
+          setSelectedRecipe(prev => {
+            // If prev exists and has the same ID, update it with new data
+            // Otherwise, just use the updated data
+            if (prev && ((prev as any).id === updatedSelectedRecipe.id || (prev as any).meal_id === updatedSelectedRecipe.meal_id)) {
+              return updatedSelectedRecipe;
+            }
+            return updatedSelectedRecipe;
+          });
+          
+          // Reload meal plan to update the grid
+          await loadMealPlan();
+          
+          // CRITICAL: After loadMealPlan completes, ensure selectedRecipe still has the updated data
+          // Use functional update to preserve the updated data even if mealPlan state changed
+          setSelectedRecipe(prev => {
+            if (prev && ((prev as any).id === updatedSelectedRecipe.id || (prev as any).meal_id === updatedSelectedRecipe.meal_id)) {
+              // Keep the updated data we set above
+              return updatedSelectedRecipe;
+            }
+            return prev;
+          });
+        } else {
+          // If no updated_recipe_details, just reload the meal plan
+          await loadMealPlan();
+        }
+      } else {
+        const errorData = await response.json().catch(() => ({ detail: 'Failed to apply substitution' }));
+        const errorMessage = errorData.detail || 'Please try again';
+        
+        // Check if error is about missing recipe details
+        if (errorMessage.includes('recipe details') || errorMessage.includes('ingredient information')) {
+          toast({
+            title: 'Cannot substitute ingredients',
+            description: 'This meal does not have detailed recipe information. Only AI-generated recipes or meals with full recipe details can have ingredients substituted.',
+            status: 'warning',
+            duration: 5000,
+            isClosable: true,
+          });
+        } else {
+          toast({
+            title: 'Failed to apply substitution',
+            description: errorMessage,
+            status: 'error',
+            duration: 3000,
+            isClosable: true,
+          });
+        }
+      }
+    } catch (err: any) {
+      console.error('Error applying substitution:', err);
+      toast({
+        title: 'Error applying substitution',
+        description: err.message || 'Please try again',
+        status: 'error',
+        duration: 3000,
+        isClosable: true,
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const estimateNutritionFromIngredients = (ingredients: any[]): { calories: number; protein: number; carbs: number; fats: number } => {
     const per100g: Record<string, [number, number, number, number]> = {
       'chicken breast': [165, 31, 0, 3.6],
@@ -1884,6 +2170,28 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
       ...(normalized.recipe || {}),
       servings: normalized.servings || 1
     };
+    
+    // CRITICAL: Preserve recipe_details structure for ingredient substitution
+    // This is needed because the backend checks recipe_details.ingredients
+    if (m.recipe_details && typeof m.recipe_details === 'object') {
+      normalized.recipe_details = m.recipe_details;
+    } else if (candidate?.recipe_details && typeof candidate.recipe_details === 'object') {
+      normalized.recipe_details = candidate.recipe_details;
+    } else if (m.recipe && typeof m.recipe === 'object' && m.recipe.recipe_details) {
+      normalized.recipe_details = m.recipe.recipe_details;
+    } else if (normalized.ingredients && normalized.ingredients.length > 0) {
+      // CRITICAL FIX: If we have ingredients but no recipe_details, create one from normalized data
+      // This ensures substitution works for AI-generated recipes that might not have recipe_details preserved
+      normalized.recipe_details = {
+        ingredients: normalized.ingredients,
+        instructions: normalized.instructions || [],
+        dietary_tags: normalized.dietary_tags || [],
+        servings: normalized.servings || 1,
+        ai_generated: normalized.ai_generated !== false,
+        title: normalized.title || m.meal_name || m.name || 'Recipe',
+        ...(normalized.nutrition ? { nutrition: normalized.nutrition } : {})
+      };
+    }
 
     setSelectedRecipe(normalized as any);
     setPreviewServings(normalized.servings || 1);
@@ -4659,13 +4967,52 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
                             ? (multiplier !== 1 ? (ingredient.quantity * multiplier).toFixed(1) : ingredient.quantity)
                             : null;
                           
+                          const ingredientName = typeof ingredient === 'string' 
+                            ? ingredient 
+                            : (ingredient.name || 'Unknown');
+                          const ingredientDisplay = typeof ingredient === 'string' 
+                            ? ingredient 
+                            : `${ingredient.name} - ${adjustedQuantity || ingredient.quantity}${ingredient.unit || 'g'}${multiplier !== 1 && (selectedRecipe as any).previewCalories ? ' (adjusted)' : ''}`;
+                          
+                          // CRITICAL: Check if this meal can be modified (has recipe_details with ingredients in database)
+                          // We MUST check the original meal object from mealPlan.meals, not the normalized selectedRecipe
+                          // because the backend checks the database, not the frontend state
+                          const mealId = (selectedRecipe as any).meal_id || selectedRecipe.id;
+                          const mealFromPlan = mealPlan?.meals?.find((m: any) => 
+                            (m.id === mealId) || (m.meal_id === mealId)
+                          );
+                          
+                          // Check recipe_details from the original meal object (what's in the database)
+                          const recipeDetailsFromDB = mealFromPlan?.recipe_details || mealFromPlan?.recipe?.recipe_details;
+                          
+                          // Check if recipe_details exists in database and has ingredients
+                          const hasRecipeDetailsWithIngredients = recipeDetailsFromDB && 
+                            recipeDetailsFromDB.ingredients && 
+                            Array.isArray(recipeDetailsFromDB.ingredients) &&
+                            recipeDetailsFromDB.ingredients.length > 0;
+                          
+                          // Only show substitute button if meal has recipe_details with ingredients in database
+                          // This ensures the backend check will pass
+                          const canSubstitute = hasRecipeDetailsWithIngredients;
+                          
                           return (
-                            <Text key={index} pl={4} borderLeft="3px solid" borderColor="blue.200">
-                              {typeof ingredient === 'string' 
-                                ? ingredient 
-                                : `${ingredient.name} - ${adjustedQuantity || ingredient.quantity}${ingredient.unit || 'g'}${multiplier !== 1 && (selectedRecipe as any).previewCalories ? ' (adjusted)' : ''}`
-                              }
-                            </Text>
+                            <HStack key={index} spacing={2} align="center">
+                              <Text pl={4} borderLeft="3px solid" borderColor="blue.200" flex={1}>
+                                {ingredientDisplay}
+                              </Text>
+                              {canSubstitute && (
+                                <Button
+                                  size="xs"
+                                  variant="ghost"
+                                  colorScheme="blue"
+                                  onClick={() => loadSubstitutionSuggestions(ingredientName)}
+                                  isLoading={loadingSubstitutions && substitutionIngredient === ingredientName}
+                                  title="Find substitutions"
+                                >
+                                  Substitute
+                                </Button>
+                              )}
+                            </HStack>
                           );
                         })}
                       </VStack>
@@ -4729,8 +5076,22 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
                   )}
 
                   {/* Fallback message if no detailed recipe info */}
-                  {(!selectedRecipe.ingredients || selectedRecipe.ingredients.length === 0) && 
-                   (!selectedRecipe.instructions || selectedRecipe.instructions.length === 0) && (
+                  {(() => {
+                    // Check if we have ingredients or instructions in the normalized object
+                    const hasIngredients = selectedRecipe.ingredients && selectedRecipe.ingredients.length > 0;
+                    const hasInstructions = selectedRecipe.instructions && selectedRecipe.instructions.length > 0;
+                    
+                    // Only show error message if we truly have no ingredients AND no instructions
+                    // AND we don't have recipe_details in the database (which would allow substitution)
+                    const mealId = (selectedRecipe as any).meal_id || selectedRecipe.id;
+                    const mealFromPlan = mealPlan?.meals?.find((m: any) => 
+                      (m.id === mealId) || (m.meal_id === mealId)
+                    );
+                    const hasRecipeDetailsInDB = mealFromPlan?.recipe_details || mealFromPlan?.recipe?.recipe_details;
+                    
+                    // Only show error if we have no ingredients, no instructions, AND no recipe_details in DB
+                    return !hasIngredients && !hasInstructions && !hasRecipeDetailsInDB;
+                  })() && (
                     <Box textAlign="center" py={8}>
                       <Text color="gray.500" mb={4}>
                         Detailed recipe information is not available for this meal.
@@ -5295,6 +5656,73 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
             <ModalFooter>
               <Button onClick={onIngredientGraphsClose}>Close</Button>
             </ModalFooter>
+          </ModalContent>
+        </Modal>
+
+        {/* Ingredient Substitution Modal */}
+        <Modal isOpen={isSubstitutionOpen} onClose={onSubstitutionClose} size="lg">
+          <ModalOverlay />
+          <ModalContent>
+            <ModalHeader>
+              <Text>Substitute: {substitutionIngredient}</Text>
+            </ModalHeader>
+            <ModalCloseButton />
+            <ModalBody pb={6}>
+              {loadingSubstitutions ? (
+                <Box textAlign="center" py={8}>
+                  <Spinner size="xl" color="blue.500" />
+                  <Text mt={4} color="gray.600">Finding substitutions...</Text>
+                </Box>
+              ) : substitutionSuggestions.length > 0 ? (
+                <VStack spacing={3} align="stretch">
+                  <Text fontSize="sm" color="gray.600">
+                    AI-generated substitution suggestions for <strong>{substitutionIngredient}</strong>:
+                  </Text>
+                  {substitutionSuggestions.map((suggestion: any, index: number) => (
+                    <Card key={index} variant="outline">
+                      <CardBody>
+                        <VStack spacing={2} align="stretch">
+                          <HStack justify="space-between">
+                            <Text fontWeight="semibold">{suggestion.name}</Text>
+                            <Badge colorScheme="green">{suggestion.quantity} {suggestion.unit}</Badge>
+                          </HStack>
+                          {suggestion.reason && (
+                            <Text fontSize="sm" color="gray.600">{suggestion.reason}</Text>
+                          )}
+                          {suggestion.nutrition_adjustment && (
+                            <Text fontSize="xs" color="gray.500" fontStyle="italic">
+                              {typeof suggestion.nutrition_adjustment === 'object' 
+                                ? (() => {
+                                    const adj = suggestion.nutrition_adjustment;
+                                    const changes = [];
+                                    if (adj.calories_change) changes.push(`Calories: ${adj.calories_change > 0 ? '+' : ''}${adj.calories_change}`);
+                                    if (adj.protein_change) changes.push(`Protein: ${adj.protein_change > 0 ? '+' : ''}${adj.protein_change}g`);
+                                    if (adj.carbs_change) changes.push(`Carbs: ${adj.carbs_change > 0 ? '+' : ''}${adj.carbs_change}g`);
+                                    if (adj.fats_change) changes.push(`Fats: ${adj.fats_change > 0 ? '+' : ''}${adj.fats_change}g`);
+                                    return changes.length > 0 ? changes.join(', ') : 'Nutrition may change';
+                                  })()
+                                : suggestion.nutrition_adjustment}
+                            </Text>
+                          )}
+                          <Button
+                            size="sm"
+                            colorScheme="blue"
+                            onClick={() => applySubstitution(suggestion)}
+                            isLoading={loading}
+                          >
+                            Use This Substitution
+                          </Button>
+                        </VStack>
+                      </CardBody>
+                    </Card>
+                  ))}
+                </VStack>
+              ) : (
+                <Text color="gray.500" textAlign="center" py={8}>
+                  No substitution suggestions found. Try a different ingredient.
+                </Text>
+              )}
+            </ModalBody>
           </ModalContent>
         </Modal>
 

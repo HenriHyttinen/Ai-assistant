@@ -1882,6 +1882,249 @@ def apply_ingredient_substitution(
             detail=f"Error applying ingredient substitution: {str(e)}"
         )
 
+@router.get("/meal-plans/{meal_plan_id}/meals/{meal_id}/substitutions/{ingredient_name}")
+def get_meal_ingredient_substitutions(
+    meal_plan_id: str,
+    meal_id: int,
+    ingredient_name: str,
+    reason: str = Query("dietary_preference", description="Reason for substitution"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get AI-generated ingredient substitution suggestions for a meal plan meal ingredient"""
+    try:
+        # Verify meal plan ownership
+        meal_plan = db.query(MealPlan).filter(
+            MealPlan.id == meal_plan_id,
+            MealPlan.user_id == current_user.id
+        ).first()
+        
+        if not meal_plan:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Meal plan not found"
+            )
+        
+        # Get meal
+        meal = db.query(MealPlanMeal).filter(
+            MealPlanMeal.id == meal_id,
+            MealPlanMeal.meal_plan_id == meal_plan_id
+        ).first()
+        
+        if not meal:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Meal not found"
+            )
+        
+        # Extract recipe from recipe_details JSON
+        recipe_details = meal.recipe_details or {}
+        
+        # Get ingredients from recipe_details
+        ingredients = recipe_details.get("ingredients", [])
+        
+        # CRITICAL FIX: Check if recipe_details exists and has ingredients
+        # If not, provide a helpful error message
+        if not recipe_details:
+            logger.warning(f"Meal {meal_id} does not have recipe_details in database")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="This meal does not have detailed recipe information stored. Please regenerate this meal to enable ingredient substitution."
+            )
+        
+        if not ingredients or len(ingredients) == 0:
+            logger.warning(f"Meal {meal_id} has recipe_details but no ingredients")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="This meal does not have ingredient information. Please regenerate this meal to enable ingredient substitution."
+            )
+        
+        # Convert recipe_details to dict format for substitution service
+        recipe_dict = {
+            "id": recipe_details.get("id", str(meal_id)),
+            "title": recipe_details.get("title") or recipe_details.get("meal_name") or meal.meal_name,
+            "ingredients": ingredients,
+            "dietary_tags": recipe_details.get("dietary_tags", [])
+        }
+        
+        # Get user preferences for substitution context
+        integration_service = IntegrationService()
+        user_preferences = integration_service.get_integrated_nutrition_preferences(db, current_user.id)
+        
+        # Get substitution suggestions
+        substitution_service = IngredientSubstitutionService()
+        suggestions = substitution_service.suggest_substitutions(
+            recipe=recipe_dict,
+            ingredient_to_replace=ingredient_name,
+            reason=reason,
+            user_preferences=user_preferences if isinstance(user_preferences, dict) else {}
+        )
+        
+        return {
+            "ingredient": ingredient_name,
+            "meal_id": meal_id,
+            "meal_plan_id": meal_plan_id,
+            "suggestions": suggestions
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting meal ingredient substitutions: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error getting meal ingredient substitutions: {str(e)}"
+        )
+
+@router.post("/meal-plans/{meal_plan_id}/meals/{meal_id}/substitutions/apply")
+def apply_meal_ingredient_substitution(
+    meal_plan_id: str,
+    meal_id: int,
+    request: Dict[str, Any] = Body(..., description="{ ingredient_name: str, substitution: dict }"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Apply an ingredient substitution to a meal plan meal"""
+    try:
+        # Verify meal plan ownership
+        meal_plan = db.query(MealPlan).filter(
+            MealPlan.id == meal_plan_id,
+            MealPlan.user_id == current_user.id
+        ).first()
+        
+        if not meal_plan:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Meal plan not found"
+            )
+        
+        # Get meal
+        meal = db.query(MealPlanMeal).filter(
+            MealPlanMeal.id == meal_id,
+            MealPlanMeal.meal_plan_id == meal_plan_id
+        ).first()
+        
+        if not meal:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Meal not found"
+            )
+        
+        ingredient_name = request.get("ingredient_name")
+        substitution = request.get("substitution")
+        
+        if not ingredient_name or not substitution:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="ingredient_name and substitution are required"
+            )
+        
+        # Extract recipe from recipe_details JSON
+        recipe_details = meal.recipe_details or {}
+        if not recipe_details:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Meal does not have recipe details. This meal cannot be modified."
+            )
+        
+        # Get ingredients from recipe_details
+        ingredients = recipe_details.get("ingredients", [])
+        
+        # Check if ingredients exist and are not empty
+        if not ingredients or len(ingredients) == 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="This meal does not have ingredient information. Only meals with detailed recipe information can have ingredients substituted."
+            )
+        
+        # Convert recipe_details to dict format for substitution service
+        recipe_dict = {
+            "id": recipe_details.get("id", str(meal_id)),
+            "title": recipe_details.get("title") or recipe_details.get("meal_name") or meal.meal_name,
+            "ingredients": ingredients,
+            "dietary_tags": recipe_details.get("dietary_tags", [])
+        }
+        
+        # Apply substitution
+        substitution_service = IngredientSubstitutionService()
+        updated_recipe = substitution_service.apply_substitution(
+            recipe=recipe_dict,
+            original_ingredient_name=ingredient_name,
+            substitution=substitution
+        )
+        
+        # Update recipe_details with updated ingredients
+        recipe_details["ingredients"] = updated_recipe.get("ingredients", [])
+        recipe_details["nutrition_needs_recalculation"] = True
+        
+        # Recalculate nutrition if possible
+        nutrition = None
+        if updated_recipe.get("ingredients"):
+            # Use nutrition AI to recalculate from ingredients
+            from ai.nutrition_ai import NutritionAI
+            nutrition_ai = NutritionAI()
+            
+            # Calculate nutrition from ingredients
+            try:
+                calculated_nutrition = nutrition_ai._calculate_recipe_nutrition(
+                    updated_recipe.get("ingredients", []),
+                    db
+                )
+                
+                if calculated_nutrition and calculated_nutrition.get('calories', 0) > 0:
+                    nutrition = {
+                        "calories": int(calculated_nutrition.get('calories', 0)),
+                        "protein": round(calculated_nutrition.get('protein', 0), 1),
+                        "carbs": round(calculated_nutrition.get('carbs', 0), 1),
+                        "fats": round(calculated_nutrition.get('fats', 0), 1)
+                    }
+            except Exception as e:
+                logger.warning(f"Could not recalculate nutrition after substitution: {e}")
+                nutrition = None
+            
+            if nutrition:
+                servings = recipe_details.get("servings", 1) or 1
+                recipe_details["calories"] = nutrition.get("calories", 0)
+                recipe_details["protein"] = nutrition.get("protein", 0)
+                recipe_details["carbs"] = nutrition.get("carbs", 0)
+                recipe_details["fats"] = nutrition.get("fats", 0)
+                recipe_details["per_serving_calories"] = int(nutrition.get("calories", 0) / servings) if servings > 0 else 0
+                recipe_details["per_serving_protein"] = round(nutrition.get("protein", 0) / servings, 1) if servings > 0 else 0
+                recipe_details["per_serving_carbs"] = round(nutrition.get("carbs", 0) / servings, 1) if servings > 0 else 0
+                recipe_details["per_serving_fats"] = round(nutrition.get("fats", 0) / servings, 1) if servings > 0 else 0
+        
+        # Update meal with new recipe_details
+        meal.recipe_details = recipe_details
+        flag_modified(meal, "recipe_details")
+        
+        # Update meal nutrition if available
+        if nutrition:
+            meal.calories = nutrition.get("calories", 0)
+            meal.protein = nutrition.get("protein", 0)
+            meal.carbs = nutrition.get("carbs", 0)
+            meal.fats = nutrition.get("fats", 0)
+        
+        db.commit()
+        db.refresh(meal)
+        
+        return {
+            "message": "Substitution applied successfully",
+            "meal_id": meal_id,
+            "meal_plan_id": meal_plan_id,
+            "updated_ingredients": updated_recipe.get("ingredients", []),
+            "updated_recipe_details": recipe_details
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error applying meal ingredient substitution: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error applying meal ingredient substitution: {str(e)}"
+        )
+
 @router.post("/meal-plans/{meal_plan_id}/optimize-timing")
 def optimize_meal_timing(
     meal_plan_id: str,
