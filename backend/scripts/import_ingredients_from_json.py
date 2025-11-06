@@ -79,7 +79,7 @@ def import_ingredients_from_json(json_file_path=None, max_ingredients=None):
         
         # Get the highest existing ingredient ID number
         max_id = 0
-        result = db.execute(text("SELECT id FROM ingredients WHERE id LIKE 'ing_%' ORDER BY CAST(SUBSTRING(id FROM 5) AS INTEGER) DESC LIMIT 1"))
+        result = db.execute(text("SELECT id FROM ingredients WHERE id LIKE 'ing_%' ORDER BY CAST(SUBSTR(id, 5) AS INTEGER) DESC LIMIT 1"))
         row = result.fetchone()
         if row:
             try:

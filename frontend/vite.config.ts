@@ -7,12 +7,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react({
-    typescript: {
-      // Skip type checking during build (for Docker)
-      check: false,
-    },
-  })],
+  plugins: [react()],
   resolve: {
     dedupe: ['react', 'react-dom', '@emotion/react', '@emotion/styled'],
     alias: {
