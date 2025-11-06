@@ -46,6 +46,7 @@ import { t } from '../../utils/translations';
 import CustomMealModal from '../../components/nutrition/CustomMealModal';
 import MealPlanVersionHistory from '../../components/nutrition/MealPlanVersionHistory';
 import MealPlanVersionComparison from '../../components/nutrition/MealPlanVersionComparison';
+import AddToMealPlanModal from '../../components/nutrition/AddToMealPlanModal';
 import { 
   FiPlus, 
   FiRefreshCw,
@@ -53,8 +54,10 @@ import {
   FiRotateCcw,
   FiShoppingCart,
   FiGitBranch,
-  FiTrash2
+  FiTrash2,
+  FiPieChart
 } from 'react-icons/fi';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 
 interface Meal {
   id: string;
@@ -178,16 +181,44 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
   const [versionComparison] = useState<{version1Id?: string, version2Id?: string}>({});
   const [loadingAlternatives, setLoadingAlternatives] = useState<{[key: string]: boolean}>({});
   const { isOpen: isCustomMealOpen, onOpen: onCustomMealOpen, onClose: onCustomMealClose } = useDisclosure();
+  const [editingMealId, setEditingMealId] = useState<string | null>(null);
+  const [editingMealData, setEditingMealData] = useState<any>(null);
   
   // Recipe selector for adding recipes to grid
   const [recipeSelectorOpen, setRecipeSelectorOpen] = useState(false);
   const [selectedSlot, setSelectedSlot] = useState<{date: string, mealType: string} | null>(null);
   const [availableRecipes, setAvailableRecipes] = useState<any[]>([]);
   const [recipeSearch, setRecipeSearch] = useState('');
+  
+  // Add to meal plan modal state
+  const [addToMealPlanRecipe, setAddToMealPlanRecipe] = useState<any | null>(null);
+  const { isOpen: isAddToMealPlanOpen, onOpen: onAddToMealPlanOpen, onClose: onAddToMealPlanClose } = useDisclosure();
+  
+  // Preview servings for recipe view modal
+  const [previewServings, setPreviewServings] = useState<number>(1);
+  
+  // Ingredient graphs modal state
+  const { isOpen: isIngredientGraphsOpen, onOpen: onIngredientGraphsOpen, onClose: onIngredientGraphsClose } = useDisclosure();
 
   // Simple swap state - first click selects meal, second click swaps
   const [swapMode, setSwapMode] = useState(false);
   const [swapSourceMeal, setSwapSourceMeal] = useState<{id: string, date: string, mealType: string} | null>(null);
+
+  // Track recently added meal to display in box below grid
+  // Load from localStorage on mount to persist across page switches
+  const [recentlyAddedMeal, setRecentlyAddedMeal] = useState<Meal | null>(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const saved = localStorage.getItem('recentlyAddedMeal');
+        if (saved) {
+          return JSON.parse(saved);
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to load recently added meal from localStorage:', e);
+    }
+    return null;
+  });
 
   const cardBg = useColorModeValue('white', 'gray.800');
   const borderColor = useColorModeValue('gray.200', 'gray.600');
@@ -468,6 +499,7 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
       });
 
               if (response.ok) {
+                const result = await response.json();
                 const dayName = new Date(selectedSlot.date).toLocaleDateString(undefined, {weekday: 'long'});
                 toast({ 
                   title: 'Recipe added successfully!', 
@@ -476,6 +508,28 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
                   duration: 3000, 
                   isClosable: true 
                 });
+                
+                // Store the added recipe to display in the box below grid
+                const mealData = result.meal || result;
+                const addedMeal: Meal = {
+                  id: mealData.id || mealData.meal_id || recipe.id,
+                  meal_name: mealData.meal_name || recipe.title || recipe.name || recipe.meal_name,
+                  meal_type: (mealData.meal_type || selectedSlot.mealType) as any,
+                  calories: mealData.calories || recipe.per_serving_calories || recipe.calories || recipe.nutrition?.calories || 0,
+                  protein: mealData.protein || recipe.protein || recipe.nutrition?.protein || 0,
+                  carbs: mealData.carbs || recipe.carbs || recipe.nutrition?.carbs || 0,
+                  fats: mealData.fats || recipe.fats || recipe.nutrition?.fats || 0,
+                  recipe: mealData.recipe || recipe,
+                  dietary_tags: mealData.recipe?.dietary_tags || recipe.dietary_tags || recipe.dietaryTags || []
+                };
+                setRecentlyAddedMeal(addedMeal);
+                // Save to localStorage to persist across page switches
+                try {
+                  localStorage.setItem('recentlyAddedMeal', JSON.stringify(addedMeal));
+                } catch (e) {
+                  console.warn('Failed to save recently added meal to localStorage:', e);
+                }
+                
                 setRecipeSelectorOpen(false);
                 setSelectedSlot(null);
                 // CRITICAL FIX: Notify dashboard to reload
@@ -1412,13 +1466,24 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
     }
   };
 
-  // CRITICAL FIX: Generate complete meal plan (all meals at once, not progressive)
+  // CRITICAL FIX: Generate complete meal plan by generating all meals for each day sequentially
+  // Uses the same working code path as "Generate Day's Meals" button - ensures smooth updates and correct values
   const generateCompleteMealPlan = async () => {
+    if (!mealPlan) {
+      toast({ 
+        title: 'No meal plan structure', 
+        description: 'Please create a meal plan structure first', 
+        status: 'warning', 
+        duration: 3000, 
+        isClosable: true 
+      });
+      return;
+    }
+
     try {
       setIsGenerating(true);
       setLoading(true);
       setError(null);
-      setStreamingProgress('Generating complete meal plan...');
       
       const { supabase } = await import('../../lib/supabase.ts');
       const { data: { session } } = await supabase.auth.getSession();
@@ -1428,50 +1493,198 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
         toast({ title: 'Please log in', status: 'warning', duration: 2500, isClosable: true });
         return;
       }
+
+      // CRITICAL FIX: Generate all meals for each day sequentially (same as "Generate Day's Meals" button)
+      // This uses the same working code path as daily generation, ensuring smooth updates
+      const mealTypes = mealsPerDay === 5 
+        ? ['breakfast', 'lunch', 'dinner', 'morning snack', 'afternoon snack']
+        : mealsPerDay === 4
+        ? ['breakfast', 'lunch', 'dinner', 'snack']
+        : ['breakfast', 'lunch', 'dinner'];
       
-      const headers = { Authorization: `Bearer ${session.access_token}` };
-      const API_BASE_URL = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8000';
+      // CRITICAL FIX: For weekly plans, use weekDates to ensure Monday to Sunday order
+      const datesToGenerate = planType === 'weekly' ? weekDates : [selectedDate];
+      const days = datesToGenerate.length;
+      let totalGenerated = 0;
       
-      // Generate complete meal plan (not progressive)
-      const response = await fetch(`${API_BASE_URL}/nutrition/meal-plans/generate?progressive=false`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...headers
-        },
-        body: JSON.stringify({
-          plan_type: planType,
-          start_date: selectedDate,
-          end_date: planType === 'weekly' ? new Date(new Date(selectedDate).getTime() + 6 * 24 * 60 * 60 * 1000).toISOString().split('T')[0] : selectedDate,
-          generation_strategy: 'balanced',
-          preferences_override: {
-            daily_calorie_target: preferences.calorieTarget,
-            meals_per_day: mealsPerDay,
-            dietary_preferences: preferences.dietaryRestrictions,
-            allergies: preferences.allergies,
-            cuisine_preferences: preferences.cuisinePreferences
+      // Generate all meals for each day sequentially - when one day is done, start next
+      // For weekly plans, this ensures Monday to Sunday order
+      for (let dayIndex = 0; dayIndex < days; dayIndex++) {
+        const dateStr = datesToGenerate[dayIndex];
+        const dayName = new Date(dateStr).toLocaleDateString(undefined, {weekday: 'long', month: 'short', day: 'numeric'});
+        
+        // Find empty slots for this day
+        const emptyMealTypes = mealTypes.filter((mealType) => {
+          const existingMeal = mealPlan.meals.find((m: any) => {
+            const mDate = m.meal_date || m.date;
+            const mType = m.meal_type || m.type;
+            return mDate === dateStr && mType === mealType;
+          });
+          return !existingMeal;
+        });
+        
+        if (emptyMealTypes.length === 0) {
+          setStreamingProgress(`Day ${dayIndex + 1}/${days} (${dayName}): All meals already exist, skipping...`);
+          await new Promise(resolve => setTimeout(resolve, 300));
+          continue;
+        }
+        
+        // Generate all empty meals for this day sequentially
+        setStreamingProgress(`Day ${dayIndex + 1}/${days} (${dayName}): Generating ${emptyMealTypes.length} meals...`);
+        
+        for (let i = 0; i < emptyMealTypes.length; i++) {
+          const mealType = emptyMealTypes[i];
+          const slotKey = `${dateStr}-${mealType}`;
+          
+          // CRITICAL FIX: Track which specific meal slot is generating (only show loading for that button)
+          setGeneratingMeals(prev => new Set(prev).add(slotKey));
+          setStreamingProgress(`Day ${dayIndex + 1}/${days} (${dayName}): Generating ${mealType}... (${i + 1}/${emptyMealTypes.length})`);
+          
+          try {
+            const response = await fetch(`http://localhost:8000/nutrition/meal-plans/${mealPlan.id}/generate-meal-slot`, {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${session.access_token}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                meal_date: dateStr,
+                meal_type: mealType.toLowerCase(),
+              }),
+            });
+
+            if (response.ok) {
+              const result = await response.json();
+              totalGenerated++;
+              
+              // CRITICAL FIX: Remove from generating set immediately after success
+              setGeneratingMeals(prev => {
+                const next = new Set(prev);
+                next.delete(slotKey);
+                return next;
+              });
+              
+              // Update meal plan immediately for smooth progressive updates
+              const updatedMeal = {
+                ...result.meal,
+                meal_date: dateStr,
+                meal_type: mealType,
+                date: dateStr,
+                type: mealType,
+                recipe: {
+                  ...(result.meal.recipe || {}),
+                  meal_type: mealType
+                },
+                recipe_details: {
+                  ...(result.meal.recipe || result.meal.recipe_details || {}),
+                  meal_type: mealType
+                }
+              };
+              
+              setMealPlan(prev => {
+                if (!prev) return null;
+                const existingIndex = prev.meals.findIndex(
+                  (m: any) => {
+                    const mDate = m.meal_date || m.date;
+                    const mType = m.meal_type || m.type;
+                    return mDate === dateStr && mType === mealType;
+                  }
+                );
+                
+                if (existingIndex >= 0) {
+                  const updatedMeals = [...prev.meals];
+                  updatedMeals[existingIndex] = updatedMeal;
+                  return { ...prev, meals: updatedMeals };
+                } else {
+                  return { ...prev, meals: [...prev.meals, updatedMeal] };
+                }
+              });
+              
+              // Small delay for smooth visual updates
+              await new Promise(resolve => setTimeout(resolve, 200));
+            } else {
+              // CRITICAL FIX: Remove from generating set on error
+              setGeneratingMeals(prev => {
+                const next = new Set(prev);
+                next.delete(slotKey);
+                return next;
+              });
+              console.warn(`Failed to generate ${mealType} for ${dateStr}`);
+            }
+          } catch (err) {
+            // CRITICAL FIX: Remove from generating set on exception
+            setGeneratingMeals(prev => {
+              const next = new Set(prev);
+              next.delete(slotKey);
+              return next;
+            });
+            console.error(`Error generating ${mealType} for ${dateStr}:`, err);
+            // Continue with next meal instead of failing completely
           }
-        })
+        }
+        
+        // Day complete - show progress and small delay before next day
+        setStreamingProgress(`Day ${dayIndex + 1}/${days} (${dayName}): Complete! ✅`);
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+      
+      // Reload meal plan to ensure consistency
+      await loadMealPlan();
+      
+      // CRITICAL: Automatically adjust portions to fit nutrition target
+      if (mealPlan?.id && totalGenerated > 0) {
+        setStreamingProgress('Adjusting portions to fit your nutrition target...');
+        
+        try {
+          const { supabase } = await import('../../lib/supabase.ts');
+          const { data: { session } } = await supabase.auth.getSession();
+          
+          if (session?.access_token) {
+            // For weekly plans, adjust all days. For daily plans, adjust the selected date
+            const datesToAdjust = planType === 'weekly' ? weekDates : [selectedDate];
+            
+            // Adjust all days in parallel
+            const adjustmentPromises = datesToAdjust.map(async (date) => {
+              try {
+                const response = await fetch(
+                  `http://localhost:8000/nutrition/meal-plans/${mealPlan.id}/fix-daily-totals?target_date=${date}`,
+                  {
+                    method: 'POST',
+                    headers: {
+                      'Authorization': `Bearer ${session.access_token}`,
+                    },
+                  }
+                );
+                return response.ok;
+              } catch (err) {
+                console.error(`Error adjusting daily total for ${date}:`, err);
+                return false;
+              }
+            });
+            
+            await Promise.all(adjustmentPromises);
+            
+            // Reload meal plan after adjustment
+            await loadMealPlan();
+          }
+        } catch (err) {
+          console.error('Error adjusting daily totals:', err);
+          // Don't fail the whole generation if adjustment fails
+        }
+      }
+      
+      setStreamingProgress(null);
+      toast({ 
+        title: 'Meal plan generated!', 
+        description: `Generated ${totalGenerated} meals across ${days} day${days > 1 ? 's' : ''}. Portions adjusted to fit your nutrition target.`, 
+        status: 'success', 
+        duration: 4000, 
+        isClosable: true 
       });
       
-        if (response.ok) {
-          const mealPlanData = await response.json();
-          setMealPlan(mealPlanData);
-          setStreamingProgress(null);
-          toast({ 
-            title: 'Meal plan generated!', 
-            description: `Complete ${planType} meal plan with all meals generated.`, 
-            status: 'success', 
-            duration: 4000, 
-            isClosable: true 
-          });
-          // CRITICAL FIX: Notify dashboard to reload
-          window.dispatchEvent(new CustomEvent('mealPlanUpdated'));
-          await loadMealPlan();
-      } else {
-        const errorData = await response.json().catch(() => ({ detail: 'Failed to generate meal plan' }));
-        throw new Error(errorData.detail || 'Failed to generate meal plan');
-      }
+      // CRITICAL FIX: Notify dashboard to reload
+      window.dispatchEvent(new CustomEvent('mealPlanUpdated'));
+      
     } catch (err: any) {
       console.error('Error generating complete meal plan:', err);
       setError(err.message || 'Failed to generate meal plan');
@@ -1486,6 +1699,8 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
       setIsGenerating(false);
       setLoading(false);
       setStreamingProgress(null);
+      // CRITICAL FIX: Clear all generating meals on completion
+      setGeneratingMeals(new Set());
     }
   };
 
@@ -1541,6 +1756,9 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
   // Handle serving size changes with preview
   const handleServingsChange = (newServings: number) => {
     if (!selectedRecipe || newServings <= 0) return;
+    
+    // Update preview servings state
+    setPreviewServings(newServings);
     
     // Always allow preview - no need to check for meal ID
     const currentServings = selectedRecipe.servings || selectedRecipe.recipe?.servings || 1;
@@ -1668,6 +1886,7 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
     };
 
     setSelectedRecipe(normalized as any);
+    setPreviewServings(normalized.servings || 1);
     onRecipeOpen();
   };
 
@@ -2024,9 +2243,15 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
         return;
       }
       
-      // Save custom meal to backend
-      const response = await fetch(`http://localhost:8000/nutrition/meal-plans/${mealPlan.id}/custom-meal`, {
-        method: 'POST',
+      // Determine if we're creating or updating
+      const isEditing = editingMealId !== null;
+      const url = isEditing 
+        ? `http://localhost:8000/nutrition/meal-plans/${mealPlan.id}/custom-meal/${editingMealId}`
+        : `http://localhost:8000/nutrition/meal-plans/${mealPlan.id}/custom-meal`;
+      
+      // Save custom meal to backend (POST for create, PUT for update)
+      const response = await fetch(url, {
+        method: isEditing ? 'PUT' : 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${session.access_token}`
@@ -2038,8 +2263,10 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
         const result = await response.json();
         
         // Create a new meal object from the custom meal data
+        // Use existing meal ID if editing, otherwise use the result ID
+        const mealId = isEditing ? editingMealId : (result.meal_id || result.id);
         const newMeal: Meal = {
-          id: result.meal_id || result.id,
+          id: mealId,
           meal_name: customMealData.meal_name,
           meal_type: customMealData.meal_type,
           meal_date: result.meal_date || selectedDate, // CRITICAL: Ensure meal has a date
@@ -2074,15 +2301,32 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
         // The backend should have added the meal with proper date/type assignment
         await loadMealPlan();
         
+        // Store the added meal to display in the box below grid
+        setRecentlyAddedMeal(newMeal);
+        // Save to localStorage to persist across page switches
+        try {
+          localStorage.setItem('recentlyAddedMeal', JSON.stringify(newMeal));
+        } catch (e) {
+          console.warn('Failed to save recently added meal to localStorage:', e);
+        }
+        
+        // Clear editing state
+        const wasEditing = editingMealId !== null;
+        setEditingMealId(null);
+        setEditingMealData(null);
+        onCustomMealClose();
+        
         toast({
-          title: 'Custom meal added!',
-          description: 'Your custom meal has been added to the meal plan.',
+          title: wasEditing ? 'Custom meal updated!' : 'Custom meal added!',
+          description: wasEditing 
+            ? 'Your custom meal has been updated in the meal plan.'
+            : 'Your custom meal has been added to the meal plan.',
           status: 'success',
           duration: 3000,
           isClosable: true,
         });
         
-        console.log('✅ Custom meal added successfully');
+        console.log(`✅ Custom meal ${wasEditing ? 'updated' : 'added'} successfully`);
       } else {
         throw new Error('Failed to save custom meal');
       }
@@ -2849,6 +3093,89 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
       setLoading(false);
     }
   };
+  
+  const handleAddToDailyLog = async (recipe: any) => {
+    if (!recipe) return;
+    setLoading(true);
+    try {
+      const { supabase } = await import('../../lib/supabase.ts');
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        toast({ title: 'Please log in', status: 'warning', duration: 2500, isClosable: true });
+        return;
+      }
+      
+      const today = new Date().toISOString().split('T')[0];
+      const servings = previewServings || recipe.servings || recipe.recipe?.servings || 1;
+      
+      // Calculate nutrition per serving
+      const baseCalories = recipe.per_serving_calories ?? recipe.recipe?.per_serving_calories ?? recipe.calories ?? recipe.nutrition?.calories ?? 0;
+      const baseProtein = recipe.per_serving_protein ?? recipe.recipe?.per_serving_protein ?? recipe.protein ?? recipe.nutrition?.protein ?? 0;
+      const baseCarbs = recipe.per_serving_carbs ?? recipe.recipe?.per_serving_carbs ?? recipe.carbs ?? recipe.nutrition?.carbs ?? 0;
+      const baseFats = recipe.per_serving_fats ?? recipe.per_serving_fat ?? recipe.recipe?.per_serving_fats ?? recipe.recipe?.per_serving_fat ?? recipe.fats ?? recipe.nutrition?.fats ?? 0;
+      
+      // Scale by servings
+      const scaledCalories = Math.round(baseCalories * servings);
+      const scaledProtein = Math.round(baseProtein * servings);
+      const scaledCarbs = Math.round(baseCarbs * servings);
+      const scaledFats = Math.round(baseFats * servings);
+      
+      // Determine meal type from recipe
+      const mealType = recipe.meal_type || recipe.type || recipe.recipe?.meal_type || 'breakfast';
+      
+      const response = await fetch(
+        'http://localhost:8000/daily-logging/log-daily-intake',
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            log_date: today,
+            entries: [{
+              recipe_id: recipe.id || recipe.recipe_id,
+              food_name: recipe.title || recipe.meal_name || recipe.name || 'Recipe',
+              quantity: servings,
+              unit: 'serving',
+              meal_type: mealType,
+              calories: scaledCalories,
+              protein: scaledProtein,
+              carbs: scaledCarbs,
+              fats: scaledFats
+            }]
+          })
+        }
+      );
+      
+      if (response.ok) {
+        toast({ 
+          title: 'Added to Daily Log!', 
+          description: `${recipe.title || recipe.meal_name || recipe.name} (${servings} serving${servings !== 1 ? 's' : ''}) added to your daily log.`, 
+          status: 'success', 
+          duration: 3000, 
+          isClosable: true 
+        });
+        onRecipeClose();
+        // Trigger a custom event to notify other components to refresh
+        window.dispatchEvent(new CustomEvent('dailyLogUpdated', { detail: { date: today } }));
+      } else {
+        const errorData = await response.json().catch(() => ({ detail: 'Failed to add to daily log' }));
+        throw new Error(errorData.detail || 'Failed to add to daily log');
+      }
+    } catch (err: any) {
+      console.error('Error adding to daily log:', err);
+      toast({ 
+        title: 'Failed to add to daily log', 
+        description: err.message || 'Please try again', 
+        status: 'error', 
+        duration: 3000, 
+        isClosable: true 
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleFixDailyTotal = async (date: string) => {
     if (!mealPlan) return;
@@ -3161,20 +3488,6 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
                   </Button>
                 </HStack>
               )}
-              {!mealPlan && (
-                <Button 
-                  colorScheme="blue" 
-                  leftIcon={<FiCoffee />}
-                  onClick={async () => {
-                    // Auto-create empty meal plan structure for progressive generation
-                    await generateMealPlan();
-                  }}
-                  isLoading={loading}
-                  size="sm"
-                >
-                  Create Meal Plan Structure
-                </Button>
-              )}
             </HStack>
           </VStack>
 
@@ -3224,19 +3537,8 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
                   </Text>
                 </VStack>
                 <VStack spacing={3}>
-                  <Button
-                    colorScheme="blue"
-                    size="lg"
-                    leftIcon={<FiCoffee />}
-                    onClick={async () => {
-                      await generateMealPlan();
-                    }}
-                    isLoading={loading}
-                  >
-                    Create Meal Plan Structure
-                  </Button>
                   <Text fontSize="sm" color="gray.400">
-                    After creating the structure, click "Generate Recipe" or "Pick from Database" on each meal slot
+                    Click "Create Meal Plan Structure" above to get started, then use "Generate Recipe" or "Pick from Database" on each meal slot
                   </Text>
                 </VStack>
               </VStack>
@@ -3360,6 +3662,113 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
                                   Fix Daily Total
                                 </Button>
                               )}
+                              {(() => {
+                                // Check if day has empty slots
+                                const emptySlots = mealTypes.filter((slot, slotIdx) => !gridAssignments[d]?.[slotIdx]);
+                                const hasEmptySlots = emptySlots.length > 0;
+                                
+                                return hasEmptySlots && mealPlan ? (
+                                  <Button 
+                                    size="xs" 
+                                    colorScheme="blue" 
+                                    variant="outline" 
+                                    onClick={async () => {
+                                      if (!mealPlan) return;
+                                      
+                                      try {
+                                        setLoading(true);
+                                        const { supabase } = await import('../../lib/supabase.ts');
+                                        const { data: { session } } = await supabase.auth.getSession();
+                                        
+                                        if (!session?.access_token) {
+                                          toast({ title: 'Please log in', status: 'warning', duration: 2500, isClosable: true });
+                                          return;
+                                        }
+                                        
+                                        // Generate all empty slots for this day
+                                        const emptyMealTypes = mealTypes.filter((slot, slotIdx) => !gridAssignments[d]?.[slotIdx]);
+                                        
+                                        toast({
+                                          title: 'Generating meals...',
+                                          description: `Generating ${emptyMealTypes.length} meals for ${new Date(d).toLocaleDateString(undefined, {weekday: 'long'})}`,
+                                          status: 'info',
+                                          duration: 3000,
+                                          isClosable: true,
+                                        });
+                                        
+                                        // Generate each empty slot sequentially
+                                        for (const mealType of emptyMealTypes) {
+                                          await generateMealSlot(d, mealType);
+                                          // Small delay between generations to avoid rate limiting
+                                          await new Promise(resolve => setTimeout(resolve, 500));
+                                        }
+                                        
+                                        // CRITICAL: Automatically adjust portions to fit nutrition target
+                                        if (mealPlan?.id && emptyMealTypes.length > 0) {
+                                          try {
+                                            const { supabase } = await import('../../lib/supabase.ts');
+                                            const { data: { session } } = await supabase.auth.getSession();
+                                            
+                                            if (session?.access_token) {
+                                              // Show adjustment message
+                                              toast({
+                                                title: 'Adjusting portions...',
+                                                description: 'Fitting meals to your nutrition target',
+                                                status: 'info',
+                                                duration: 2000,
+                                                isClosable: true,
+                                              });
+                                              
+                                              // Adjust daily total for this day
+                                              const response = await fetch(
+                                                `http://localhost:8000/nutrition/meal-plans/${mealPlan.id}/fix-daily-totals?target_date=${d}`,
+                                                {
+                                                  method: 'POST',
+                                                  headers: {
+                                                    'Authorization': `Bearer ${session.access_token}`,
+                                                  },
+                                                }
+                                              );
+                                              
+                                              if (response.ok) {
+                                                // Reload meal plan after adjustment
+                                                await loadMealPlan();
+                                              }
+                                            }
+                                          } catch (err) {
+                                            console.error('Error adjusting daily total:', err);
+                                            // Don't fail the whole generation if adjustment fails
+                                          }
+                                        }
+                                        
+                                        toast({
+                                          title: 'Meals generated!',
+                                          description: `Generated ${emptyMealTypes.length} meals for ${new Date(d).toLocaleDateString(undefined, {weekday: 'long'})}. Portions adjusted to fit your nutrition target.`,
+                                          status: 'success',
+                                          duration: 3000,
+                                          isClosable: true,
+                                        });
+                                        
+                                        await loadMealPlan();
+                                      } catch (err: any) {
+                                        console.error('Error generating day meals:', err);
+                                        toast({ 
+                                          title: 'Failed to generate meals', 
+                                          description: err.message, 
+                                          status: 'error', 
+                                          duration: 3000, 
+                                          isClosable: true 
+                                        });
+                                      } finally {
+                                        setLoading(false);
+                                      }
+                                    }}
+                                    isLoading={loading}
+                                  >
+                                    Generate Day's Meals
+                                  </Button>
+                                ) : null;
+                              })()}
                               {dayCalories > 0 && (
                                 <Button size="xs" colorScheme="green" variant="outline" onClick={() => handleLogDayToDailyIntake(d)}>
                                   Log Day
@@ -3620,7 +4029,7 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
                                         variant="outline" 
                                         colorScheme="purple"
                                         onClick={() => generateMealSlot(d, slot)}
-                                        isLoading={loading || (generatingMeals.has(`${d}-${slotIdx}-${slot}`))}
+                                        isLoading={generatingMeals.has(`${d}-${slotIdx}-${slot}`)}
                                         leftIcon={mealsPerDay > 4 ? undefined : <FiCoffee />}
                                         flex={1}
                                         minW={mealsPerDay > 4 ? "60px" : "80px"}
@@ -3653,7 +4062,7 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
                                     variant="outline" 
                                     colorScheme="blue"
                                     onClick={() => generateMealSlot(d, slot)}
-                                    isLoading={loading || (generatingMeals.has(`${d}-${slotIdx}-${slot}`))}
+                                    isLoading={generatingMeals.has(`${d}-${slotIdx}-${slot}`)}
                                     leftIcon={mealsPerDay > 4 ? undefined : <FiCoffee />}
                                     width="100%"
                                     fontSize={mealsPerDay > 4 ? "10px" : "12px"}
@@ -3753,6 +4162,198 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
           </ModalContent>
         </Modal>
 
+        {/* Recently Added Meal Display Box */}
+        {recentlyAddedMeal && (
+          <Card bg={cardBg} borderColor="green.300" borderWidth={2} mt={4}>
+            <CardBody>
+              <VStack align="stretch" spacing={3}>
+                <HStack justify="space-between" align="start">
+                  <VStack align="start" spacing={1} flex={1}>
+                    <HStack spacing={2}>
+                      <Heading size="sm" color="green.600">
+                        ✓ Recently Added Meal
+                      </Heading>
+                      <Badge colorScheme="green" variant="subtle" size="sm">
+                        {recentlyAddedMeal.meal_type || recentlyAddedMeal.type || 'meal'}
+                      </Badge>
+                    </HStack>
+                    <Text fontSize="md" fontWeight="semibold">
+                      {recentlyAddedMeal.meal_name || recentlyAddedMeal.name || 'Custom Meal'}
+                    </Text>
+                  </VStack>
+                  <Button
+                    size="xs"
+                    variant="ghost"
+                    onClick={() => {
+                      setRecentlyAddedMeal(null);
+                      // Clear from localStorage when dismissed
+                      try {
+                        localStorage.removeItem('recentlyAddedMeal');
+                      } catch (e) {
+                        console.warn('Failed to remove recently added meal from localStorage:', e);
+                      }
+                    }}
+                    aria-label="Close"
+                  >
+                    ×
+                  </Button>
+                </HStack>
+                
+                <HStack spacing={4} fontSize="sm" color="gray.600">
+                  <Text fontWeight="semibold">
+                    {Math.round(
+                      recentlyAddedMeal.calories ??
+                      recentlyAddedMeal.recipe?.per_serving_calories ??
+                      recentlyAddedMeal.recipe?.nutrition?.calories ??
+                      recentlyAddedMeal.recipe?.calories ??
+                      0
+                    )} cal
+                  </Text>
+                  {(recentlyAddedMeal.protein || recentlyAddedMeal.recipe?.nutrition?.protein) && (
+                    <Text>P: {Math.round(recentlyAddedMeal.protein ?? recentlyAddedMeal.recipe?.nutrition?.protein ?? 0)}g</Text>
+                  )}
+                  {(recentlyAddedMeal.carbs || recentlyAddedMeal.recipe?.nutrition?.carbs) && (
+                    <Text>C: {Math.round(recentlyAddedMeal.carbs ?? recentlyAddedMeal.recipe?.nutrition?.carbs ?? 0)}g</Text>
+                  )}
+                  {(recentlyAddedMeal.fats || recentlyAddedMeal.recipe?.nutrition?.fats) && (
+                    <Text>F: {Math.round(recentlyAddedMeal.fats ?? recentlyAddedMeal.recipe?.nutrition?.fats ?? 0)}g</Text>
+                  )}
+                </HStack>
+                
+                {(recentlyAddedMeal.dietary_tags && recentlyAddedMeal.dietary_tags.length > 0) && (
+                  <HStack spacing={1} wrap="wrap">
+                    {recentlyAddedMeal.dietary_tags.slice(0, 5).map((tag: string) => (
+                      <Badge key={tag} size="xs" colorScheme="green" variant="subtle">
+                        {tag}
+                      </Badge>
+                    ))}
+                  </HStack>
+                )}
+                
+                <HStack spacing={2}>
+                  <Button
+                    size="sm"
+                    colorScheme="blue"
+                    variant="outline"
+                    onClick={() => {
+                      if (recentlyAddedMeal) {
+                        handleViewRecipe(recentlyAddedMeal);
+                      }
+                    }}
+                  >
+                    View Recipe
+                  </Button>
+                  <Button
+                    size="sm"
+                    colorScheme="green"
+                    variant="outline"
+                    onClick={() => {
+                      if (recentlyAddedMeal) {
+                        // Convert meal data to CustomMealData format
+                        const mealData = recentlyAddedMeal.recipe || recentlyAddedMeal;
+                        const customMealData = {
+                          meal_name: recentlyAddedMeal.meal_name ?? recentlyAddedMeal.name ?? mealData?.title ?? '',
+                          meal_type: (recentlyAddedMeal.meal_type ?? recentlyAddedMeal.type ?? 'breakfast') as any,
+                          cuisine: mealData?.cuisine ?? '',
+                          prep_time: mealData?.prep_time ?? recentlyAddedMeal.prep_time ?? 0,
+                          cook_time: mealData?.cook_time ?? recentlyAddedMeal.cook_time ?? 0,
+                          servings: mealData?.servings ?? 1,
+                          difficulty: (mealData?.difficulty ?? recentlyAddedMeal.difficulty_level ?? 'easy') as any,
+                          summary: mealData?.summary ?? '',
+                          ingredients: mealData?.ingredients ?? recentlyAddedMeal.ingredients ?? [{ name: '', quantity: 0, unit: 'g' }],
+                          instructions: mealData?.instructions ?? recentlyAddedMeal.instructions ?? [{ step: 1, description: '' }],
+                          dietary_tags: mealData?.dietary_tags ?? recentlyAddedMeal.dietary_tags ?? [],
+                          nutrition: {
+                            calories: recentlyAddedMeal.calories ?? mealData?.nutrition?.calories ?? mealData?.per_serving_calories ?? 0,
+                            protein: recentlyAddedMeal.protein ?? mealData?.nutrition?.protein ?? 0,
+                            carbs: recentlyAddedMeal.carbs ?? mealData?.nutrition?.carbs ?? 0,
+                            fats: recentlyAddedMeal.fats ?? mealData?.nutrition?.fats ?? 0
+                          }
+                        };
+                        setEditingMealId(recentlyAddedMeal.id);
+                        setEditingMealData(customMealData);
+                        onCustomMealOpen();
+                      }
+                    }}
+                  >
+                    Edit Recipe
+                  </Button>
+                  <Button
+                    size="sm"
+                    colorScheme="red"
+                    variant="outline"
+                    onClick={async () => {
+                      if (!recentlyAddedMeal || !mealPlan) return;
+                      
+                      if (!window.confirm(`Are you sure you want to delete "${recentlyAddedMeal.meal_name || recentlyAddedMeal.name}"?`)) {
+                        return;
+                      }
+                      
+                      try {
+                        setLoading(true);
+                        const { supabase } = await import('../../lib/supabase.ts');
+                        const { data: { session } } = await supabase.auth.getSession();
+                        
+                        if (!session?.access_token) {
+                          toast({ title: 'Please log in', status: 'warning', duration: 2500, isClosable: true });
+                          return;
+                        }
+                        
+                        const response = await fetch(`http://localhost:8000/nutrition/meal-plans/${mealPlan.id}/meals/${recentlyAddedMeal.id}`, {
+                          method: 'DELETE',
+                          headers: {
+                            'Authorization': `Bearer ${session.access_token}`,
+                            'Content-Type': 'application/json',
+                          },
+                        });
+                        
+                        if (response.ok) {
+                          // Clear the recently added meal from state and localStorage
+                          setRecentlyAddedMeal(null);
+                          try {
+                            localStorage.removeItem('recentlyAddedMeal');
+                          } catch (e) {
+                            console.warn('Failed to remove recently added meal from localStorage:', e);
+                          }
+                          
+                          // Reload meal plan
+                          await loadMealPlan();
+                          
+                          toast({
+                            title: 'Meal deleted!',
+                            description: 'The meal has been removed from your meal plan.',
+                            status: 'success',
+                            duration: 3000,
+                            isClosable: true,
+                          });
+                        } else {
+                          throw new Error('Failed to delete meal');
+                        }
+                      } catch (err: any) {
+                        console.error('Error deleting meal:', err);
+                        toast({ 
+                          title: 'Failed to delete meal', 
+                          description: err.message, 
+                          status: 'error', 
+                          duration: 3000, 
+                          isClosable: true 
+                        });
+                      } finally {
+                        setLoading(false);
+                      }
+                    }}
+                  >
+                    Delete Recipe
+                  </Button>
+                  <Text fontSize="xs" color="gray.500">
+                    This meal has been added to your meal plan and will appear in the daily log and shopping list.
+                  </Text>
+                </HStack>
+              </VStack>
+            </CardBody>
+          </Card>
+        )}
+
         {/* Add Meal Button */}
         <Card bg={cardBg} borderColor={borderColor} borderStyle="dashed">
           <CardBody>
@@ -3817,18 +4418,37 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
           <ModalOverlay />
           <ModalContent>
             <ModalHeader>
-              <VStack align="start" spacing={1} pr={8}>
-                <Text>{selectedRecipe?.title || selectedRecipe?.meal_name || selectedRecipe?.name || 'Recipe Details'}</Text>
-                <HStack spacing={2}>
-                {selectedRecipe?.database_fallback ? (
-                  <Badge colorScheme="blue" variant="subtle">Database</Badge>
-                ) : selectedRecipe?.ai_generated !== false ? (
-                  <Badge colorScheme="purple" variant="subtle">AI Generated</Badge>
-                ) : (
-                  <Badge colorScheme="green" variant="subtle">Recipe Database</Badge>
+              <HStack justify="space-between" align="start" w="full" pr={8}>
+                <VStack align="start" spacing={1} flex={1}>
+                  <Text>{selectedRecipe?.title || selectedRecipe?.meal_name || selectedRecipe?.name || 'Recipe Details'}</Text>
+                  <HStack spacing={2}>
+                  {selectedRecipe?.database_fallback ? (
+                    <Badge colorScheme="blue" variant="subtle">Database</Badge>
+                  ) : selectedRecipe?.ai_generated !== false ? (
+                    <Badge colorScheme="purple" variant="subtle">AI Generated</Badge>
+                  ) : (
+                    <Badge colorScheme="green" variant="subtle">Recipe Database</Badge>
+                  )}
+                </HStack>
+                </VStack>
+                {selectedRecipe?.ingredients && selectedRecipe.ingredients.length > 0 && (
+                  <Button
+                    size="xs"
+                    leftIcon={<FiPieChart />}
+                    colorScheme="blue"
+                    variant="outline"
+                    onClick={onIngredientGraphsOpen}
+                    px={3}
+                    py={1.5}
+                    minW="auto"
+                    iconSpacing={1.5}
+                    fontSize="xs"
+                    h="auto"
+                  >
+                    Graphs
+                  </Button>
                 )}
               </HStack>
-              </VStack>
             </ModalHeader>
             <ModalCloseButton />
             <ModalBody maxH="80vh" overflowY="auto">
@@ -3938,8 +4558,7 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
                         height="32px"
                         fontSize="md"
                         onClick={() => {
-                          const currentServings = selectedRecipe.servings || selectedRecipe.recipe?.servings || 1;
-                          const newServings = Math.max(0.25, currentServings - 0.25);
+                          const newServings = Math.max(0.25, previewServings - 0.25);
                           handleServingsChange(newServings);
                         }}
                         isDisabled={loading}
@@ -3949,7 +4568,7 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
                       
                       <FormControl width="100px">
                         <NumberInput
-                          value={selectedRecipe.servings || selectedRecipe.recipe?.servings || 1}
+                          value={previewServings}
                           min={0.25}
                           max={10}
                           step={0.25}
@@ -3971,7 +4590,7 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
                       </FormControl>
                       
                       <Text fontSize="sm" color="gray.600" minW="50px" textAlign="center">
-                        serving{((selectedRecipe.servings || selectedRecipe.recipe?.servings || 1) !== 1) ? 's' : ''}
+                        serving{previewServings !== 1 ? 's' : ''}
                       </Text>
                       
                       <Button
@@ -3982,8 +4601,7 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
                         height="32px"
                         fontSize="md"
                         onClick={() => {
-                          const currentServings = selectedRecipe.servings || selectedRecipe.recipe?.servings || 1;
-                          const newServings = Math.min(10, currentServings + 0.25);
+                          const newServings = Math.min(10, previewServings + 0.25);
                           handleServingsChange(newServings);
                         }}
                         isDisabled={loading}
@@ -3996,7 +4614,7 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
                         variant="ghost"
                         colorScheme="gray"
                         onClick={() => {
-                          const originalServings = selectedRecipe.recipe?.servings || 1;
+                          const originalServings = selectedRecipe?.recipe?.servings || selectedRecipe?.servings || 1;
                           handleServingsChange(originalServings);
                         }}
                         isDisabled={loading}
@@ -4126,8 +4744,37 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
               )}
             </ModalBody>
             <ModalFooter>
-              <Button colorScheme="blue" onClick={onRecipeClose}>
+              <Button variant="ghost" mr={3} onClick={onRecipeClose}>
                 Close
+              </Button>
+              <Button 
+                colorScheme="green"
+                variant="outline"
+                mr={3}
+                onClick={async () => {
+                  await handleAddToDailyLog(selectedRecipe);
+                }}
+                isLoading={loading}
+                fontSize="xs"
+                px={3}
+                py={1.5}
+                size="sm"
+              >
+                Add to Daily Log ({previewServings} {previewServings !== 1 ? 'servings' : 'serving'})
+              </Button>
+              <Button 
+                colorScheme="blue"
+                onClick={() => {
+                  onRecipeClose();
+                  setAddToMealPlanRecipe(selectedRecipe);
+                  onAddToMealPlanOpen();
+                }}
+                fontSize="xs"
+                px={3}
+                py={1.5}
+                size="sm"
+              >
+                Add to Meal Plan ({previewServings} {previewServings !== 1 ? 'servings' : 'serving'})
               </Button>
             </ModalFooter>
           </ModalContent>
@@ -4339,9 +4986,317 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
         {/* Custom Meal Modal */}
         <CustomMealModal
           isOpen={isCustomMealOpen}
-          onClose={onCustomMealClose}
+          onClose={() => {
+            onCustomMealClose();
+            setEditingMealId(null);
+            setEditingMealData(null);
+          }}
           onSave={handleCustomMealSave}
+          initialData={editingMealData || undefined}
         />
+        
+        {/* Add to Meal Plan Modal */}
+        {addToMealPlanRecipe && (
+          <AddToMealPlanModal
+            isOpen={isAddToMealPlanOpen}
+            onClose={onAddToMealPlanClose}
+            recipe={addToMealPlanRecipe}
+            onRecipeAdded={() => {
+              toast({
+                title: 'Recipe Added!',
+                description: 'Recipe has been added to your meal plan',
+                status: 'success',
+                duration: 3000,
+                isClosable: true,
+              });
+              loadMealPlan();
+            }}
+            initialServings={previewServings}
+          />
+        )}
+        
+        {/* Ingredient Graphs Modal */}
+        <Modal isOpen={isIngredientGraphsOpen} onClose={onIngredientGraphsClose} size="xl">
+          <ModalOverlay />
+          <ModalContent>
+            <ModalHeader>
+              <Text>Ingredient Values - {selectedRecipe?.title || selectedRecipe?.meal_name || selectedRecipe?.name || 'Recipe'}</Text>
+            </ModalHeader>
+            <ModalCloseButton />
+            <ModalBody>
+              {selectedRecipe && selectedRecipe.ingredients && selectedRecipe.ingredients.length > 0 ? (
+                <VStack spacing={6} align="stretch">
+                  <Box>
+                    <Heading size="md" mb={4}>Ingredient Macronutrients (Protein, Carbs, Fats)</Heading>
+                    <Box p={4} bg="white" borderRadius="md" border="1px" borderColor="gray.200" height="400px">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart
+                          data={(() => {
+                            const currentServings = previewServings || selectedRecipe.servings || selectedRecipe.recipe?.servings || 1;
+                            const originalServings = selectedRecipe.recipe?.servings || selectedRecipe.servings || 1;
+                            const multiplier = currentServings / originalServings;
+                            
+                            // Nutrition per 100g lookup
+                            const per100g: Record<string, [number, number, number]> = {
+                              'chicken breast': [31, 0, 3.6],
+                              'chicken': [31, 0, 3.6],
+                              'chickpea': [19, 61, 6],
+                              'chickpeas': [19, 61, 6],
+                              'olive oil': [0, 0, 100],
+                              'oil': [0, 0, 100],
+                              'tomato': [0.9, 3.9, 0.2],
+                              'cucumber': [0.7, 3.6, 0.1],
+                              'lettuce': [1.4, 2.9, 0.2],
+                              'bell pepper': [1, 6, 0.3],
+                              'pepper': [1, 6, 0.3],
+                              'carrot': [0.9, 10, 0.2],
+                              'onion': [1.1, 9.3, 0.1],
+                              'garlic': [6.4, 33, 0.5],
+                              'feta': [14, 4, 21],
+                              'cheese': [20, 2, 25],
+                              'hummus': [8, 14, 9.6],
+                              'rice': [2.4, 28, 0.3],
+                              'quinoa': [4.4, 21, 1.9],
+                              'pasta': [5, 25, 1.1],
+                              'yogurt': [10, 3.6, 0.4],
+                              'egg': [6, 0.6, 5],
+                              'eggs': [6, 0.6, 5],
+                              'ham': [18, 1.5, 5],
+                              'mushroom': [3.1, 3.3, 0.3],
+                              'mushrooms': [3.1, 3.3, 0.3],
+                              'bread': [9, 49, 3.2],
+                              'rye bread': [9, 49, 3.2],
+                              'swiss cheese': [25, 1.5, 27],
+                              'mayonnaise': [1, 0.6, 75],
+                              'mustard': [3.7, 5.8, 3.3],
+                              'dill': [3.5, 7, 1.1],
+                              'zucchini': [1.2, 3.1, 0.2],
+                              'parsley': [3, 6, 0.8],
+                            };
+                            
+                            return (selectedRecipe.ingredients || []).map((ingredient: any) => {
+                              let name = '';
+                              let quantity = 0;
+                              let unit = 'g';
+                              
+                              if (typeof ingredient === 'string') {
+                                name = ingredient;
+                                quantity = 0;
+                              } else {
+                                name = ingredient.name || 'Unknown';
+                                quantity = parseFloat(ingredient.quantity) || 0;
+                                unit = ingredient.unit || 'g';
+                                // Scale quantity by servings multiplier
+                                quantity = quantity * multiplier;
+                              }
+                              
+                              // Convert to grams
+                              let quantityInGrams = quantity;
+                              if (unit.toLowerCase() === 'ml' || unit.toLowerCase() === 'l') {
+                                quantityInGrams = quantity; // 1ml ≈ 1g for most liquids
+                              } else if (unit.toLowerCase() === 'kg') {
+                                quantityInGrams = quantity * 1000;
+                              } else if (unit.toLowerCase() === 'oz') {
+                                quantityInGrams = quantity * 28.35;
+                              } else if (unit.toLowerCase() === 'lb') {
+                                quantityInGrams = quantity * 453.6;
+                              } else if (unit.toLowerCase() === 'unit' || unit.toLowerCase() === 'units' || unit.toLowerCase() === 'piece' || unit.toLowerCase() === 'pieces') {
+                                // For eggs, assume 1 unit = 50g
+                                if (name.toLowerCase().includes('egg')) {
+                                  quantityInGrams = quantity * 50;
+                                } else {
+                                  quantityInGrams = quantity * 100; // Default assumption
+                                }
+                              }
+                              
+                              // Find matching nutrition data
+                              const nameLower = name.toLowerCase();
+                              const match = Object.keys(per100g).find(k => nameLower.includes(k));
+                              let protein = 0;
+                              let carbs = 0;
+                              let fats = 0;
+                              
+                              if (match && quantityInGrams > 0) {
+                                const [p, c, f] = per100g[match];
+                                const factor = quantityInGrams / 100.0;
+                                protein = Math.round(p * factor * 10) / 10;
+                                carbs = Math.round(c * factor * 10) / 10;
+                                fats = Math.round(f * factor * 10) / 10;
+                              }
+                              
+                              return {
+                                name: name.length > 15 ? name.substring(0, 15) + '...' : name,
+                                fullName: name,
+                                protein: protein,
+                                carbs: carbs,
+                                fats: fats,
+                                quantity: quantityInGrams,
+                                unit: unit
+                              };
+                            }).filter((item: any) => item.protein > 0 || item.carbs > 0 || item.fats > 0);
+                          })()}
+                          margin={{ top: 5, right: 30, left: 20, bottom: 80 }}
+                        >
+                          <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                          <XAxis 
+                            dataKey="name" 
+                            angle={-45} 
+                            textAnchor="end" 
+                            height={100}
+                            interval={0}
+                            tick={{ fontSize: 10 }}
+                          />
+                          <YAxis 
+                            label={{ value: 'Macronutrients (g)', angle: -90, position: 'insideLeft', style: { textAnchor: 'middle' } }}
+                            tick={{ fontSize: 10 }}
+                          />
+                          <Tooltip 
+                            formatter={(value: any, name: string, props: any) => {
+                              // The name parameter is the dataKey ('protein', 'carbs', 'fats')
+                              const label = name === 'protein' ? 'Protein' : name === 'carbs' ? 'Carbs' : name === 'fats' ? 'Fats' : name;
+                              return [`${value}g`, label];
+                            }}
+                            labelFormatter={(label) => {
+                              const item = (() => {
+                                const currentServings = previewServings || selectedRecipe.servings || selectedRecipe.recipe?.servings || 1;
+                                const originalServings = selectedRecipe.recipe?.servings || selectedRecipe.servings || 1;
+                                const multiplier = currentServings / originalServings;
+                                return (selectedRecipe.ingredients || []).find((ing: any) => {
+                                  const ingName = typeof ing === 'string' ? ing : (ing.name || '');
+                                  return ingName.length > 15 ? ingName.substring(0, 15) + '...' === label : ingName === label;
+                                });
+                              })();
+                              return typeof item === 'string' ? item : (item?.name || label);
+                            }}
+                          />
+                          <Legend />
+                          <Bar dataKey="protein" stackId="a" fill="#22c55e" name="Protein" />
+                          <Bar dataKey="carbs" stackId="a" fill="#f59e0b" name="Carbs" />
+                          <Bar dataKey="fats" stackId="a" fill="#8b5cf6" name="Fats" />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </Box>
+                  </Box>
+                  
+                  <Box>
+                    <Heading size="sm" mb={2}>Ingredient Macronutrients</Heading>
+                    <VStack align="stretch" spacing={2}>
+                      {(() => {
+                        const currentServings = previewServings || selectedRecipe.servings || selectedRecipe.recipe?.servings || 1;
+                        const originalServings = selectedRecipe.recipe?.servings || selectedRecipe.servings || 1;
+                        const multiplier = currentServings / originalServings;
+                        
+                        // Nutrition per 100g lookup (same as in graph)
+                        const per100g: Record<string, [number, number, number]> = {
+                          'chicken breast': [31, 0, 3.6],
+                          'chicken': [31, 0, 3.6],
+                          'chickpea': [19, 61, 6],
+                          'chickpeas': [19, 61, 6],
+                          'olive oil': [0, 0, 100],
+                          'oil': [0, 0, 100],
+                          'tomato': [0.9, 3.9, 0.2],
+                          'cucumber': [0.7, 3.6, 0.1],
+                          'lettuce': [1.4, 2.9, 0.2],
+                          'bell pepper': [1, 6, 0.3],
+                          'pepper': [1, 6, 0.3],
+                          'carrot': [0.9, 10, 0.2],
+                          'onion': [1.1, 9.3, 0.1],
+                          'garlic': [6.4, 33, 0.5],
+                          'feta': [14, 4, 21],
+                          'cheese': [20, 2, 25],
+                          'hummus': [8, 14, 9.6],
+                          'rice': [2.4, 28, 0.3],
+                          'quinoa': [4.4, 21, 1.9],
+                          'pasta': [5, 25, 1.1],
+                          'yogurt': [10, 3.6, 0.4],
+                          'egg': [6, 0.6, 5],
+                          'eggs': [6, 0.6, 5],
+                          'ham': [18, 1.5, 5],
+                          'mushroom': [3.1, 3.3, 0.3],
+                          'mushrooms': [3.1, 3.3, 0.3],
+                          'bread': [9, 49, 3.2],
+                          'rye bread': [9, 49, 3.2],
+                          'swiss cheese': [25, 1.5, 27],
+                          'mayonnaise': [1, 0.6, 75],
+                          'mustard': [3.7, 5.8, 3.3],
+                          'dill': [3.5, 7, 1.1],
+                          'zucchini': [1.2, 3.1, 0.2],
+                          'parsley': [3, 6, 0.8],
+                        };
+                        
+                        return (selectedRecipe.ingredients || []).map((ingredient: any, index: number) => {
+                          let name = '';
+                          let quantity = 0;
+                          let unit = 'g';
+                          
+                          if (typeof ingredient === 'string') {
+                            name = ingredient;
+                            quantity = 0;
+                          } else {
+                            name = ingredient.name || 'Unknown';
+                            quantity = parseFloat(ingredient.quantity) || 0;
+                            unit = ingredient.unit || 'g';
+                            quantity = quantity * multiplier;
+                          }
+                          
+                          // Convert to grams
+                          let quantityInGrams = quantity;
+                          if (unit.toLowerCase() === 'ml' || unit.toLowerCase() === 'l') {
+                            quantityInGrams = quantity;
+                          } else if (unit.toLowerCase() === 'kg') {
+                            quantityInGrams = quantity * 1000;
+                          } else if (unit.toLowerCase() === 'oz') {
+                            quantityInGrams = quantity * 28.35;
+                          } else if (unit.toLowerCase() === 'lb') {
+                            quantityInGrams = quantity * 453.6;
+                          } else if (unit.toLowerCase() === 'unit' || unit.toLowerCase() === 'units' || unit.toLowerCase() === 'piece' || unit.toLowerCase() === 'pieces') {
+                            if (name.toLowerCase().includes('egg')) {
+                              quantityInGrams = quantity * 50;
+                            } else {
+                              quantityInGrams = quantity * 100;
+                            }
+                          }
+                          
+                          // Calculate macronutrients
+                          const nameLower = name.toLowerCase();
+                          const match = Object.keys(per100g).find(k => nameLower.includes(k));
+                          let protein = 0;
+                          let carbs = 0;
+                          let fats = 0;
+                          
+                          if (match && quantityInGrams > 0) {
+                            const [p, c, f] = per100g[match];
+                            const factor = quantityInGrams / 100.0;
+                            protein = Math.round(p * factor * 10) / 10;
+                            carbs = Math.round(c * factor * 10) / 10;
+                            fats = Math.round(f * factor * 10) / 10;
+                          }
+                          
+                          return (
+                            <HStack key={index} justify="space-between" p={2} bg="gray.50" borderRadius="md">
+                              <Text fontWeight="semibold">{name}</Text>
+                              <HStack spacing={3}>
+                                {protein > 0 && <Text fontSize="sm" color="green.600">P: {protein}g</Text>}
+                                {carbs > 0 && <Text fontSize="sm" color="orange.600">C: {carbs}g</Text>}
+                                {fats > 0 && <Text fontSize="sm" color="purple.600">F: {fats}g</Text>}
+                                {(protein === 0 && carbs === 0 && fats === 0) && <Text fontSize="sm" color="gray.500">N/A</Text>}
+                              </HStack>
+                            </HStack>
+                          );
+                        });
+                      })()}
+                    </VStack>
+                  </Box>
+                </VStack>
+              ) : (
+                <Text color="gray.500">No ingredients available for this recipe.</Text>
+              )}
+            </ModalBody>
+            <ModalFooter>
+              <Button onClick={onIngredientGraphsClose}>Close</Button>
+            </ModalFooter>
+          </ModalContent>
+        </Modal>
 
         {/* Version Comparison */}
         {versionComparison.version1Id && versionComparison.version2Id && (

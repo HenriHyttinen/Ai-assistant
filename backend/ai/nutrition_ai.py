@@ -32,13 +32,22 @@ class NutritionAI:
         Sequential prompting for meal plan generation with 3+ steps and recovery mechanisms
         Enhanced with RAG (Retrieval-Augmented Generation) for better recipe suggestions
         """
+        logger.info(f"🔍 generate_meal_plan_sequential called: plan_type={plan_request.plan_type}, openai_client={self.openai_client is not None}")
+        
         if not self.openai_client:
-            logger.warning("OpenAI not available, using fallback meal plan generation")
+            logger.warning("⚠️ OpenAI not available, using fallback meal plan generation")
             return self._fallback_meal_plan(user_preferences, plan_request)
         
         # Handle weekly plans differently
         if plan_request.plan_type == "weekly":
-            return self._generate_weekly_meal_plan(user_preferences, plan_request)
+            logger.info("📅 Weekly plan detected - calling _generate_weekly_meal_plan")
+            try:
+                result = self._generate_weekly_meal_plan(user_preferences, plan_request)
+                logger.info(f"✅ _generate_weekly_meal_plan returned: keys={list(result.keys()) if isinstance(result, dict) else type(result)}")
+                return result
+            except Exception as e:
+                logger.error(f"❌ Exception in _generate_weekly_meal_plan: {str(e)}", exc_info=True)
+                raise
         
         try:
             # Step 1: Analyze user profile and define strategy
@@ -133,20 +142,27 @@ class NutritionAI:
     def _generate_weekly_meal_plan(self, user_preferences: Dict[str, Any], plan_request: MealPlanRequest) -> Dict[str, Any]:
         """Generate a complete weekly meal plan with variety across days"""
         try:
+            logger.info("📅 Starting weekly meal plan generation with OpenAI (3 API calls: strategy, structure, recipes)")
             # Step 1: Create weekly strategy
             weekly_strategy_prompt = self._create_weekly_strategy_prompt(user_preferences, plan_request)
+            logger.info("📝 Step 1/3: Generating weekly strategy...")
             strategy_response = self._call_openai(weekly_strategy_prompt, self.parameters["strategy_generation"]["temperature"])
             weekly_strategy = self._parse_json_response(strategy_response, "weekly_strategy")
+            logger.info("✅ Step 1/3: Weekly strategy generated")
             
             # Step 2: Generate meal structure for the week
             weekly_structure_prompt = self._create_weekly_structure_prompt(weekly_strategy, user_preferences)
+            logger.info("📝 Step 2/3: Generating weekly meal structure...")
             structure_response = self._call_openai(weekly_structure_prompt, self.parameters["meal_planning"]["temperature"])
             weekly_structure = self._parse_json_response(structure_response, "weekly_structure")
+            logger.info("✅ Step 2/3: Weekly meal structure generated")
             
             # Step 3: Generate specific recipes for each day
             weekly_recipes_prompt = self._create_weekly_recipes_prompt(weekly_structure, user_preferences)
+            logger.info("📝 Step 3/3: Generating weekly recipes...")
             recipes_response = self._call_openai(weekly_recipes_prompt, self.parameters["recipe_generation"]["temperature"])
             weekly_meal_plan = self._parse_json_response(recipes_response, "weekly_meal_plan")
+            logger.info("✅ Step 3/3: Weekly recipes generated")
             
             # Add snacks to each day if needed
             if "weekly_plan" in weekly_meal_plan:
@@ -187,7 +203,8 @@ class NutritionAI:
             }
             
         except Exception as e:
-            logger.error(f"Error in weekly meal plan generation: {str(e)}")
+            logger.error(f"❌ Error in weekly meal plan generation: {str(e)}", exc_info=True)
+            logger.warning("⚠️ Falling back to non-AI meal plan generation (no OpenAI tokens will be used)")
             return self._fallback_weekly_meal_plan(user_preferences, plan_request)
     
     def _format_personalization_context(self, context: Dict[str, Any]) -> str:
@@ -467,7 +484,7 @@ class NutritionAI:
         CRITICAL VARIETY REQUIREMENT: Create unique, diverse recipes with different cuisines, cooking methods, and ingredients. Avoid repeating the same dishes.
         
         CRITICAL: Prevent duplicates and variations of the same recipe
-        - **NEVER create recipes with the same base name as these recent recipes (last 30 days): {', '.join(preferences.get('existing_meal_names', [])[:20]) if preferences.get('existing_meal_names') else 'none'}**
+        - **NEVER create recipes with the same base name as these recipes in the current meal plan: {', '.join(preferences.get('existing_meal_names', [])[:20]) if preferences.get('existing_meal_names') else 'none'}**
         - **NEVER create variations of existing recipes** (e.g., if "Italian Risotto Special" exists, do NOT create "Italian Risotto Premium", "Italian Risotto Deluxe", "Italian Risotto Gourmet", "Italian Risotto Artisan", or any other variation with just a different suffix)
         - **NEVER add generic suffixes** like "Special", "Deluxe", "Gourmet", "Premium", "Artisan" to create "unique" names - these create duplicates
         - **NEVER append ID numbers, timestamps, or any numeric identifiers to recipe names** (e.g., do NOT create "Asian Sunrise Stir-Fry 2030", "Mediterranean Power Bowl 2032", etc.) - these are still duplicates
@@ -479,6 +496,14 @@ class NutritionAI:
         - Use different cuisines, different main ingredients, or different cooking techniques to ensure variety
         - **Within the same meal plan, ensure each recipe is unique** - no two meals should share the same base recipe name
         
+        CRITICAL: Use AUTHENTIC recipe names, NOT generic words
+        - **NEVER use generic words** like "Delight", "Bowl", "Bliss", "Morning", "Bites", "Feast", "Surprise", "Sensation", "Delicacy", "Crunch", "Sunrise", "Sunshine", "Midnight", "Evening" in recipe names
+        - **Use authentic traditional dish names** from each cuisine (e.g., "Coq au Vin" for French, "Pad Thai" for Thai, "Chicken Tikka Masala" for Indian, "Bibimbap" for Korean, "Pho" for Vietnamese, "Moussaka" for Greek, "Tagine" for Moroccan)
+        - **OR use descriptive names** based on main ingredients and cooking method (e.g., "Grilled Salmon with Lemon", "Braised Chicken with Vegetables", "Stir-Fried Beef and Broccoli")
+        - **BAD examples:** "French Delight Bowl", "Thai Morning Bites", "Indian Bliss Feast", "Korean Sunshine Surprise", "Italian Snack Delight", "Mediterranean Morning Bliss"
+        - **GOOD examples:** "Coq au Vin", "Pad Thai", "Chicken Tikka Masala", "Bibimbap", "Pho", "Moussaka", "Tagine", "Spaghetti Carbonara", "Osso Buco", "Kung Pao Chicken", "Mapo Tofu"
+        - **Each cuisine should have unique, authentic recipe names** - not just "Cuisine + Generic Word"
+        
         IMPORTANT: Respond with ONLY valid JSON. No explanations, no markdown, no extra text.
         For each meal, provide this exact JSON format:
         {{
@@ -488,7 +513,7 @@ class NutritionAI:
                     "meals": [
                         {{
                             "meal_type": "breakfast/lunch/dinner/snack",
-                            "meal_name": "appealing_recipe_name",
+                            "meal_name": "authentic_recipe_name_or_descriptive_dish_name",
                             "recipe": {{
                                 "title": "Professional Recipe Title",
                                 "cuisine": "Cuisine Type",
@@ -764,6 +789,53 @@ Flavor Profile: Note aromatic base, spices used, acid elements, and finishing to
                 "is_fallback": True
             }
     
+    def _validate_ingredient_quantities(self, ingredients: List[Dict[str, Any]], db: Optional[Any] = None) -> List[Dict[str, Any]]:
+        """Validate and correct unrealistic ingredient quantities.
+        Limits high-calorie ingredients (oils, fats) to reasonable serving sizes.
+        """
+        if not ingredients:
+            return ingredients
+        
+        validated = []
+        for ing in ingredients:
+            if not isinstance(ing, dict):
+                validated.append(ing)
+                continue
+            
+            name = str(ing.get('name', '')).lower()
+            quantity = float(ing.get('quantity', 0))
+            unit = str(ing.get('unit', 'g')).lower().strip()
+            
+            # Convert to grams for comparison
+            from .functions import _convert_to_grams
+            quantity_g = _convert_to_grams(quantity, unit, name)
+            
+            # Check if ingredient is high-calorie (oils, fats, nuts)
+            is_high_calorie = any(keyword in name for keyword in [
+                'oil', 'butter', 'ghee', 'fat', 'lard', 'shortening',
+                'nut', 'almond', 'walnut', 'peanut', 'cashew', 'pistachio',
+                'avocado', 'coconut', 'cream', 'mayonnaise'
+            ])
+            
+            # Reasonable limits per serving:
+            # - High-calorie items (oils, nuts): 5-30g
+            # - Medium-high (cheese, some proteins): 20-100g
+            # - Low-medium: 10-300g
+            if is_high_calorie:
+                if quantity_g > 30:  # Too much high-calorie ingredient
+                    logger.warning(f"⚠️ Correcting unrealistic quantity: {name} {quantity}{unit} ({quantity_g:.1f}g) → limiting to 30g")
+                    # Scale down to max 30g
+                    scale_factor = 30.0 / quantity_g
+                    corrected_quantity = quantity * scale_factor
+                    ing = ing.copy()
+                    ing['quantity'] = round(corrected_quantity, 1)
+                elif quantity_g < 1 and quantity > 0:  # Too small, might be a unit error
+                    logger.warning(f"⚠️ Very small quantity detected: {name} {quantity}{unit} ({quantity_g:.1f}g)")
+            
+            validated.append(ing)
+        
+        return validated
+    
     def _calculate_recipe_nutrition(self, ingredients: List[Dict[str, Any]], db: Optional[Any] = None) -> Dict[str, float]:
         """Call the function-calling registry to compute nutrition totals per serving (servings=1).
         Uses ingredient database if available, falls back to estimates otherwise.
@@ -794,6 +866,7 @@ Flavor Profile: Note aromatic base, spices used, acid elements, and finishing to
             raise Exception("OpenAI client not available. Please check your API key and settings.")
         
         try:
+            logger.info(f"🤖 Calling OpenAI API (model: gpt-3.5-turbo, temp: {temperature}, max_tokens: {self.max_tokens})")
             response = self.openai_client.chat.completions.create(
                 model="gpt-3.5-turbo",
                 messages=[{"role": "user", "content": prompt}],
@@ -801,10 +874,17 @@ Flavor Profile: Note aromatic base, spices used, acid elements, and finishing to
                 max_tokens=self.max_tokens,
                 timeout=30.0  # 30 second timeout to prevent hanging
             )
-            return response.choices[0].message.content
+            content = response.choices[0].message.content
+            # Log token usage if available
+            if hasattr(response, 'usage') and response.usage:
+                usage = response.usage
+                logger.info(f"✅ OpenAI API call successful - tokens: {usage.total_tokens} (prompt: {usage.prompt_tokens}, completion: {usage.completion_tokens})")
+            else:
+                logger.info(f"✅ OpenAI API call successful")
+            return content
             
         except Exception as e:
-            logger.error(f"OpenAI API error: {str(e)}")
+            logger.error(f"❌ OpenAI API error: {str(e)}")
             raise Exception(f"AI service temporarily unavailable: {str(e)}")
     
     async def _call_openai_with_recovery(self, prompt: str, temperature: float = 0.7) -> str:
@@ -1108,7 +1188,7 @@ Flavor Profile: Note aromatic base, spices used, acid elements, and finishing to
         - NUTRITION: Balance macronutrients across the week
         
         CRITICAL: Prevent duplicates and variations of the same recipe
-        - **NEVER create recipes with the same base name as these recent recipes (last 30 days): {', '.join(preferences.get('existing_meal_names', [])[:20]) if preferences.get('existing_meal_names') else 'none'}**
+        - **NEVER create recipes with the same base name as these recipes in the current meal plan: {', '.join(preferences.get('existing_meal_names', [])[:20]) if preferences.get('existing_meal_names') else 'none'}**
         - **NEVER create variations of existing recipes** (e.g., if "Italian Risotto Special" exists, do NOT create "Italian Risotto Premium", "Italian Risotto Deluxe", "Italian Risotto Gourmet", "Italian Risotto Artisan", or any other variation with just a different suffix)
         - **NEVER add generic suffixes** like "Special", "Deluxe", "Gourmet", "Premium", "Artisan" to create "unique" names - these create duplicates
         - **NEVER append ID numbers, timestamps, or any numeric identifiers to recipe names** (e.g., do NOT create "Asian Sunrise Stir-Fry 2030", "Mediterranean Power Bowl 2032", etc.) - these are still duplicates
@@ -1512,7 +1592,7 @@ Create a detailed recipe with:
 - Nutrition per serving: calories, protein, carbs, fats (integers)
 
 Return ONLY minified JSON (no markdown):
-{{"meal_name":"Unique Recipe Name","recipe":{{"title":"Unique Recipe Name","cuisine":"{target_cuisine}","prep_time":15,"cook_time":25,"servings":1,"difficulty":"easy","summary":"Description","ingredients":[{{"name":"ingredient","quantity":100,"unit":"g"}}],"instructions":["Step 1","Step 2","Step 3"],"dietary_tags":["vegetarian"],"nutrition":{{"calories":{target_calories},"protein":20,"carbs":30,"fats":15}},"ai_generated":true}}}}"""
+{{"meal_name":"Authentic Recipe Name","recipe":{{"title":"Authentic Recipe Name","cuisine":"{target_cuisine}","prep_time":15,"cook_time":25,"servings":1,"difficulty":"easy","summary":"Description","ingredients":[{{"name":"ingredient","quantity":100,"unit":"g"}}],"instructions":["Step 1","Step 2","Step 3"],"dietary_tags":["vegetarian"],"nutrition":{{"calories":{target_calories},"protein":20,"carbs":30,"fats":15}},"ai_generated":true}}}}"""
 
             response = self._call_openai_fast(prompt, 0.6)
             result = self._parse_json_response(response, "meal")
@@ -1743,8 +1823,17 @@ DIETARY REQUIREMENTS:
 
 {similar_recipes_text}
 
+CUISINE VARIETY: This meal should use {target_cuisine} cuisine to ensure variety across the week.
+- Use authentic {target_cuisine} flavors, ingredients, and cooking techniques
+- Include traditional {target_cuisine} spices, herbs, and flavor profiles
+- Create a recipe that represents {target_cuisine} cuisine authentically
+
 Create a {target_cuisine} recipe with:
-- Title: Unique, appealing name (different from existing recipes above)
+- Title: Use authentic {target_cuisine} recipe names, NOT generic words like "Delight", "Bowl", "Bliss", "Morning", "Bites", "Feast", "Surprise", "Sensation", "Delicacy", "Crunch", "Sunrise", "Sunshine", "Midnight", "Evening"
+  * GOOD examples: "Coq au Vin" (French), "Pad Thai" (Thai), "Chicken Tikka Masala" (Indian), "Ratatouille" (French), "Bibimbap" (Korean), "Pho" (Vietnamese), "Moussaka" (Greek), "Tagine" (Moroccan)
+  * BAD examples: "French Delight Bowl", "Thai Morning Bites", "Indian Bliss Feast", "Korean Sunshine Surprise"
+  * Use traditional dish names from {target_cuisine} cuisine OR descriptive names based on main ingredients and cooking method
+  * Examples for {target_cuisine}: [If Italian: "Spaghetti Carbonara", "Osso Buco", "Risotto ai Funghi" | If French: "Coq au Vin", "Bouillabaisse", "Ratatouille" | If Chinese: "Kung Pao Chicken", "Mapo Tofu", "Peking Duck" | etc.]
 - Cuisine: {target_cuisine}
 - Prep/Cook time: 10-30 min / 15-45 min (integers)
 - Servings: 1 or 2 (integer)
@@ -1764,7 +1853,7 @@ Create a {target_cuisine} recipe with:
 - Nutrition: Estimate calories ~{target_calories}, protein ~{int(target_calories * 0.25 / 4)}g, carbs ~{int(target_calories * 0.45 / 4)}g, fats ~{int(target_calories * 0.30 / 9)}g
 
 OUTPUT: Valid minified JSON only (no markdown):
-{{"meal_name":"Recipe Name","recipe":{{"title":"Recipe Name","cuisine":"{target_cuisine}","prep_time":15,"cook_time":25,"servings":1,"difficulty":"easy","summary":"Description","ingredients":[{{"name":"protein","quantity":150,"unit":"g"}},{{"name":"vegetable","quantity":100,"unit":"g"}},{{"name":"onion","quantity":50,"unit":"g"}},{{"name":"garlic","quantity":5,"unit":"g"}},{{"name":"herb","quantity":10,"unit":"g"}},{{"name":"oil","quantity":15,"unit":"ml"}}],"instructions":["Step 1: Description","Step 2: Description"],"dietary_tags":["contains-meat"],"nutrition":{{"calories":{target_calories},"protein":25,"carbs":30,"fats":18}},"ai_generated":true}}}}"
+{{"meal_name":"Authentic Recipe Name","recipe":{{"title":"Authentic Recipe Name","cuisine":"{target_cuisine}","prep_time":15,"cook_time":25,"servings":1,"difficulty":"easy","summary":"Description","ingredients":[{{"name":"protein","quantity":150,"unit":"g"}},{{"name":"vegetable","quantity":100,"unit":"g"}},{{"name":"onion","quantity":50,"unit":"g"}},{{"name":"garlic","quantity":5,"unit":"g"}},{{"name":"herb","quantity":10,"unit":"g"}},{{"name":"oil","quantity":15,"unit":"ml"}}],"instructions":["Step 1: Description","Step 2: Description"],"dietary_tags":["contains-meat"],"nutrition":{{"calories":{target_calories},"protein":25,"carbs":30,"fats":18}},"ai_generated":true}}}}"
 """
 
             response = self._call_openai_fast(prompt, 0.6)
@@ -1784,8 +1873,13 @@ OUTPUT: Valid minified JSON only (no markdown):
             except Exception as e:
                 logger.warning(f"Recipe quality enhancement failed: {e}")
             
-            # STEP 3: NUTRITIONAL ANALYSIS - Calculate nutrition from ingredients (REPLACE AI placeholder values)
-            logger.info(f"STEP 3: Nutritional Analysis using function calling")
+            # STEP 3: VALIDATE AND CORRECT INGREDIENT QUANTITIES
+            # Check for unrealistic ingredient quantities (e.g., 125ml ghee is too much)
+            if result.get('recipe', {}).get('ingredients'):
+                result['recipe']['ingredients'] = self._validate_ingredient_quantities(result['recipe']['ingredients'], db)
+            
+            # STEP 4: NUTRITIONAL ANALYSIS - Calculate nutrition from ingredients (REPLACE AI placeholder values)
+            logger.info(f"STEP 4: Nutritional Analysis using function calling")
             
             # Always calculate nutrition from ingredients and replace placeholder values
             # Placeholder values (e.g., protein:25, carbs:30, fats:18) are not accurate
@@ -1840,8 +1934,8 @@ OUTPUT: Valid minified JSON only (no markdown):
                     "fats": int(target_calories * 0.30 / 9)
                 }
             
-            # STEP 4: REFINEMENT - Validate and adjust portions if calorie count is significantly off
-            logger.info(f"STEP 4: Refinement and validation check")
+            # STEP 5: REFINEMENT - Validate and adjust portions if calorie count is significantly off
+            logger.info(f"STEP 5: Refinement and validation check")
             
             actual_calories = result.get('recipe', {}).get('nutrition', {}).get('calories') or result.get('calories') or target_calories
             

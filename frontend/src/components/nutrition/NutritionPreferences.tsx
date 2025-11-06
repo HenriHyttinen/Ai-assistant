@@ -96,9 +96,19 @@ const NutritionPreferences: React.FC<NutritionPreferencesProps> = ({
         ])
       );
 
+      // Normalize allergies for display (convert backend format to frontend format)
+      // Backend uses "tree_nuts" but frontend displays "tree-nuts"
+      const normalizeAllergiesForDisplay = (allergies: string[]): string[] => {
+        if (!allergies || allergies.length === 0) return [];
+        return allergies.map(a => {
+          if (a === 'tree_nuts') return 'tree-nuts';
+          return a;
+        });
+      };
+
       setFormData({
         dietary_preferences: preferences.dietary_preferences || [],
-        allergies: preferences.allergies || [],
+        allergies: normalizeAllergiesForDisplay(preferences.allergies || []),
         disliked_ingredients: preferences.disliked_ingredients || [],
         cuisine_preferences: preferences.cuisine_preferences || [],
         daily_calorie_target: preferences.daily_calorie_target || 2000,
@@ -129,7 +139,7 @@ const NutritionPreferences: React.FC<NutritionPreferencesProps> = ({
 
   const allergyOptions = [
     'dairy', 'eggs', 'gluten', 'wheat', 'nuts', 'tree-nuts', 'peanuts', 
-    'fish', 'shellfish', 'soy', 'sesame', 'mustard', 'sulfites', 'nightshades'
+    'fish', 'shellfish', 'soy', 'sesame', 'mustard', 'sulfites'
   ];
 
   const cuisineOptions = [
@@ -245,10 +255,38 @@ const NutritionPreferences: React.FC<NutritionPreferencesProps> = ({
         return;
       }
       
+      // Normalize allergies to match backend format
+      // Backend expects: ['nuts', 'tree_nuts', 'peanuts', 'eggs', 'dairy', 'soy', 'wheat', 'gluten', 'fish', 'shellfish', 'sesame', 'mustard', 'sulfites']
+      const normalizeAllergies = (allergies: string[]): string[] => {
+        if (!allergies || allergies.length === 0) return [];
+        
+        const allergyMapping: Record<string, string> = {
+          'tree-nuts': 'tree_nuts',
+          'tree_nuts': 'tree_nuts',
+          'dairy free': 'dairy',
+          'dairy-free': 'dairy',
+          'dairy': 'dairy',
+        };
+        
+        const validAllergies = [
+          'nuts', 'tree_nuts', 'peanuts', 'eggs', 'dairy', 'soy', 
+          'wheat', 'gluten', 'fish', 'shellfish', 'sesame', 'mustard', 'sulfites'
+        ];
+        
+        return allergies
+          .map(a => {
+            const normalized = allergyMapping[a.toLowerCase()] || a.toLowerCase();
+            return normalized;
+          })
+          .filter(a => validAllergies.includes(a))
+          .filter((a, index, arr) => arr.indexOf(a) === index); // Remove duplicates
+      };
+      
       // Convert time format "HH:MM" to ISO 8601 datetime format
       // Backend expects ISO 8601 datetime strings, not just time strings
       const preparedData = {
         ...formData,
+        allergies: normalizeAllergies(formData.allergies || []),
         preferred_meal_times: formData.preferred_meal_times ? 
           Object.fromEntries(
             Object.entries(formData.preferred_meal_times).map(([meal, time]) => {

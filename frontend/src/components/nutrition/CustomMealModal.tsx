@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Modal,
   ModalOverlay,
@@ -76,25 +76,82 @@ const CustomMealModal: React.FC<CustomMealModalProps> = ({
   const [formData, setFormData] = useState<CustomMealData>({
     meal_name: '',
     meal_type: 'breakfast',
-    cuisine: 'International',
-    prep_time: 15,
-    cook_time: 20,
+    cuisine: '',
+    prep_time: 0,
+    cook_time: 0,
     servings: 1,
     difficulty: 'easy',
     summary: '',
-    ingredients: [{ name: '', quantity: 100, unit: 'g' }],
+    ingredients: [{ name: '', quantity: 0, unit: 'g' }],
     instructions: [{ step: 1, description: '' }],
     dietary_tags: [],
     nutrition: {
-      calories: 400,
-      protein: 20,
-      carbs: 40,
-      fats: 15
+      calories: 0,
+      protein: 0,
+      carbs: 0,
+      fats: 0
     },
     ...initialData
   });
 
-  const [newIngredient, setNewIngredient] = useState({ name: '', quantity: 100, unit: 'g' });
+  // Update formData when modal opens/closes or initialData changes
+  useEffect(() => {
+    if (isOpen) {
+      if (initialData) {
+        // Editing: use initialData with proper defaults for missing fields
+        setFormData({
+          meal_name: initialData.meal_name ?? '',
+          meal_type: initialData.meal_type ?? 'breakfast',
+          cuisine: initialData.cuisine ?? '',
+          prep_time: initialData.prep_time ?? 0,
+          cook_time: initialData.cook_time ?? 0,
+          servings: initialData.servings ?? 1,
+          difficulty: initialData.difficulty ?? 'easy',
+          summary: initialData.summary ?? '',
+          ingredients: initialData.ingredients && initialData.ingredients.length > 0 
+            ? initialData.ingredients 
+            : [{ name: '', quantity: 0, unit: 'g' }],
+          instructions: initialData.instructions && initialData.instructions.length > 0
+            ? initialData.instructions
+            : [{ step: 1, description: '' }],
+          dietary_tags: initialData.dietary_tags ?? [],
+          nutrition: {
+            calories: initialData.nutrition?.calories ?? 0,
+            protein: initialData.nutrition?.protein ?? 0,
+            carbs: initialData.nutrition?.carbs ?? 0,
+            fats: initialData.nutrition?.fats ?? 0
+          }
+        });
+      } else {
+        // Creating new meal: reset to empty/0 defaults
+        setFormData({
+          meal_name: '',
+          meal_type: 'breakfast',
+          cuisine: '',
+          prep_time: 0,
+          cook_time: 0,
+          servings: 1,
+          difficulty: 'easy',
+          summary: '',
+          ingredients: [{ name: '', quantity: 0, unit: 'g' }],
+          instructions: [{ step: 1, description: '' }],
+          dietary_tags: [],
+          nutrition: {
+            calories: 0,
+            protein: 0,
+            carbs: 0,
+            fats: 0
+          }
+        });
+      }
+      // Reset new ingredient/instruction/tag inputs
+      setNewIngredient({ name: '', quantity: 0, unit: 'g' });
+      setNewInstruction('');
+      setNewDietaryTag('');
+    }
+  }, [isOpen, initialData]);
+
+  const [newIngredient, setNewIngredient] = useState({ name: '', quantity: 0, unit: 'g' });
   const [newInstruction, setNewInstruction] = useState('');
   const [newDietaryTag, setNewDietaryTag] = useState('');
   
@@ -123,7 +180,7 @@ const CustomMealModal: React.FC<CustomMealModalProps> = ({
         ...prev,
         ingredients: [...prev.ingredients, { ...newIngredient }]
       }));
-      setNewIngredient({ name: '', quantity: 100, unit: 'g' });
+      setNewIngredient({ name: '', quantity: 0, unit: 'g' });
     }
   };
 
@@ -228,7 +285,7 @@ const CustomMealModal: React.FC<CustomMealModalProps> = ({
                   <Input
                     value={formData.meal_name}
                     onChange={(e) => handleInputChange('meal_name', e.target.value)}
-                    placeholder="e.g., Grilled Chicken Salad"
+                    placeholder={formData.meal_name ? undefined : "e.g., Grilled Chicken Salad"}
                   />
                 </FormControl>
                 
@@ -252,7 +309,7 @@ const CustomMealModal: React.FC<CustomMealModalProps> = ({
                   <Input
                     value={formData.cuisine}
                     onChange={(e) => handleInputChange('cuisine', e.target.value)}
-                    placeholder="e.g., Mediterranean, Italian, Asian"
+                    placeholder={formData.cuisine ? undefined : "e.g., Mediterranean, Italian, Asian"}
                   />
                 </FormControl>
                 
@@ -274,7 +331,7 @@ const CustomMealModal: React.FC<CustomMealModalProps> = ({
                 <Textarea
                   value={formData.summary}
                   onChange={(e) => handleInputChange('summary', e.target.value)}
-                  placeholder="Brief description of the meal..."
+                  placeholder={formData.summary ? undefined : "Brief description of the meal..."}
                   rows={2}
                 />
               </FormControl>
@@ -349,7 +406,7 @@ const CustomMealModal: React.FC<CustomMealModalProps> = ({
                       newIngredients[index].name = e.target.value;
                       setFormData(prev => ({ ...prev, ingredients: newIngredients }));
                     }}
-                    placeholder="Ingredient name"
+                    placeholder={ingredient.name ? undefined : "Ingredient name"}
                     flex={2}
                   />
                   <NumberInput
@@ -392,7 +449,7 @@ const CustomMealModal: React.FC<CustomMealModalProps> = ({
                 <Input
                   value={newIngredient.name}
                   onChange={(e) => setNewIngredient(prev => ({ ...prev, name: e.target.value }))}
-                  placeholder="Add new ingredient"
+                  placeholder={newIngredient.name ? undefined : "Add new ingredient"}
                   flex={2}
                 />
                 <NumberInput
@@ -440,7 +497,7 @@ const CustomMealModal: React.FC<CustomMealModalProps> = ({
                       newInstructions[index].description = e.target.value;
                       setFormData(prev => ({ ...prev, instructions: newInstructions }));
                     }}
-                    placeholder="Instruction description"
+                    placeholder={instruction.description ? undefined : "Instruction description"}
                     flex={1}
                     rows={2}
                   />
@@ -459,7 +516,7 @@ const CustomMealModal: React.FC<CustomMealModalProps> = ({
                 <Textarea
                   value={newInstruction}
                   onChange={(e) => setNewInstruction(e.target.value)}
-                  placeholder="Add new instruction"
+                  placeholder={newInstruction ? undefined : "Add new instruction"}
                   flex={1}
                   rows={2}
                 />
@@ -568,7 +625,7 @@ const CustomMealModal: React.FC<CustomMealModalProps> = ({
                 <Input
                   value={newDietaryTag}
                   onChange={(e) => setNewDietaryTag(e.target.value)}
-                  placeholder="Add dietary tag (e.g., vegetarian, gluten-free)"
+                  placeholder={newDietaryTag ? undefined : "Add dietary tag (e.g., vegetarian, gluten-free)"}
                   flex={1}
                 />
                 <Button size="sm" colorScheme="blue" onClick={addDietaryTag}>

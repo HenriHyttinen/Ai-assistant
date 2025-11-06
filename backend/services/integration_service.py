@@ -107,20 +107,22 @@ class IntegrationService:
                     integrated_data["protein_target"] = protein_target
             
             # Override with existing nutrition preferences if they exist
+            # CRITICAL FIX: Use explicit None checks instead of 'or' to respect empty arrays
+            # Empty arrays [] should be preserved, not replaced with health profile data
             if nutrition_prefs:
                 integrated_data.update({
-                    "dietary_preferences": nutrition_prefs.dietary_preferences or integrated_data["dietary_preferences"],
-                    "allergies": nutrition_prefs.allergies or integrated_data["allergies"],
-                    "disliked_ingredients": nutrition_prefs.disliked_ingredients or integrated_data["disliked_ingredients"],
-                    "cuisine_preferences": nutrition_prefs.cuisine_preferences or integrated_data["cuisine_preferences"],
-                    "daily_calorie_target": nutrition_prefs.daily_calorie_target or integrated_data["daily_calorie_target"],
-                    "protein_target": nutrition_prefs.protein_target or integrated_data["protein_target"],
-                    "carbs_target": nutrition_prefs.carbs_target or integrated_data["carbs_target"],
-                    "fats_target": nutrition_prefs.fats_target or integrated_data["fats_target"],
-                    "meals_per_day": nutrition_prefs.meals_per_day or integrated_data["meals_per_day"],
-                    "snacks_per_day": nutrition_prefs.snacks_per_day or integrated_data["snacks_per_day"],
-                    "preferred_meal_times": nutrition_prefs.preferred_meal_times or integrated_data["preferred_meal_times"],
-                    "timezone": nutrition_prefs.timezone or integrated_data["timezone"]
+                    "dietary_preferences": nutrition_prefs.dietary_preferences if nutrition_prefs.dietary_preferences is not None else integrated_data["dietary_preferences"],
+                    "allergies": nutrition_prefs.allergies if nutrition_prefs.allergies is not None else integrated_data["allergies"],
+                    "disliked_ingredients": nutrition_prefs.disliked_ingredients if nutrition_prefs.disliked_ingredients is not None else integrated_data["disliked_ingredients"],
+                    "cuisine_preferences": nutrition_prefs.cuisine_preferences if nutrition_prefs.cuisine_preferences is not None else integrated_data["cuisine_preferences"],
+                    "daily_calorie_target": nutrition_prefs.daily_calorie_target if nutrition_prefs.daily_calorie_target is not None else integrated_data["daily_calorie_target"],
+                    "protein_target": nutrition_prefs.protein_target if nutrition_prefs.protein_target is not None else integrated_data["protein_target"],
+                    "carbs_target": nutrition_prefs.carbs_target if nutrition_prefs.carbs_target is not None else integrated_data["carbs_target"],
+                    "fats_target": nutrition_prefs.fats_target if nutrition_prefs.fats_target is not None else integrated_data["fats_target"],
+                    "meals_per_day": nutrition_prefs.meals_per_day if nutrition_prefs.meals_per_day is not None else integrated_data["meals_per_day"],
+                    "snacks_per_day": nutrition_prefs.snacks_per_day if nutrition_prefs.snacks_per_day is not None else integrated_data["snacks_per_day"],
+                    "preferred_meal_times": nutrition_prefs.preferred_meal_times if nutrition_prefs.preferred_meal_times is not None else integrated_data["preferred_meal_times"],
+                    "timezone": nutrition_prefs.timezone if nutrition_prefs.timezone is not None else integrated_data["timezone"]
                 })
             
             return integrated_data

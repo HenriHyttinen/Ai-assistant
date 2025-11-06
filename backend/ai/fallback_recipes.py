@@ -213,11 +213,36 @@ class FallbackRecipeGenerator:
     def _build_recipe(self, name: str, template: Dict[str, Any], target_calories: int, target_cuisine: str, db=None) -> Dict[str, Any]:
         """Build a complete recipe from template"""
         
-        # Create detailed ingredients
+        # CRITICAL FIX: Define high-calorie ingredients that need quantity limits
+        high_calorie_ingredients = {
+            'ghee', 'butter', 'oil', 'sesame oil', 'olive oil', 'vegetable oil',
+            'coconut oil', 'nuts', 'almonds', 'walnuts', 'peanuts', 'cashews',
+            'cheese', 'goat cheese', 'feta cheese', 'parmesan', 'cheddar'
+        }
+        
+        # Create detailed ingredients with validation
         ingredients = []
         for i, ingredient in enumerate(template['ingredients']):
-            quantity = 50 + (i * 25)  # Vary quantities
+            # Base quantity calculation
+            base_quantity = 50 + (i * 15)  # Reduced from 25 to 15 to prevent excessive quantities
             unit = 'g' if i % 2 == 0 else 'ml'
+            
+            # CRITICAL FIX: Validate and limit high-calorie ingredients
+            ingredient_lower = ingredient.lower()
+            is_high_calorie = any(hc in ingredient_lower for hc in high_calorie_ingredients)
+            
+            if is_high_calorie:
+                # Limit high-calorie ingredients to max 30g/ml per serving
+                quantity = min(base_quantity, 30)
+                # For oils/fats, prefer ml unit
+                if any(oil in ingredient_lower for oil in ['oil', 'ghee', 'butter']):
+                    unit = 'ml'
+                else:
+                    unit = 'g'
+            else:
+                # Regular ingredients can have higher quantities
+                quantity = base_quantity
+            
             ingredients.append({
                 'name': ingredient,
                 'quantity': quantity,

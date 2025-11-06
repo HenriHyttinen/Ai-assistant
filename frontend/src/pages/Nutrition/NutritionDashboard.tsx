@@ -906,6 +906,7 @@ const NutritionDashboard: React.FC<NutritionDashboardProps> = ({ user = null }) 
             </VStack>
           </CardBody>
         </Card>
+
           </>
         ) : (
           <>

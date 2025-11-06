@@ -58,6 +58,16 @@ const NutritionPreferencesCard: React.FC<NutritionPreferencesCardProps> = ({
     loadPreferences();
   }, []);
 
+  // Normalize allergies for display (convert backend format to frontend format)
+  // Backend uses "tree_nuts" but frontend displays "tree-nuts"
+  const normalizeAllergiesForDisplay = (allergies: string[]): string[] => {
+    if (!allergies || allergies.length === 0) return [];
+    return allergies.map(a => {
+      if (a === 'tree_nuts') return 'tree-nuts';
+      return a;
+    });
+  };
+
   const loadPreferences = async () => {
     setLoading(true);
     try {
@@ -65,7 +75,7 @@ const NutritionPreferencesCard: React.FC<NutritionPreferencesCardProps> = ({
       if (preferences) {
         setFormData({
           dietary_preferences: preferences.dietary_preferences || [],
-          allergies: preferences.allergies || [],
+          allergies: normalizeAllergiesForDisplay(preferences.allergies || []),
           daily_calorie_target: preferences.daily_calorie_target || 2000,
           protein_target: preferences.protein_target || 100,
           carbs_target: preferences.carbs_target || 200,
@@ -80,10 +90,42 @@ const NutritionPreferencesCard: React.FC<NutritionPreferencesCardProps> = ({
     }
   };
 
+  // Normalize allergies to match backend format
+  // Backend expects: ['nuts', 'tree_nuts', 'peanuts', 'eggs', 'dairy', 'soy', 'wheat', 'gluten', 'fish', 'shellfish', 'sesame', 'mustard', 'sulfites']
+  const normalizeAllergies = (allergies: string[]): string[] => {
+    if (!allergies || allergies.length === 0) return [];
+    
+    const allergyMapping: Record<string, string> = {
+      'tree-nuts': 'tree_nuts',
+      'tree_nuts': 'tree_nuts',
+      'dairy free': 'dairy',
+      'dairy-free': 'dairy',
+      'dairy': 'dairy',
+    };
+    
+    const validAllergies = [
+      'nuts', 'tree_nuts', 'peanuts', 'eggs', 'dairy', 'soy', 
+      'wheat', 'gluten', 'fish', 'shellfish', 'sesame', 'mustard', 'sulfites'
+    ];
+    
+    return allergies
+      .map(a => {
+        const normalized = allergyMapping[a.toLowerCase()] || a.toLowerCase();
+        return normalized;
+      })
+      .filter(a => validAllergies.includes(a))
+      .filter((a, index, arr) => arr.indexOf(a) === index); // Remove duplicates
+  };
+
   const handleSave = async () => {
     setSaving(true);
     try {
-      await onSave(formData);
+      // Normalize allergies before saving
+      const normalizedData = {
+        ...formData,
+        allergies: normalizeAllergies(formData.allergies || []),
+      };
+      await onSave(normalizedData);
       setHasPreferences(true);
       toast({
         title: 'Success',
@@ -113,7 +155,7 @@ const NutritionPreferencesCard: React.FC<NutritionPreferencesCardProps> = ({
 
   const allergyOptions = [
     'dairy', 'eggs', 'gluten', 'wheat', 'nuts', 'tree-nuts', 'peanuts',
-    'fish', 'shellfish', 'soy', 'sesame', 'mustard', 'sulfites', 'nightshades'
+    'fish', 'shellfish', 'soy', 'sesame', 'mustard', 'sulfites'
   ];
 
   if (loading) {

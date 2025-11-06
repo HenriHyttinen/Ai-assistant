@@ -130,7 +130,7 @@ class HybridMealGenerator:
             # This ensures users don't get the same recipes across meal plans for at least a month
             # Can be reset using scripts/reset_meal_plan_memory.py
             # ROOT CAUSE FIX: Check last 30 days (1 month) to prevent duplicates across meal plans
-            recent_names = self._get_recently_used_names(db, user_preferences, days=30)
+            recent_names = self._get_recently_used_names(db, user_preferences, days=7)
             if recent_names:
                 existing_names.extend(recent_names)
             
@@ -281,8 +281,8 @@ class HybridMealGenerator:
             self.logger.error(f"Error getting database recipes: {e}")
             return []
 
-    def _get_recently_used_names(self, db: Session, user_preferences: Dict[str, Any], days: int = 30) -> List[str]:
-        """Fetch meal names used by the user in the last N days to avoid repeats."""
+    def _get_recently_used_names(self, db: Session, user_preferences: Dict[str, Any], days: int = 7) -> List[str]:
+        """Fetch meal names used by the user in the last N days to avoid repeats. Default is 7 days (reduced from 30 to avoid running out of unique names)."""
         try:
             user_id = None
             # user_preferences may contain user_id or nested context
@@ -407,7 +407,7 @@ class HybridMealGenerator:
                 existing_names.extend([meal.get('meal_name', '') for meal in database_meals])
             # Include recently used names across weeks (reduced to 7 days to allow more variety)
             # ROOT CAUSE FIX: Check last 30 days (1 month) to prevent duplicates across meal plans
-            recent_names = self._get_recently_used_names(db, user_preferences, days=30)
+            recent_names = self._get_recently_used_names(db, user_preferences, days=7)
             if recent_names:
                 existing_names.extend(recent_names)
             
@@ -591,7 +591,7 @@ class HybridMealGenerator:
             if existing_meals:
                 existing_names.extend([meal.get('meal_name', '') for meal in existing_meals])
             # ROOT CAUSE FIX: Check last 30 days (1 month) to prevent duplicates across meal plans
-            recent_names = self._get_recently_used_names(db, user_preferences, days=30)
+            recent_names = self._get_recently_used_names(db, user_preferences, days=7)
             if recent_names:
                 existing_names.extend(recent_names)
             

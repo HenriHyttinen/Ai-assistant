@@ -58,8 +58,10 @@ import {
   FiMoreVertical,
   FiEye,
   FiPlus,
-  FiFilter
+  FiFilter,
+  FiPieChart
 } from 'react-icons/fi';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import MicronutrientFilters from '../../components/nutrition/MicronutrientFilters';
 import AddToMealPlanModal from '../../components/nutrition/AddToMealPlanModal';
 
@@ -145,6 +147,9 @@ const RecipeSearch: React.FC<RecipeSearchProps> = () => {
   const [substitutionSuggestions, setSubstitutionSuggestions] = useState<any[]>([]);
   const [loadingSubstitutions, setLoadingSubstitutions] = useState(false);
   const { isOpen: isSubstitutionOpen, onOpen: onSubstitutionOpen, onClose: onSubstitutionClose } = useDisclosure();
+  
+  // Ingredient graphs modal state
+  const { isOpen: isIngredientGraphsOpen, onOpen: onIngredientGraphsOpen, onClose: onIngredientGraphsClose } = useDisclosure();
   
 
   const cardBg = useColorModeValue('white', 'gray.800');
@@ -1205,7 +1210,30 @@ const RecipeSearch: React.FC<RecipeSearchProps> = () => {
           <ModalOverlay />
           <ModalContent>
             <ModalHeader pr={8}>
-              <Text noOfLines={2} wordBreak="break-word">{selectedRecipe?.title}</Text>
+              <VStack align="start" spacing={2} w="full" pr={8}>
+                <Text noOfLines={3} wordBreak="break-word" w="full" fontSize="lg" fontWeight="bold">
+                  {selectedRecipe?.title}
+                </Text>
+                {((selectedRecipe?.ingredients_list && selectedRecipe.ingredients_list.length > 0) || 
+                  (selectedRecipe?.ingredients && selectedRecipe.ingredients.length > 0)) && (
+                  <Button
+                    size="xs"
+                    leftIcon={<FiPieChart />}
+                    colorScheme="blue"
+                    variant="outline"
+                    onClick={onIngredientGraphsOpen}
+                    alignSelf="flex-start"
+                    px={3}
+                    py={1.5}
+                    minW="auto"
+                    iconSpacing={1.5}
+                    fontSize="xs"
+                    h="auto"
+                  >
+                    Graphs
+                  </Button>
+                )}
+              </VStack>
             </ModalHeader>
             <ModalCloseButton />
             <ModalBody>
@@ -1443,6 +1471,10 @@ const RecipeSearch: React.FC<RecipeSearchProps> = () => {
                   // CRITICAL FIX: Add recipe to daily log
                   await handleAddToDailyLog(selectedRecipe);
                 }}
+                fontSize="xs"
+                px={3}
+                py={1.5}
+                size="sm"
               >
                 Add to Daily Log ({previewServings} servings)
               </Button>
@@ -1453,6 +1485,10 @@ const RecipeSearch: React.FC<RecipeSearchProps> = () => {
                   setAddToMealPlanRecipe(selectedRecipe);
                   onAddToMealPlanOpen();
                 }}
+                fontSize="xs"
+                px={3}
+                py={1.5}
+                size="sm"
               >
                 {t('nutrition.addToMealPlan', 'en')} ({previewServings} servings)
               </Button>
@@ -1470,6 +1506,285 @@ const RecipeSearch: React.FC<RecipeSearchProps> = () => {
             initialServings={previewServings}
           />
         )}
+
+        {/* Ingredient Graphs Modal */}
+        <Modal isOpen={isIngredientGraphsOpen} onClose={onIngredientGraphsClose} size="xl">
+          <ModalOverlay />
+          <ModalContent>
+            <ModalHeader>
+              <Text>Ingredient Values - {selectedRecipe?.title || 'Recipe'}</Text>
+            </ModalHeader>
+            <ModalCloseButton />
+            <ModalBody>
+              {selectedRecipe && (selectedRecipe.ingredients_list || selectedRecipe.ingredients) && (selectedRecipe.ingredients_list || selectedRecipe.ingredients || []).length > 0 ? (
+                <VStack spacing={6} align="stretch">
+                  <Box>
+                    <Heading size="md" mb={4}>Ingredient Macronutrients (Protein, Carbs, Fats)</Heading>
+                    <Box p={4} bg="white" borderRadius="md" border="1px" borderColor="gray.200" height="400px">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart
+                          data={(() => {
+                            const currentServings = previewServings || selectedRecipe.servings || 1;
+                            const originalServings = selectedRecipe.servings || 1;
+                            const multiplier = currentServings / originalServings;
+                            
+                            // Nutrition per 100g lookup
+                            const per100g: Record<string, [number, number, number]> = {
+                              'chicken breast': [31, 0, 3.6],
+                              'chicken': [31, 0, 3.6],
+                              'chickpea': [19, 61, 6],
+                              'chickpeas': [19, 61, 6],
+                              'olive oil': [0, 0, 100],
+                              'oil': [0, 0, 100],
+                              'tomato': [0.9, 3.9, 0.2],
+                              'cucumber': [0.7, 3.6, 0.1],
+                              'lettuce': [1.4, 2.9, 0.2],
+                              'bell pepper': [1, 6, 0.3],
+                              'pepper': [1, 6, 0.3],
+                              'carrot': [0.9, 10, 0.2],
+                              'onion': [1.1, 9.3, 0.1],
+                              'garlic': [6.4, 33, 0.5],
+                              'feta': [14, 4, 21],
+                              'cheese': [20, 2, 25],
+                              'hummus': [8, 14, 9.6],
+                              'rice': [2.4, 28, 0.3],
+                              'quinoa': [4.4, 21, 1.9],
+                              'pasta': [5, 25, 1.1],
+                              'yogurt': [10, 3.6, 0.4],
+                              'egg': [6, 0.6, 5],
+                              'eggs': [6, 0.6, 5],
+                              'ham': [18, 1.5, 5],
+                              'mushroom': [3.1, 3.3, 0.3],
+                              'mushrooms': [3.1, 3.3, 0.3],
+                              'bread': [9, 49, 3.2],
+                              'rye bread': [9, 49, 3.2],
+                              'swiss cheese': [25, 1.5, 27],
+                              'mayonnaise': [1, 0.6, 75],
+                              'mustard': [3.7, 5.8, 3.3],
+                              'dill': [3.5, 7, 1.1],
+                              'zucchini': [1.2, 3.1, 0.2],
+                              'parsley': [3, 6, 0.8],
+                            };
+                            
+                            const ingredients = selectedRecipe.ingredients_list || selectedRecipe.ingredients || [];
+                            return ingredients.map((ingredient: any) => {
+                              let name = '';
+                              let quantity = 0;
+                              let unit = 'g';
+                              
+                              if (typeof ingredient === 'string') {
+                                name = ingredient;
+                                quantity = 0;
+                              } else {
+                                name = ingredient.name || 'Unknown';
+                                quantity = parseFloat(ingredient.quantity) || 0;
+                                unit = ingredient.unit || 'g';
+                                // Scale quantity by servings multiplier
+                                quantity = quantity * multiplier;
+                              }
+                              
+                              // Convert to grams
+                              let quantityInGrams = quantity;
+                              if (unit.toLowerCase() === 'ml' || unit.toLowerCase() === 'l') {
+                                quantityInGrams = quantity;
+                              } else if (unit.toLowerCase() === 'kg') {
+                                quantityInGrams = quantity * 1000;
+                              } else if (unit.toLowerCase() === 'oz') {
+                                quantityInGrams = quantity * 28.35;
+                              } else if (unit.toLowerCase() === 'lb') {
+                                quantityInGrams = quantity * 453.6;
+                              } else if (unit.toLowerCase() === 'unit' || unit.toLowerCase() === 'units' || unit.toLowerCase() === 'piece' || unit.toLowerCase() === 'pieces') {
+                                if (name.toLowerCase().includes('egg')) {
+                                  quantityInGrams = quantity * 50;
+                                } else {
+                                  quantityInGrams = quantity * 100;
+                                }
+                              }
+                              
+                              // Find matching nutrition data
+                              const nameLower = name.toLowerCase();
+                              const match = Object.keys(per100g).find(k => nameLower.includes(k));
+                              let protein = 0;
+                              let carbs = 0;
+                              let fats = 0;
+                              
+                              if (match && quantityInGrams > 0) {
+                                const [p, c, f] = per100g[match];
+                                const factor = quantityInGrams / 100.0;
+                                protein = Math.round(p * factor * 10) / 10;
+                                carbs = Math.round(c * factor * 10) / 10;
+                                fats = Math.round(f * factor * 10) / 10;
+                              }
+                              
+                              return {
+                                name: name.length > 15 ? name.substring(0, 15) + '...' : name,
+                                fullName: name,
+                                protein: protein,
+                                carbs: carbs,
+                                fats: fats,
+                                quantity: quantityInGrams,
+                                unit: unit
+                              };
+                            }).filter((item: any) => item.protein > 0 || item.carbs > 0 || item.fats > 0);
+                          })()}
+                          margin={{ top: 5, right: 30, left: 20, bottom: 80 }}
+                        >
+                          <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                          <XAxis 
+                            dataKey="name" 
+                            angle={-45} 
+                            textAnchor="end" 
+                            height={100}
+                            interval={0}
+                            tick={{ fontSize: 10 }}
+                          />
+                          <YAxis 
+                            label={{ value: 'Macronutrients (g)', angle: -90, position: 'insideLeft', style: { textAnchor: 'middle' } }}
+                            tick={{ fontSize: 10 }}
+                          />
+                          <Tooltip 
+                            formatter={(value: any, name: string, props: any) => {
+                              const label = name === 'protein' ? 'Protein' : name === 'carbs' ? 'Carbs' : name === 'fats' ? 'Fats' : name;
+                              return [`${value}g`, label];
+                            }}
+                            labelFormatter={(label) => {
+                              const ingredients = selectedRecipe.ingredients_list || selectedRecipe.ingredients || [];
+                              const item = ingredients.find((ing: any) => {
+                                const ingName = typeof ing === 'string' ? ing : (ing.name || '');
+                                return ingName.length > 15 ? ingName.substring(0, 15) + '...' === label : ingName === label;
+                              });
+                              return typeof item === 'string' ? item : (item?.name || label);
+                            }}
+                          />
+                          <Legend />
+                          <Bar dataKey="protein" stackId="a" fill="#22c55e" name="Protein" />
+                          <Bar dataKey="carbs" stackId="a" fill="#f59e0b" name="Carbs" />
+                          <Bar dataKey="fats" stackId="a" fill="#8b5cf6" name="Fats" />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </Box>
+                  </Box>
+                  
+                  <Box>
+                    <Heading size="sm" mb={2}>Ingredient Macronutrients</Heading>
+                    <VStack align="stretch" spacing={2}>
+                      {(() => {
+                        const currentServings = previewServings || selectedRecipe.servings || 1;
+                        const originalServings = selectedRecipe.servings || 1;
+                        const multiplier = currentServings / originalServings;
+                        
+                        // Nutrition per 100g lookup (same as in graph)
+                        const per100g: Record<string, [number, number, number]> = {
+                          'chicken breast': [31, 0, 3.6],
+                          'chicken': [31, 0, 3.6],
+                          'chickpea': [19, 61, 6],
+                          'chickpeas': [19, 61, 6],
+                          'olive oil': [0, 0, 100],
+                          'oil': [0, 0, 100],
+                          'tomato': [0.9, 3.9, 0.2],
+                          'cucumber': [0.7, 3.6, 0.1],
+                          'lettuce': [1.4, 2.9, 0.2],
+                          'bell pepper': [1, 6, 0.3],
+                          'pepper': [1, 6, 0.3],
+                          'carrot': [0.9, 10, 0.2],
+                          'onion': [1.1, 9.3, 0.1],
+                          'garlic': [6.4, 33, 0.5],
+                          'feta': [14, 4, 21],
+                          'cheese': [20, 2, 25],
+                          'hummus': [8, 14, 9.6],
+                          'rice': [2.4, 28, 0.3],
+                          'quinoa': [4.4, 21, 1.9],
+                          'pasta': [5, 25, 1.1],
+                          'yogurt': [10, 3.6, 0.4],
+                          'egg': [6, 0.6, 5],
+                          'eggs': [6, 0.6, 5],
+                          'ham': [18, 1.5, 5],
+                          'mushroom': [3.1, 3.3, 0.3],
+                          'mushrooms': [3.1, 3.3, 0.3],
+                          'bread': [9, 49, 3.2],
+                          'rye bread': [9, 49, 3.2],
+                          'swiss cheese': [25, 1.5, 27],
+                          'mayonnaise': [1, 0.6, 75],
+                          'mustard': [3.7, 5.8, 3.3],
+                          'dill': [3.5, 7, 1.1],
+                          'zucchini': [1.2, 3.1, 0.2],
+                          'parsley': [3, 6, 0.8],
+                        };
+                        
+                        const ingredients = selectedRecipe.ingredients_list || selectedRecipe.ingredients || [];
+                        return ingredients.map((ingredient: any, index: number) => {
+                          let name = '';
+                          let quantity = 0;
+                          let unit = 'g';
+                          
+                          if (typeof ingredient === 'string') {
+                            name = ingredient;
+                            quantity = 0;
+                          } else {
+                            name = ingredient.name || 'Unknown';
+                            quantity = parseFloat(ingredient.quantity) || 0;
+                            unit = ingredient.unit || 'g';
+                            quantity = quantity * multiplier;
+                          }
+                          
+                          // Convert to grams
+                          let quantityInGrams = quantity;
+                          if (unit.toLowerCase() === 'ml' || unit.toLowerCase() === 'l') {
+                            quantityInGrams = quantity;
+                          } else if (unit.toLowerCase() === 'kg') {
+                            quantityInGrams = quantity * 1000;
+                          } else if (unit.toLowerCase() === 'oz') {
+                            quantityInGrams = quantity * 28.35;
+                          } else if (unit.toLowerCase() === 'lb') {
+                            quantityInGrams = quantity * 453.6;
+                          } else if (unit.toLowerCase() === 'unit' || unit.toLowerCase() === 'units' || unit.toLowerCase() === 'piece' || unit.toLowerCase() === 'pieces') {
+                            if (name.toLowerCase().includes('egg')) {
+                              quantityInGrams = quantity * 50;
+                            } else {
+                              quantityInGrams = quantity * 100;
+                            }
+                          }
+                          
+                          // Calculate macronutrients
+                          const nameLower = name.toLowerCase();
+                          const match = Object.keys(per100g).find(k => nameLower.includes(k));
+                          let protein = 0;
+                          let carbs = 0;
+                          let fats = 0;
+                          
+                          if (match && quantityInGrams > 0) {
+                            const [p, c, f] = per100g[match];
+                            const factor = quantityInGrams / 100.0;
+                            protein = Math.round(p * factor * 10) / 10;
+                            carbs = Math.round(c * factor * 10) / 10;
+                            fats = Math.round(f * factor * 10) / 10;
+                          }
+                          
+                          return (
+                            <HStack key={index} justify="space-between" p={2} bg="gray.50" borderRadius="md">
+                              <Text fontWeight="semibold">{name}</Text>
+                              <HStack spacing={3}>
+                                {protein > 0 && <Text fontSize="sm" color="green.600">P: {protein}g</Text>}
+                                {carbs > 0 && <Text fontSize="sm" color="orange.600">C: {carbs}g</Text>}
+                                {fats > 0 && <Text fontSize="sm" color="purple.600">F: {fats}g</Text>}
+                                {(protein === 0 && carbs === 0 && fats === 0) && <Text fontSize="sm" color="gray.500">N/A</Text>}
+                              </HStack>
+                            </HStack>
+                          );
+                        });
+                      })()}
+                    </VStack>
+                  </Box>
+                </VStack>
+              ) : (
+                <Text color="gray.500">No ingredients available for this recipe.</Text>
+              )}
+            </ModalBody>
+            <ModalFooter>
+              <Button onClick={onIngredientGraphsClose}>Close</Button>
+            </ModalFooter>
+          </ModalContent>
+        </Modal>
 
         {/* CRITICAL FIX: Ingredient Substitution Modal */}
         <Modal isOpen={isSubstitutionOpen} onClose={onSubstitutionClose} size="lg">

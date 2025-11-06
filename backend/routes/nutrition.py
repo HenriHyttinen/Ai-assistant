@@ -499,28 +499,36 @@ def generate_meal_plan(
         # STANDARD MODE: Generate all meals at once (heavier but complete)
         logger.info(f"STANDARD MODE: Generating all meals at once")
         
-        # Get recently used meal names (last 30 days) to prevent duplicates across meal plans
-        # This ensures users don't get the same recipes across meal plans for at least a month
+        # Only check for duplicates within the current meal plan grid
+        # This prevents duplicates within a single weekly/daily plan, but allows same recipes across different plans
         existing_meal_names = []
         existing_meals_context = []
         if db:
-            from datetime import timedelta
-            recent_cutoff = datetime.utcnow().date() - timedelta(days=30)  # Check last 30 days (1 month)
-            recent_meals = db.query(MealPlanMeal).join(MealPlan).filter(
+            # Check if this is a progressive plan that already has some meals
+            existing_plan = db.query(MealPlan).filter(
                 MealPlan.user_id == current_user.id,
-                MealPlan.start_date >= recent_cutoff,
-                MealPlanMeal.meal_name.isnot(None)
-            ).all()
-            existing_meal_names = [m.meal_name for m in recent_meals if m.meal_name]
-            existing_meals_context = [
-                {
-                    "meal_name": m.meal_name,
-                    "meal_type": m.meal_type,
-                    "meal_date": str(m.meal_date)
-                }
-                for m in recent_meals[:50]  # Limit to 50 for prompt size
-            ]
-            logger.info(f"Preventing duplicates: {len(existing_meal_names)} unique meal names from last 30 days")
+                MealPlan.plan_type == plan_request.plan_type,
+                MealPlan.start_date == plan_request.start_date
+            ).first()
+            
+            if existing_plan:
+                # Get existing meals from this plan
+                existing_meals = db.query(MealPlanMeal).filter(
+                    MealPlanMeal.meal_plan_id == existing_plan.id,
+                    MealPlanMeal.meal_name.isnot(None)
+                ).all()
+                existing_meal_names = [m.meal_name for m in existing_meals if m.meal_name]
+                existing_meals_context = [
+                    {
+                        "meal_name": m.meal_name,
+                        "meal_type": m.meal_type,
+                        "meal_date": str(m.meal_date)
+                    }
+                    for m in existing_meals[:50]  # Limit to 50 for prompt size
+                ]
+                logger.info(f"Preventing duplicates: {len(existing_meal_names)} unique meal names from current meal plan only")
+            else:
+                logger.info("No existing meal plan found - starting fresh")
         
         # Add existing meals to prefs_dict for AI to avoid duplicates
         prefs_dict['existing_meals'] = existing_meals_context
@@ -728,6 +736,86 @@ def add_custom_meal(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error adding custom meal: {str(e)}"
+        )
+
+@router.put("/meal-plans/{meal_plan_id}/custom-meal/{meal_id}")
+def update_custom_meal(
+    meal_plan_id: str,
+    meal_id: str,
+    custom_meal_data: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Update a custom meal in an existing meal plan"""
+    try:
+        # Verify meal plan belongs to user
+        meal_plan = db.query(MealPlan).filter(
+            MealPlan.id == meal_plan_id,
+            MealPlan.user_id == current_user.id
+        ).first()
+        
+        if not meal_plan:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Meal plan not found"
+            )
+        
+        # Parse meal ID (can be int or string)
+        try:
+            meal_id_int = int(meal_id)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid meal ID format"
+            )
+        
+        # Get the meal to update
+        meal = db.query(MealPlanMeal).filter(
+            MealPlanMeal.id == meal_id_int,
+            MealPlanMeal.meal_plan_id == meal_plan_id
+        ).first()
+        
+        if not meal:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Meal not found"
+            )
+        
+        # Update meal fields
+        meal.meal_name = custom_meal_data.get('meal_name', meal.meal_name)
+        meal.meal_type = custom_meal_data.get('meal_type', meal.meal_type)
+        meal.calories = custom_meal_data.get('nutrition', {}).get('calories', meal.calories)
+        meal.protein = custom_meal_data.get('nutrition', {}).get('protein', meal.protein)
+        meal.carbs = custom_meal_data.get('nutrition', {}).get('carbs', meal.carbs)
+        meal.fats = custom_meal_data.get('nutrition', {}).get('fats', meal.fats)
+        meal.recipe_details = custom_meal_data  # Store full custom meal data
+        meal.cuisine = custom_meal_data.get('cuisine', meal.cuisine)
+        
+        db.commit()
+        db.refresh(meal)
+        
+        return {
+            "message": "Custom meal updated successfully",
+            "meal_id": meal.id,
+            "meal": {
+                "id": meal.id,
+                "meal_name": meal.meal_name,
+                "meal_type": meal.meal_type,
+                "calories": meal.calories,
+                "protein": meal.protein,
+                "carbs": meal.carbs,
+                "fats": meal.fats,
+                "cuisine": meal.cuisine
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error updating custom meal: {str(e)}"
         )
 
 @router.get("/meal-plans", response_model=List[MealPlanResponse])
@@ -1107,6 +1195,69 @@ def add_recipe_to_meal_plan(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error adding recipe to meal plan: {str(e)}"
+        )
+
+@router.delete("/meal-plans/{meal_plan_id}/meals/{meal_id}")
+def delete_meal(
+    meal_plan_id: str,
+    meal_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Delete a meal from a meal plan"""
+    try:
+        # Verify meal plan ownership
+        meal_plan = db.query(MealPlan).filter(
+            MealPlan.id == meal_plan_id,
+            MealPlan.user_id == current_user.id
+        ).first()
+        
+        if not meal_plan:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Meal plan not found"
+            )
+        
+        # Parse meal ID (can be int or string)
+        try:
+            meal_id_int = int(meal_id)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid meal ID format"
+            )
+        
+        # Get the meal to delete
+        meal = db.query(MealPlanMeal).filter(
+            MealPlanMeal.id == meal_id_int,
+            MealPlanMeal.meal_plan_id == meal_plan_id
+        ).first()
+        
+        if not meal:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Meal not found"
+            )
+        
+        # Delete the meal
+        db.delete(meal)
+        db.commit()
+        
+        logger.info(f"Deleted meal {meal_id} from meal plan {meal_plan_id}")
+        
+        return {
+            "message": "Meal deleted successfully",
+            "deleted_meal_id": meal_id_int
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error deleting meal: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error deleting meal: {str(e)}"
         )
 
 @router.put("/meal-plans/{meal_plan_id}/meals/{meal_id}/move")
@@ -2111,17 +2262,26 @@ async def update_item_notes(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error updating item notes: {str(e)}")
 
-def _adjust_daily_total_after_portion_change(
+def _adjust_daily_total(
     db: Session,
     meal_plan_id: str,
     meal_date: date,
     daily_target: int,
-    meals_per_day: int
+    meals_per_day: int,
+    force: bool = False
 ) -> bool:
     """
-    Helper function to adjust daily total after portion changes.
+    Robust helper function to adjust daily total to match target exactly.
     Scales all meals proportionally to hit the daily target exactly.
     Returns True if adjustment was made, False otherwise.
+    
+    Args:
+        db: Database session
+        meal_plan_id: Meal plan ID
+        meal_date: Date to adjust
+        daily_target: Target daily calories
+        meals_per_day: Expected number of meals per day
+        force: If True, adjust even if not all meals are present (for edge cases)
     """
     try:
         # Get all meals for this date
@@ -2131,8 +2291,12 @@ def _adjust_daily_total_after_portion_change(
             MealPlanMeal.meal_name.isnot(None)  # Only consider actual meals
         ).all()
         
-        if len(all_meals_for_date) < meals_per_day:
-            # Not all meals present yet, skip adjustment
+        if len(all_meals_for_date) == 0:
+            logger.debug(f"⚠️ No meals found for {meal_date} - skipping adjustment")
+            return False
+        
+        if not force and len(all_meals_for_date) < meals_per_day:
+            # Not all meals present yet, skip adjustment (unless forced)
             logger.debug(f"⚠️ Skipping daily total adjustment: {len(all_meals_for_date)}/{meals_per_day} meals present")
             return False
         
@@ -2287,12 +2451,13 @@ async def adjust_meal_portion(
             logger.info(f"🔄 Checking daily total after portion adjustment (target: {daily_target} cal, meals_per_day: {meals_per_day})")
             
             # Adjust daily total proportionally to hit target
-            adjusted = _adjust_daily_total_after_portion_change(
+            adjusted = _adjust_daily_total(
                 db=db,
                 meal_plan_id=meal_plan_id,
                 meal_date=meal_date,
                 daily_target=daily_target,
-                meals_per_day=meals_per_day
+                meals_per_day=meals_per_day,
+                force=False
             )
             
             if adjusted:
@@ -3259,20 +3424,8 @@ async def generate_meal_slot(
         ).all()
         
         existing_meal_names = [m.meal_name for m in existing_meals_in_plan if m.meal_name]
-        
-        # Get recently used meal names from other meal plans (last 30 days) to prevent duplicates
-        # This ensures users don't get the same recipes across meal plans for at least a month
-        from datetime import timedelta
-        recent_cutoff = datetime.utcnow().date() - timedelta(days=30)  # Check last 30 days (1 month)
-        recent_meals = db.query(MealPlanMeal).join(MealPlan).filter(
-            MealPlan.user_id == current_user.id,
-            MealPlan.start_date >= recent_cutoff,
-            MealPlanMeal.meal_name.isnot(None)
-        ).all()
-        recent_names = [m.meal_name for m in recent_meals if m.meal_name]
-        existing_meal_names.extend(recent_names)
         existing_meal_names = list(set(existing_meal_names))  # Remove duplicates
-        logger.info(f"Preventing duplicates: {len(existing_meal_names)} unique meal names from current plan + last 30 days")
+        logger.info(f"Preventing duplicates: {len(existing_meal_names)} unique meal names from current meal plan only")
         
         existing_meals_context = [
             {
@@ -3413,9 +3566,54 @@ async def generate_meal_slot(
         
         logger.info(f"🎯 Calculated target calories for {meal_type}: {target_calories} cal (from daily target: {daily_target} cal)")
 
-        # Get target cuisine from preferences
+        # Get target cuisine with variety rotation
+        # Track which cuisines have been used in the current meal plan to ensure variety
+        # Reuse existing_meals_in_plan query from above (line 3408)
+        # Extract cuisines from existing meals
+        used_cuisines = set()
+        for meal in existing_meals_in_plan:
+            meal_cuisine = meal.cuisine or (meal.recipe_details or {}).get('cuisine') if meal.recipe_details else None
+            if meal_cuisine:
+                used_cuisines.add(meal_cuisine.lower())
+        
+        # Define a variety of cuisines to rotate through
+        # Shuffle the list to avoid always starting with Italian
+        import random
+        available_cuisines = [
+            'Italian', 'French', 'Chinese', 'Japanese', 'Thai', 'Indian', 'Mexican', 
+            'Mediterranean', 'Middle Eastern', 'American', 'Korean', 'Vietnamese',
+            'Greek', 'Spanish', 'Turkish', 'Moroccan', 'Lebanese', 'Ethiopian'
+        ]
+        
+        # Shuffle to randomize order (but use a seed based on meal_plan_id for consistency)
+        # This ensures variety while still being deterministic
+        random.seed(hash(meal_plan_id) % 1000)
+        shuffled_cuisines = available_cuisines.copy()
+        random.shuffle(shuffled_cuisines)
+        
+        # Get user's cuisine preferences if set
         cuisine_prefs = user_preferences.get('cuisine_preferences', [])
-        target_cuisine = cuisine_prefs[0] if cuisine_prefs else 'International'
+        
+        # If user has preferences, prioritize those but still rotate
+        if cuisine_prefs:
+            # Start with user preferences, then add variety
+            preferred_cuisines = [c for c in cuisine_prefs if c.lower() not in used_cuisines]
+            if preferred_cuisines:
+                target_cuisine = preferred_cuisines[0]
+            else:
+                # All preferences used, rotate through shuffled cuisines
+                unused_cuisines = [c for c in shuffled_cuisines if c.lower() not in used_cuisines]
+                target_cuisine = unused_cuisines[0] if unused_cuisines else shuffled_cuisines[len(used_cuisines) % len(shuffled_cuisines)]
+        else:
+            # No preferences set, rotate through shuffled cuisines
+            unused_cuisines = [c for c in shuffled_cuisines if c.lower() not in used_cuisines]
+            if unused_cuisines:
+                target_cuisine = unused_cuisines[0]
+            else:
+                # All cuisines used, cycle through them
+                target_cuisine = shuffled_cuisines[len(used_cuisines) % len(shuffled_cuisines)]
+        
+        logger.info(f"🎨 Selected cuisine: {target_cuisine} (used cuisines: {list(used_cuisines)})")
 
         # Use Sequential RAG to generate meal (task.md compliant)
         from services.hybrid_meal_generator import HybridMealGenerator
@@ -3476,13 +3674,35 @@ async def generate_meal_slot(
             recipe_details = generated_meal.get('recipe', {})
             meal_name = generated_meal.get('meal_name') or recipe_details.get('title', f'{meal_type.capitalize()} Meal')
             
-            # Final check - if still duplicate, raise error
+            # Final check - if still duplicate, use fallback generator to create unique name
             if meal_name and meal_name in existing_meal_names:
-                logger.error(f"AI generated duplicate meal name '{meal_name}' even after retry - rejecting request")
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"AI generated a duplicate meal name '{meal_name}'. Please try again or use 'Pick Recipe' instead."
-                )
+                logger.warning(f"AI generated duplicate meal name '{meal_name}' even after retry - using fallback generator")
+                try:
+                    from ai.fallback_recipes import fallback_generator
+                    # Generate a unique fallback meal with a different name
+                    fallback_meal = fallback_generator.generate_unique_recipe(
+                        meal_type=meal_type,
+                        target_calories=target_calories,
+                        target_cuisine=target_cuisine,
+                        existing_names=existing_meal_names + [meal_name],
+                        db=db
+                    )
+                    if fallback_meal and fallback_meal.get('meal_name'):
+                        logger.info(f"✅ Fallback generator created unique meal: '{fallback_meal.get('meal_name')}'")
+                        generated_meal = fallback_meal
+                        recipe_details = generated_meal.get('recipe', {})
+                        meal_name = generated_meal.get('meal_name')
+                    else:
+                        # Last resort: append timestamp to make it unique
+                        import time
+                        meal_name = f"{meal_name} {int(time.time())}"
+                        logger.warning(f"⚠️ Using timestamp suffix to make name unique: '{meal_name}'")
+                except Exception as fallback_err:
+                    logger.error(f"Fallback generation failed: {fallback_err}")
+                    # Last resort: append timestamp to make it unique
+                    import time
+                    meal_name = f"{meal_name} {int(time.time())}"
+                    logger.warning(f"⚠️ Using timestamp suffix to make name unique: '{meal_name}'")
         
         # Extract nutrition - prioritize calculated values from function calling
         nutrition = recipe_details.get('nutrition', {})
@@ -3676,146 +3896,40 @@ async def generate_meal_slot(
         logger.info(f"🔍 Daily total adjustment check: meals_count={meals_count}, meals_per_day={meals_per_day}, existing_meal={existing_meal is not None}, should_adjust={should_adjust}")
         
         if should_adjust and meals_count == meals_per_day:
-            # All meals are generated - now ensure daily total matches target exactly
-            final_diff = daily_target - final_daily_total
+            # All meals are generated - use robust adjustment function
+            adjusted = _adjust_daily_total(
+                db=db,
+                meal_plan_id=meal_plan_id,
+                meal_date=target_date,
+                daily_target=daily_target,
+                meals_per_day=meals_per_day,
+                force=False
+            )
             
-            # If we're off by more than 5 calories, scale all meals proportionally
-            # 5 calorie threshold accounts for rounding during integer conversions
-            if abs(final_diff) > 5:
-                logger.info(f"🎯 Daily total refinement needed: {final_daily_total} cal (target: {daily_target}, diff: {final_diff} cal)")
-                
-                # Calculate scale factor to reach exact target
-                if final_daily_total > 0:
-                    scale_factor = daily_target / final_daily_total
-                else:
-                    # Edge case: all meals have 0 calories (shouldn't happen, but handle gracefully)
-                    logger.error(f"❌ All meals have 0 calories! Cannot scale. Daily target: {daily_target}")
-                    scale_factor = 1.0
-                
-                logger.info(f"📊 Scaling ALL {len(all_meals_for_date)} meals by {scale_factor:.4f}x to reach target ({daily_target} cal)")
-                
-                # Track totals before scaling for verification
-                total_before = final_daily_total
-                
-                # Scale all meals proportionally to maintain nutritional balance
-                for meal in all_meals_for_date:
-                    old_cal = meal.calories or 0
-                    old_protein = meal.protein or 0
-                    old_carbs = meal.carbs or 0
-                    old_fats = meal.fats or 0
-                    
-                    # Calculate new values
-                    new_cal = round(old_cal * scale_factor)
-                    new_protein = round(old_protein * scale_factor)
-                    new_carbs = round(old_carbs * scale_factor)
-                    new_fats = round(old_fats * scale_factor)
-                    
-                    # Ensure minimum values (can't have negative calories)
-                    new_cal = max(1, new_cal)
-                    
-                    # Update meal
-                    meal.calories = new_cal
-                    meal.protein = max(0, new_protein)
-                    meal.carbs = max(0, new_carbs)
-                    meal.fats = max(0, new_fats)
-                    
-                    # Update recipe details nutrition
-                    if meal.recipe_details and isinstance(meal.recipe_details, dict):
-                        if 'nutrition' not in meal.recipe_details:
-                            meal.recipe_details['nutrition'] = {}
-                        meal.recipe_details['nutrition']['calories'] = new_cal
-                        meal.recipe_details['nutrition']['per_serving_calories'] = new_cal
-                        if old_protein > 0:
-                            meal.recipe_details['nutrition']['protein'] = new_protein
-                            meal.recipe_details['nutrition']['per_serving_protein'] = new_protein
-                        if old_carbs > 0:
-                            meal.recipe_details['nutrition']['carbs'] = new_carbs
-                            meal.recipe_details['nutrition']['per_serving_carbs'] = new_carbs
-                        if old_fats > 0:
-                            meal.recipe_details['nutrition']['fats'] = new_fats
-                            meal.recipe_details['nutrition']['per_serving_fats'] = new_fats
-                
-                db.commit()
+            if adjusted:
+                # Refresh meal to get updated values after adjustment
                 db.refresh(meal_plan_meal)
+                calories = meal_plan_meal.calories
+                protein = meal_plan_meal.protein
+                carbs = meal_plan_meal.carbs
+                fats = meal_plan_meal.fats
                 
-                # Recalculate total after scaling to verify accuracy
-                final_check = sum(m.calories or 0 for m in all_meals_for_date)
-                final_check_diff = daily_target - final_check
-                
-                # If still off after scaling (due to rounding), adjust the largest meal by the difference
-                if abs(final_check_diff) > 0:
-                    # Find the meal with the most calories to absorb the rounding difference
-                    largest_meal = max(all_meals_for_date, key=lambda m: m.calories or 0)
-                    adjustment = final_check_diff
-                    largest_meal.calories = max(1, (largest_meal.calories or 0) + adjustment)
-                    
-                    # Update recipe details
-                    if largest_meal.recipe_details and isinstance(largest_meal.recipe_details, dict):
-                        if 'nutrition' not in largest_meal.recipe_details:
-                            largest_meal.recipe_details['nutrition'] = {}
-                        largest_meal.recipe_details['nutrition']['calories'] = largest_meal.calories
-                        largest_meal.recipe_details['nutrition']['per_serving_calories'] = largest_meal.calories
-                    
-                    db.commit()
-                    final_check = sum(m.calories or 0 for m in all_meals_for_date)
-                    logger.info(f"🔧 Applied rounding adjustment of {adjustment} cal to largest meal. Final total: {final_check} cal")
-                
-                # Update the response meal data if this was the meal we just generated
-                if meal_plan_meal.id in [m.id for m in all_meals_for_date]:
-                    db.refresh(meal_plan_meal)
-                    calories = meal_plan_meal.calories
-                    protein = meal_plan_meal.protein
-                    carbs = meal_plan_meal.carbs
-                    fats = meal_plan_meal.fats
-                
-                # Verify final accuracy - refresh meals to ensure we have latest values
-                db.refresh(meal_plan_meal)
+                # Recalculate final daily total after adjustment
                 all_meals_for_date = db.query(MealPlanMeal).filter(
                     MealPlanMeal.meal_plan_id == meal_plan_id,
                     MealPlanMeal.meal_date == target_date,
                     MealPlanMeal.meal_name.isnot(None)
                 ).all()
-                
-                final_check = sum(m.calories or 0 for m in all_meals_for_date)
-                accuracy_diff = abs(daily_target - final_check)
-                accuracy_pct = (accuracy_diff / daily_target * 100) if daily_target > 0 else 0
-                
-                if accuracy_diff <= 5:
-                    logger.info(f"✅ Daily total refined successfully! {final_check} cal (target: {daily_target}, diff: {accuracy_diff} cal, {accuracy_pct:.2f}% accuracy)")
-                else:
-                    logger.warning(f"⚠️ Daily total refinement incomplete: {final_check} cal (target: {daily_target}, diff: {accuracy_diff} cal, {accuracy_pct:.2f}% accuracy). Re-running adjustment...")
-                    # If still off, try one more adjustment
-                    if abs(accuracy_diff) > 5:
-                        current_total = final_check
-                        scale_factor = daily_target / max(current_total, 1)
-                        logger.info(f"🔄 Re-adjusting: scaling by {scale_factor:.4f}x")
-                        for meal in all_meals_for_date:
-                            meal.calories = max(1, round((meal.calories or 0) * scale_factor))
-                            meal.protein = max(0, round((meal.protein or 0) * scale_factor))
-                            meal.carbs = max(0, round((meal.carbs or 0) * scale_factor))
-                            meal.fats = max(0, round((meal.fats or 0) * scale_factor))
-                            if meal.recipe_details and isinstance(meal.recipe_details, dict):
-                                if 'nutrition' not in meal.recipe_details:
-                                    meal.recipe_details['nutrition'] = {}
-                                meal.recipe_details['nutrition']['calories'] = meal.calories
-                                meal.recipe_details['nutrition']['per_serving_calories'] = meal.calories
-                        db.commit()
-                        final_check = sum(m.calories or 0 for m in all_meals_for_date)
-                        # Apply rounding adjustment
-                        rounding_diff = daily_target - final_check
-                        if abs(rounding_diff) > 0:
-                            largest_meal = max(all_meals_for_date, key=lambda m: m.calories or 0)
-                            largest_meal.calories = max(1, (largest_meal.calories or 0) + rounding_diff)
-                            if largest_meal.recipe_details and isinstance(largest_meal.recipe_details, dict):
-                                if 'nutrition' not in largest_meal.recipe_details:
-                                    largest_meal.recipe_details['nutrition'] = {}
-                                largest_meal.recipe_details['nutrition']['calories'] = largest_meal.calories
-                                largest_meal.recipe_details['nutrition']['per_serving_calories'] = largest_meal.calories
-                            db.commit()
-                            final_check = sum(m.calories or 0 for m in all_meals_for_date)
-                        logger.info(f"✅ Final adjustment complete: {final_check} cal (target: {daily_target}, diff: {abs(daily_target - final_check)} cal)")
+                final_daily_total = sum(m.calories or 0 for m in all_meals_for_date)
+                logger.info(f"✅ Daily total adjusted: {final_daily_total} cal (target: {daily_target}, diff: {abs(daily_target - final_daily_total)} cal)")
             else:
-                logger.info(f"✅ Daily total already accurate: {final_daily_total} cal (target: {daily_target}, diff: {final_diff} cal)")
+                # Check if adjustment was skipped or already accurate
+                final_diff = daily_target - final_daily_total
+                if abs(final_diff) <= 5:
+                    logger.info(f"✅ Daily total already accurate: {final_daily_total} cal (target: {daily_target}, diff: {final_diff} cal)")
+                else:
+                    logger.warning(f"⚠️ Daily total adjustment skipped or failed: {final_daily_total} cal (target: {daily_target}, diff: {final_diff} cal)")
+        
         elif meals_count < meals_per_day:
             logger.info(f"ℹ️ Daily total adjustment skipped: Only {meals_count}/{meals_per_day} meals present. Will adjust when all meals are generated.")
 
@@ -3834,13 +3948,147 @@ async def generate_meal_slot(
                 "ai_generated": True
             }
         }
-        
+    
     except HTTPException:
         raise
     except Exception as e:
-        db.rollback()
         logger.error(f"Error generating meal slot: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error generating meal slot: {str(e)}"
+        )
+
+@router.get("/ingredients/analytics")
+async def get_ingredient_analytics(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get ingredient usage analytics across all recipes (database + AI-generated).
+    Returns aggregated ingredient data for visualization.
+    """
+    try:
+        from collections import defaultdict
+        from ai.functions import _convert_to_grams
+        
+        # Aggregate ingredient data
+        ingredient_stats = defaultdict(lambda: {
+            "name": "",
+            "total_quantity": 0.0,
+            "unit": "g",
+            "recipe_count": 0,
+            "database_recipes": 0,
+            "ai_recipes": 0,
+            "categories": set()
+        })
+        
+        # 1. Get ingredients from database recipes
+        database_recipes = db.query(Recipe).filter(Recipe.is_active == True).all()
+        for recipe in database_recipes:
+            for ri in recipe.ingredients:
+                if ri.ingredient:
+                    ing_name = ri.ingredient.name.lower().strip()
+                    # Convert to grams for consistency
+                    quantity_g = _convert_to_grams(ri.quantity, ri.unit, ri.ingredient.name)
+                    
+                    if ing_name not in ingredient_stats:
+                        ingredient_stats[ing_name]["name"] = ri.ingredient.name
+                        ingredient_stats[ing_name]["unit"] = "g"
+                    
+                    ingredient_stats[ing_name]["total_quantity"] += quantity_g
+                    ingredient_stats[ing_name]["recipe_count"] += 1
+                    ingredient_stats[ing_name]["database_recipes"] += 1
+                    if ri.ingredient.category:
+                        ingredient_stats[ing_name]["categories"].add(ri.ingredient.category)
+        
+        # 2. Get ingredients from AI-generated recipes (stored in MealPlanMeal.recipe_details)
+        ai_meals = db.query(MealPlanMeal).filter(
+            MealPlanMeal.recipe_details.isnot(None),
+            MealPlanMeal.meal_name.isnot(None)
+        ).all()
+        
+        for meal in ai_meals:
+            if meal.recipe_details and isinstance(meal.recipe_details, dict):
+                # Check if it's AI-generated
+                is_ai = meal.recipe_details.get("ai_generated", False)
+                if not is_ai:
+                    continue  # Skip database recipes already counted
+                
+                ingredients = meal.recipe_details.get("ingredients", [])
+                if not isinstance(ingredients, list):
+                    continue
+                
+                for ing in ingredients:
+                    if not isinstance(ing, dict):
+                        continue
+                    
+                    ing_name = str(ing.get("name", "")).lower().strip()
+                    if not ing_name:
+                        continue
+                    
+                    quantity = ing.get("quantity", 0)
+                    unit = ing.get("unit", "g")
+                    
+                    # Convert to grams for consistency
+                    quantity_g = _convert_to_grams(float(quantity) if quantity else 0, unit, ing_name)
+                    
+                    if ing_name not in ingredient_stats:
+                        ingredient_stats[ing_name]["name"] = ing.get("name", ing_name)
+                        ingredient_stats[ing_name]["unit"] = "g"
+                    
+                    ingredient_stats[ing_name]["total_quantity"] += quantity_g
+                    ingredient_stats[ing_name]["recipe_count"] += 1
+                    ingredient_stats[ing_name]["ai_recipes"] += 1
+        
+        # Convert to list format and sort by total quantity
+        result = []
+        for ing_name, stats in ingredient_stats.items():
+            result.append({
+                "name": stats["name"],
+                "total_quantity": round(stats["total_quantity"], 2),
+                "unit": stats["unit"],
+                "recipe_count": stats["recipe_count"],
+                "database_recipes": stats["database_recipes"],
+                "ai_recipes": stats["ai_recipes"],
+                "categories": list(stats["categories"])
+            })
+        
+        # Sort by total quantity (descending)
+        result.sort(key=lambda x: x["total_quantity"], reverse=True)
+        
+        # Get top ingredients for charts
+        top_ingredients = result[:20]  # Top 20 most used ingredients
+        
+        # Calculate category distribution
+        category_distribution = defaultdict(lambda: {"count": 0, "total_quantity": 0.0})
+        for item in result:
+            for category in item["categories"]:
+                category_distribution[category]["count"] += item["recipe_count"]
+                category_distribution[category]["total_quantity"] += item["total_quantity"]
+        
+        category_data = [
+            {
+                "category": cat,
+                "recipe_count": stats["count"],
+                "total_quantity": round(stats["total_quantity"], 2)
+            }
+            for cat, stats in category_distribution.items()
+        ]
+        category_data.sort(key=lambda x: x["total_quantity"], reverse=True)
+        
+        return {
+            "total_ingredients": len(result),
+            "total_recipes": len(database_recipes) + len(ai_meals),
+            "database_recipes": len(database_recipes),
+            "ai_recipes": len(ai_meals),
+            "top_ingredients": top_ingredients,
+            "category_distribution": category_data,
+            "all_ingredients": result[:100]  # Limit to top 100 for performance
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting ingredient analytics: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error getting ingredient analytics: {str(e)}"
         )

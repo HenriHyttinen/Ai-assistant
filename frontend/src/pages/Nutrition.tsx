@@ -88,6 +88,13 @@ const Nutrition: React.FC = () => {
     };
   }, []);
 
+  // Reload preferences when Preferences tab is selected
+  useEffect(() => {
+    if (activeTab === 1) {
+      loadNutritionData();
+    }
+  }, [activeTab]);
+
   const loadNutritionData = useCallback(async () => {
     try {
       setLoading(true);
@@ -354,8 +361,8 @@ const Nutrition: React.FC = () => {
 
                 <TabPanel px={0} py={6}>
                   <NutritionPreferences 
-                    preferences={null} 
-                    onUpdate={() => {}} 
+                    preferences={nutritionData?.preferences || null} 
+                    onUpdate={handleDataUpdate} 
                   />
                 </TabPanel>
 

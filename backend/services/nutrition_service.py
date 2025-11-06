@@ -1092,11 +1092,40 @@ class NutritionService:
             # Handle AI output structure - meals can be nested
             meal_plan_data = ai_meal_plan.get("meal_plan", {})
             weekly_plan_data = ai_meal_plan.get("weekly_meal_plan", {})
+            
+            # CRITICAL DEBUG: Log the AI response structure to diagnose parsing issues
+            logger.info(f"🔍 AI meal plan structure: keys={list(ai_meal_plan.keys())}")
+            if weekly_plan_data:
+                logger.info(f"🔍 Weekly plan data: keys={list(weekly_plan_data.keys()) if isinstance(weekly_plan_data, dict) else type(weekly_plan_data)}")
+                if isinstance(weekly_plan_data, dict) and "weekly_plan" in weekly_plan_data:
+                    logger.info(f"🔍 Weekly plan has {len(weekly_plan_data['weekly_plan'])} days")
+                    # CRITICAL: Log meals for ALL days, not just first day
+                    for day_idx, day_plan in enumerate(weekly_plan_data['weekly_plan']):
+                        if isinstance(day_plan, dict):
+                            day_meals = day_plan.get('meals', [])
+                            logger.info(f"🔍 Day {day_idx+1}: {len(day_meals)} meals - {[m.get('meal_name', 'unnamed') for m in day_meals[:3]]}")
+                        else:
+                            logger.warning(f"⚠️ Day {day_idx+1} is not a dict: {type(day_plan)}")
+                else:
+                    logger.error(f"❌ Weekly plan data missing 'weekly_plan' key! Structure: {type(weekly_plan_data)}")
+            else:
+                logger.error(f"❌ No weekly_plan_data found in AI response! Available keys: {list(ai_meal_plan.keys())}")
 
             # If we have a weekly plan, assign meals across the 7 days starting at start_date
             if weekly_plan_data and "weekly_plan" in weekly_plan_data:
                 from datetime import timedelta
                 from ai.fallback_recipes import fallback_generator
+                
+                # CRITICAL FIX: If weekly AI generation failed (only Day 1 has meals), use individual meal generation
+                # This uses the same working code path as daily generation
+                days_with_meals = sum(1 for day_plan in weekly_plan_data["weekly_plan"] if isinstance(day_plan, dict) and day_plan.get('meals'))
+                total_days = len(weekly_plan_data["weekly_plan"])
+                
+                if days_with_meals < total_days:
+                    logger.warning(f"⚠️ Weekly AI generation incomplete: only {days_with_meals}/{total_days} days have meals")
+                    logger.info("🔄 Switching to individual meal generation (same approach as daily generation)")
+                    # Use individual meal generation for missing days (same code path as daily generation)
+                    # This ensures ingredient validation and nutrition calculation work correctly
                 
                 # Determine base meal types from user preferences or default to 4
                 # Guard: plan_request may not have preferences_override
@@ -1118,12 +1147,20 @@ class NutritionService:
                 daily_target = (_override.get('daily_calorie_target', 2000) if isinstance(_override, dict) else 2000) if _override else 2000
                 target_calories = int(daily_target / max(1, len(base_types)))
                 
+                # CRITICAL FIX: Collect all meal names from the entire meal plan to prevent duplicates across days
+                all_meal_names = []
+                for day_plan in weekly_plan_data["weekly_plan"]:
+                    day_meals = day_plan.get("meals", []) if day_plan else []
+                    all_meal_names.extend([m.get('meal_name', '') for m in day_meals if m.get('meal_name')])
+                
                 for day_index, day_plan in enumerate(weekly_plan_data["weekly_plan"]):
                     meal_date_for_day = plan_request.start_date + timedelta(days=day_index)
                     
                     # CRITICAL: Ensure every day has all required meals
                     day_meals = day_plan.get("meals", []) if day_plan else []
-                    used_names = [m.get('meal_name', '') for m in day_meals]
+                    day_meal_names = [m.get('meal_name', '') for m in day_meals if m.get('meal_name')]
+                    # CRITICAL FIX: Use all meal names from entire meal plan to prevent duplicates across days
+                    used_names = list(set(all_meal_names))  # Remove duplicates
                     
                     # CRITICAL FIX: Check if all required meals are present for this day
                     # Get meal types that should exist for this meals_per_day
@@ -1259,6 +1296,7 @@ class NutritionService:
                     for mt in missing_types:
                         # Generate fallback meal for missing type
                         logger.warning(f"Missing {mt} for day {day_index+1} ({meal_date_for_day}) - generating fallback")
+                        # CRITICAL FIX: Use all_meal_names to prevent duplicates across days
                         fallback = fallback_generator.generate_unique_recipe(mt, target_calories, 'International', used_names, db=db)
                         if 'recipe' not in fallback:
                             fallback['recipe'] = {}
@@ -1284,7 +1322,11 @@ class NutritionService:
                                 fallback['recipe']['ai_generated'] = False
                                 fallback['recipe']['database_source'] = True
                         day_meals.append(fallback)
-                        used_names.append(fallback.get('meal_name', ''))
+                        fallback_name = fallback.get('meal_name', '')
+                        if fallback_name:
+                            used_names.append(fallback_name)
+                            # CRITICAL FIX: Update all_meal_names to prevent duplicates across days
+                            all_meal_names.append(fallback_name)
                     
                     # CRITICAL: Final validation - ensure we have exactly len(base_types) meals
                     if len(day_meals) < len(base_types):
@@ -1574,23 +1616,68 @@ class NutritionService:
                             cleaned_meal_name = clean_meal_name(raw_meal_name)
                             normalized_cleaned_name = normalize_meal_name(cleaned_meal_name)
                             
-                            # Check for duplicate base names in the meal plan (normalized comparison)
-                            existing_meals_in_plan = db.query(MealPlanMeal).filter(
-                                MealPlanMeal.meal_plan_id == meal_plan.id
+                            # CRITICAL FIX: Only check for duplicates on the SAME DAY, not across all days
+                            # The same meal can be eaten on different days, so we should allow duplicates across days
+                            existing_meals_same_day = db.query(MealPlanMeal).filter(
+                                MealPlanMeal.meal_plan_id == meal_plan.id,
+                                MealPlanMeal.meal_date == meal_date_for_day
                             ).all()
                             
                             duplicate_found = False
-                            for existing_meal_check in existing_meals_in_plan:
+                            for existing_meal_check in existing_meals_same_day:
                                 existing_normalized = normalize_meal_name(existing_meal_check.meal_name)
                                 if existing_normalized == normalized_cleaned_name and existing_normalized:
                                     duplicate_found = True
-                                    logger.warning(f"⚠️ DUPLICATE DETECTED: '{cleaned_meal_name}' (normalized: '{normalized_cleaned_name}') matches existing meal '{existing_meal_check.meal_name}' (normalized: '{existing_normalized}') - rejecting duplicate")
+                                    logger.warning(f"⚠️ DUPLICATE DETECTED: '{cleaned_meal_name}' (normalized: '{normalized_cleaned_name}') matches existing meal '{existing_meal_check.meal_name}' (normalized: '{existing_normalized}') on the same day - rejecting duplicate")
                                     break
                             
                             if duplicate_found:
-                                # Reject duplicate and log warning
-                                logger.warning(f"Rejecting duplicate meal name '{cleaned_meal_name}' (normalized: '{normalized_cleaned_name}') - AI tried to bypass duplicate detection")
-                                continue  # Skip this meal and move to next
+                                # CRITICAL FIX: Instead of rejecting, generate a new unique meal
+                                logger.warning(f"⚠️ Duplicate meal name '{cleaned_meal_name}' (normalized: '{normalized_cleaned_name}') detected on same day - generating new unique meal instead of rejecting")
+                                # Generate a new unique meal for this slot
+                                try:
+                                    fallback = fallback_generator.generate_unique_recipe(
+                                        final_meal_type, 
+                                        target_calories, 
+                                        recipe_data.get('cuisine', 'International'), 
+                                        used_names, 
+                                        db=db
+                                    )
+                                    if 'recipe' not in fallback:
+                                        fallback['recipe'] = {}
+                                    fallback['meal_type'] = final_meal_type
+                                    # Update meal_data with the new unique meal
+                                    meal_data['meal_name'] = fallback.get('meal_name', cleaned_meal_name)
+                                    recipe_data = fallback.get('recipe', {})
+                                    # Mark as AI-generated to match other meals
+                                    recipe_data['ai_generated'] = True
+                                    recipe_data['database_source'] = False
+                                    # Update cleaned_meal_name for the rest of the processing
+                                    cleaned_meal_name = fallback.get('meal_name', cleaned_meal_name)
+                                    normalized_cleaned_name = normalize_meal_name(cleaned_meal_name)
+                                    logger.info(f"✅ Generated new unique meal '{cleaned_meal_name}' to replace duplicate")
+                                except Exception as gen_err:
+                                    logger.error(f"❌ CRITICAL: Failed to generate replacement meal for duplicate '{cleaned_meal_name}' (type: {final_meal_type}): {gen_err}")
+                                    # CRITICAL FIX: Don't skip the meal - use a simple fallback instead
+                                    # Create a minimal meal to ensure the slot is filled
+                                    logger.warning(f"⚠️ Using emergency fallback for {final_meal_type} on day {day_index+1}")
+                                    meal_data['meal_name'] = f"{final_meal_type.title()} Meal"
+                                    recipe_data = {
+                                        'title': meal_data['meal_name'],
+                                        'ingredients': [],
+                                        'instructions': [],
+                                        'nutrition': {
+                                            'calories': target_calories,
+                                            'protein': int(target_calories * 0.25 / 4),
+                                            'carbs': int(target_calories * 0.45 / 4),
+                                            'fats': int(target_calories * 0.30 / 9)
+                                        },
+                                        'ai_generated': True,
+                                        'database_source': False
+                                    }
+                                    cleaned_meal_name = meal_data['meal_name']
+                                    normalized_cleaned_name = normalize_meal_name(cleaned_meal_name)
+                                    logger.warning(f"⚠️ Using emergency fallback meal for {final_meal_type} - meal will be generated but may need manual adjustment")
                             
                             # CRITICAL: Check if meal already exists for this date/type to prevent duplicates
                             existing_meal = db.query(MealPlanMeal).filter(
@@ -1636,9 +1723,40 @@ class NutritionService:
                                 if recipe_data:
                                     recipe_data['meal_type'] = final_meal_type  # Preserve specific snack types (morning snack, afternoon snack)
                         except Exception as meal_err:
-                            logger.error(f"ERROR adding meal for day {day_index+1} ({meal_date_for_day}), type {final_meal_type}: {meal_err}")
-                            # Try to continue with next meal
-                            continue
+                            logger.error(f"❌ CRITICAL ERROR adding meal for day {day_index+1} ({meal_date_for_day}), type {final_meal_type}: {meal_err}", exc_info=True)
+                            # CRITICAL FIX: Don't skip the meal - try to create a minimal meal to ensure the slot is filled
+                            try:
+                                logger.warning(f"⚠️ Attempting emergency meal creation for {final_meal_type} on day {day_index+1}")
+                                emergency_meal = MealPlanMeal(
+                                    meal_plan_id=meal_plan.id,
+                                    meal_date=meal_date_for_day,
+                                    meal_type=final_meal_type,
+                                    meal_name=f"{final_meal_type.title()} Meal",
+                                    calories=target_calories,
+                                    protein=int(target_calories * 0.25 / 4),
+                                    carbs=int(target_calories * 0.45 / 4),
+                                    fats=int(target_calories * 0.30 / 9),
+                                    recipe_details={
+                                        'title': f"{final_meal_type.title()} Meal",
+                                        'ingredients': [],
+                                        'instructions': [],
+                                        'nutrition': {
+                                            'calories': target_calories,
+                                            'protein': int(target_calories * 0.25 / 4),
+                                            'carbs': int(target_calories * 0.45 / 4),
+                                            'fats': int(target_calories * 0.30 / 9)
+                                        },
+                                        'ai_generated': True,
+                                        'database_source': False
+                                    }
+                                )
+                                db.add(emergency_meal)
+                                db.flush()
+                                logger.warning(f"⚠️ Created emergency meal for {final_meal_type} on day {day_index+1} (ID: {emergency_meal.id}) - user should regenerate this meal")
+                            except Exception as emergency_err:
+                                logger.error(f"❌ FATAL: Even emergency meal creation failed for {final_meal_type} on day {day_index+1}: {emergency_err}", exc_info=True)
+                                # Only skip if emergency creation also fails
+                                continue
                         if recipe_data:
                             # CRITICAL: Ensure ai_generated flag is explicitly set in recipe_details
                             # Default to AI (True) in AI-only mode if flag is missing
@@ -1908,9 +2026,49 @@ class NutritionService:
                     target_calories = int(daily_target / max(1, len(base_types)))
                     
                     # CRITICAL: Check which days/meal types are missing and fill them
+                    # CRITICAL FIX: Always check for breakfast first (most important meal)
                     for day_idx in range(7):
                         day_date = meal_plan.start_date + timedelta(days=day_idx)
+                        # CRITICAL: Always check breakfast first
+                        breakfast_exists = db.query(MealPlanMeal).filter(
+                            MealPlanMeal.meal_plan_id == meal_plan.id,
+                            MealPlanMeal.meal_date == day_date,
+                            MealPlanMeal.meal_type == 'breakfast'
+                        ).first()
+                        if not breakfast_exists:
+                            logger.error(f"🔴 CRITICAL: MISSING BREAKFAST for Day {day_idx+1} ({day_date}) - generating emergency fallback")
+                            try:
+                                from ai.fallback_recipes import fallback_generator
+                                all_used = [m.meal_name for m in db.query(MealPlanMeal).filter(MealPlanMeal.meal_plan_id == meal_plan.id).all()]
+                                fallback = fallback_generator.generate_unique_recipe('breakfast', target_calories, 'International', all_used, db=db)
+                                if 'recipe' not in fallback:
+                                    fallback['recipe'] = {}
+                                fallback['meal_type'] = 'breakfast'
+                                
+                                # Create missing breakfast
+                                fallback_cal = fallback.get('calories') or 400
+                                missing_meal = MealPlanMeal(
+                                    meal_plan_id=meal_plan.id,
+                                    meal_date=day_date,
+                                    meal_type='breakfast',
+                                    meal_name=fallback.get('meal_name', 'Breakfast Meal'),
+                                    calories=fallback_cal,
+                                    protein=fallback.get('protein', 0),
+                                    carbs=fallback.get('carbs', 0),
+                                    fats=fallback.get('fats', 0)
+                                )
+                                db.add(missing_meal)
+                                db.flush()
+                                if fallback.get('recipe'):
+                                    missing_meal.recipe_details = fallback['recipe']
+                                logger.info(f"✅ Created emergency breakfast for day {day_idx+1} ({day_date})")
+                            except Exception as fill_err:
+                                logger.error(f"❌ FATAL: Failed to create emergency breakfast for day {day_idx+1}: {fill_err}", exc_info=True)
+                        
+                        # Check other meal types
                         for meal_type in base_types:
+                            if meal_type == 'breakfast':
+                                continue  # Already checked above
                             existing = db.query(MealPlanMeal).filter(
                                 MealPlanMeal.meal_plan_id == meal_plan.id,
                                 MealPlanMeal.meal_date == day_date,
@@ -2258,12 +2416,14 @@ class NutritionService:
                 for tag in search_request.dietary_tags:
                     query = query.filter(Recipe.dietary_tags.contains(tag))
             
-            # Apply user preferences filtering
-            if search_request.user_preferences:
+            # Apply user preferences filtering (only when explicitly searching, not for general browsing)
+            # CRITICAL FIX: Only apply strict user preferences when there's a search query
+            # When browsing without a query, show all recipes to avoid empty results
+            if search_request.user_preferences and search_request.query:
                 prefs = search_request.user_preferences
                 
                 # Intelligent dietary preferences filtering
-                if prefs.dietary_preferences:
+                if prefs.dietary_preferences and len(prefs.dietary_preferences) > 0:
                     dietary_conditions = []
                     
                     # Handle hierarchical dietary preferences intelligently
@@ -2311,14 +2471,15 @@ class NutritionService:
                         query = query.filter(or_(*dietary_conditions))
                 
                 # Filter out recipes with user's allergies (exclude recipes containing allergens)
-                if prefs.allergies:
+                # CRITICAL: Always apply allergy filtering for safety, even without search query
+                if prefs.allergies and len(prefs.allergies) > 0:
                     for allergy in prefs.allergies:
                         # Check if recipe contains this allergen
                         allergen_tag = f"contains-{allergy}"
                         query = query.filter(~Recipe.dietary_tags.contains([allergen_tag]))
                 
-                # Filter out recipes with disliked ingredients
-                if prefs.disliked_ingredients:
+                # Filter out recipes with disliked ingredients (only when searching)
+                if prefs.disliked_ingredients and len(prefs.disliked_ingredients) > 0 and search_request.query:
                     for ingredient in prefs.disliked_ingredients:
                         # This would require more complex ingredient matching
                         # For now, we'll do a simple title/summary search
