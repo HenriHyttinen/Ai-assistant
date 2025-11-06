@@ -84,6 +84,7 @@ const NutritionDashboard: React.FC<NutritionDashboardProps> = ({ user = null }) 
   });
   const [activeTab, setActiveTab] = useState<'overview' | 'micronutrients'>('overview');
   const [showAllMeals, setShowAllMeals] = useState(false);
+  const [dailyLogEntries, setDailyLogEntries] = useState<any[]>([]); // CRITICAL FIX: Add missing state
 
   // (moved todayTotals below gridAssignments to avoid temporal dead zone)
 
@@ -141,43 +142,82 @@ const NutritionDashboard: React.FC<NutritionDashboardProps> = ({ user = null }) 
     return result;
   }, [mealPlan]);
 
-  // Derive today's totals from the current meal plan to guarantee DAILY values
+  // CRITICAL FIX: Derive today's totals from meal plan AND daily log entries
   const todayTotals = useMemo(() => {
-    const fallback = {
-      calories: nutritionalData?.calories || 0,
-      protein: nutritionalData?.protein || 0,
-      carbs: nutritionalData?.carbs || 0,
-      fats: nutritionalData?.fats || 0,
-    };
-    if (!mealPlan) return fallback;
     const today = new Date().toISOString().split('T')[0];
     let meals: any[] = [];
-    if (mealPlan.plan_type === 'weekly' && Object.keys(gridAssignments).length > 0) {
-      const todayMeals = gridAssignments[today] || {};
-      meals = Object.values(todayMeals).filter(Boolean);
-    } else {
-      const all = (mealPlan.meals || []) as any[];
-      meals = all.filter((m: any) => {
-        const d = m.meal_date || m.date || mealPlan.date;
-        return d?.slice(0, 10) === today;
-      });
+    
+    // Get meals from meal plan
+    if (mealPlan) {
+      if (mealPlan.plan_type === 'weekly' && Object.keys(gridAssignments).length > 0) {
+        const todayMeals = gridAssignments[today] || {};
+        meals = Object.values(todayMeals).filter(Boolean);
+      } else {
+        const all = (mealPlan.meals || []) as any[];
+        meals = all.filter((m: any) => {
+          const d = m.meal_date || m.date || mealPlan.date;
+          return d?.slice(0, 10) === today;
+        });
+      }
     }
-    if (!meals.length) return fallback;
+    
+    // CRITICAL FIX: Add daily log entries to totals
+    const logMeals = dailyLogEntries.map((entry: any) => ({
+      calories: entry.calories || 0,
+      protein: entry.protein || 0,
+      carbs: entry.carbs || 0,
+      fats: entry.fats || 0,
+    }));
+    
+    // Combine meal plan meals and daily log entries
+    const allMeals = [...meals, ...logMeals];
+    
+    if (!allMeals.length) {
+      // Fallback to nutritional analysis data if available
+      return {
+        calories: nutritionalData?.calories || 0,
+        protein: nutritionalData?.protein || 0,
+        carbs: nutritionalData?.carbs || 0,
+        fats: nutritionalData?.fats || 0,
+      };
+    }
+    
     const sum = (arr: any[], key: 'calories'|'protein'|'carbs'|'fats') =>
-      arr.reduce((s, m) => s + (m[key] || m.recipe?.nutrition?.[key] || 0), 0);
+      arr.reduce((s, m) => {
+        const value = m[key] || m.recipe?.nutrition?.[key] || 0;
+        return s + (typeof value === 'number' ? value : 0);
+      }, 0);
+    
     return {
-      calories: sum(meals, 'calories'),
-      protein: sum(meals, 'protein'),
-      carbs: sum(meals, 'carbs'),
-      fats: sum(meals, 'fats'),
+      calories: sum(allMeals, 'calories'),
+      protein: sum(allMeals, 'protein'),
+      carbs: sum(allMeals, 'carbs'),
+      fats: sum(allMeals, 'fats'),
     };
-  }, [mealPlan, gridAssignments, nutritionalData]);
+  }, [mealPlan, gridAssignments, dailyLogEntries, nutritionalData]);
 
   const cardBg = useColorModeValue('white', 'gray.800');
   const borderColor = useColorModeValue('gray.200', 'gray.600');
 
   useEffect(() => {
     loadNutritionData();
+  }, []);
+
+  // CRITICAL FIX: Listen for meal plan updates from other pages
+  useEffect(() => {
+    const handleMealPlanUpdate = () => {
+      console.log('🔄 Meal plan updated, reloading dashboard...');
+      loadNutritionData();
+    };
+    
+    // Listen for custom events when meal plan is updated
+    window.addEventListener('mealPlanUpdated', handleMealPlanUpdate);
+    window.addEventListener('dailyLogUpdated', handleMealPlanUpdate);
+    
+    return () => {
+      window.removeEventListener('mealPlanUpdated', handleMealPlanUpdate);
+      window.removeEventListener('dailyLogUpdated', handleMealPlanUpdate);
+    };
   }, []);
 
   const setupDefaultPreferences = async () => {
@@ -302,8 +342,9 @@ const NutritionDashboard: React.FC<NutritionDashboardProps> = ({ user = null }) 
           const chosen = pickMealsForToday(byDate[0]);
           if (chosen.meals.length > 0) {
             setMealPlan(byDate[0]);
+            console.log('✅ Loaded meal plan with', chosen.meals.length, 'meals for today');
           } else {
-            // Fallback: fetch latest weekly and filter today's meals
+            // CRITICAL FIX: Fallback to latest weekly plan that contains today
             const weeklyResp = await fetch('http://localhost:8000/nutrition/meal-plans?plan_type=weekly&limit=1', {
               method: 'GET',
               headers: { 'Content-Type': 'application/json', ...headers }
@@ -311,12 +352,56 @@ const NutritionDashboard: React.FC<NutritionDashboardProps> = ({ user = null }) 
             if (weeklyResp.ok) {
               const weekly = await weeklyResp.json();
               if (weekly.length > 0) {
-                setMealPlan(weekly[0]);
+                const weeklyPlan = weekly[0];
+                const weeklyMeals = pickMealsForToday(weeklyPlan);
+                if (weeklyMeals.meals.length > 0) {
+                  setMealPlan(weeklyPlan);
+                  console.log('✅ Loaded weekly meal plan with', weeklyMeals.meals.length, 'meals for today');
+                } else {
+                  console.log('⚠️ Weekly plan found but no meals for today');
+                }
+              }
+            }
+          }
+        } else {
+          // CRITICAL FIX: If no plan found by date, try weekly plan
+          console.log('⚠️ No meal plan found for date, trying weekly plan...');
+          const weeklyResp = await fetch('http://localhost:8000/nutrition/meal-plans?plan_type=weekly&limit=1', {
+            method: 'GET',
+            headers: { 'Content-Type': 'application/json', ...headers }
+          });
+          if (weeklyResp.ok) {
+            const weekly = await weeklyResp.json();
+            if (weekly.length > 0) {
+              const weeklyPlan = weekly[0];
+              const weeklyMeals = pickMealsForToday(weeklyPlan);
+              if (weeklyMeals.meals.length > 0) {
+                setMealPlan(weeklyPlan);
+                console.log('✅ Loaded weekly meal plan with', weeklyMeals.meals.length, 'meals for today');
               }
             }
           }
         }
       }
+      
+      // CRITICAL FIX: Load daily log entries for today (not just meal plan meals)
+      const dailyLogResponse = await fetch(`http://localhost:8000/daily-logging/daily-log/${today}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          ...headers
+        }
+      });
+      
+      let dailyLogEntries: any[] = [];
+      if (dailyLogResponse.ok) {
+        const dailyLogData = await dailyLogResponse.json();
+        dailyLogEntries = dailyLogData.entries || [];
+        console.log('📊 Loaded daily log entries:', dailyLogEntries.length);
+      }
+      
+      // Store daily log entries in state for display
+      setDailyLogEntries(dailyLogEntries);
       
       // Load nutritional analysis for today
       const analysisResponse = await fetch(`http://localhost:8000/nutrition/nutritional-analysis?start_date=${today}&end_date=${today}&analysis_type=daily`, {
@@ -555,7 +640,25 @@ const NutritionDashboard: React.FC<NutritionDashboardProps> = ({ user = null }) 
                     });
                   }
                   
-                  const visible = showAllMeals ? meals : meals.slice(0, 6);
+                  // CRITICAL FIX: Include daily log entries in the meals list
+                  // Convert daily log entries to meal format for display
+                  const logMeals = dailyLogEntries.map((entry: any) => ({
+                    id: entry.id || `log_${entry.food_name}_${entry.meal_type}`,
+                    meal_name: entry.food_name,
+                    meal_type: entry.meal_type,
+                    date: today,
+                    meal_date: today,
+                    calories: entry.calories || 0,
+                    protein: entry.protein || 0,
+                    carbs: entry.carbs || 0,
+                    fats: entry.fats || 0,
+                    is_daily_log: true // Flag to identify daily log entries
+                  }));
+                  
+                  // Combine meal plan meals and daily log entries
+                  const allMeals = [...meals, ...logMeals];
+                  
+                  const visible = showAllMeals ? allMeals : allMeals.slice(0, 6);
                   return (
                     <Grid templateColumns={{ base: '1fr', md: 'repeat(2, 1fr)' }} gap={3}>
                       {visible.map((meal: any) => {
@@ -589,40 +692,10 @@ const NutritionDashboard: React.FC<NutritionDashboardProps> = ({ user = null }) 
                 <HStack justify="space-between" fontWeight="bold" p={2} bg="gray.50" borderRadius="md">
                   <Text>Total</Text>
                   <HStack>
-                  <Text>{(() => {
-                    const today = new Date().toISOString().split('T')[0];
-                    
-                    // Always show today's total calories
-                    let meals: any[] = [];
-                    if (mealPlan.plan_type === 'weekly' && Object.keys(gridAssignments).length > 0) {
-                      const todayMeals = gridAssignments[today] || {};
-                      meals = Object.values(todayMeals).filter(Boolean);
-                    } else {
-                      const all = mealPlan.meals || [];
-                      meals = all.filter((m: any) => {
-                        const d = m.meal_date || m.date || mealPlan.date;
-                        return d?.slice(0, 10) === today;
-                      });
-                    }
-                    
-                    return meals.reduce((s: number, m: any) => s + (m.calories || m.recipe?.nutrition?.calories || 0), 0);
-                  })()} calories</Text>
+                  <Text>{todayTotals.calories} calories</Text>
                   {(() => {
-                    const total = (() => {
-                      const today = new Date().toISOString().split('T')[0];
-                      let meals: any[] = [];
-                      if (mealPlan.plan_type === 'weekly' && Object.keys(gridAssignments).length > 0) {
-                        const todayMeals = gridAssignments[today] || {};
-                        meals = Object.values(todayMeals).filter(Boolean);
-                      } else {
-                        const all = mealPlan.meals || [];
-                        meals = all.filter((m: any) => {
-                          const d = m.meal_date || m.date || mealPlan.date;
-                          return d?.slice(0, 10) === today;
-                        });
-                      }
-                      return meals.reduce((s: number, m: any) => s + (m.calories || m.recipe?.nutrition?.calories || 0), 0);
-                    })();
+                    // CRITICAL FIX: Use todayTotals which includes both meal plan and daily log entries
+                    const total = todayTotals.calories;
                     const target = goals.calories || 2000;
                     return total < target * 0.95 ? (
                       <Button size="xs" variant="outline" colorScheme="green"
@@ -861,3 +934,4 @@ const NutritionDashboard: React.FC<NutritionDashboardProps> = ({ user = null }) 
 };
 
 export default NutritionDashboard;
+

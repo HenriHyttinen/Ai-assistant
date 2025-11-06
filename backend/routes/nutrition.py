@@ -33,6 +33,7 @@ from services.measurement_standardization_service import MeasurementStandardizat
 from services.nutrition_analytics import NutritionAnalyticsService
 from services.recipe_recommendation_service import RecipeRecommendationService
 from services.meal_plan_versioning_service import meal_plan_versioning_service
+from services.ingredient_substitution_service import IngredientSubstitutionService
 import logging
 
 logger = logging.getLogger(__name__)
@@ -294,6 +295,43 @@ def update_nutrition_preferences(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error updating nutrition preferences: {str(e)}"
+        )
+
+@router.post("/preferences/generate-targets")
+def generate_targets_from_bmi(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Generate calorie and macronutrient targets based on user's BMI and health profile"""
+    try:
+        # Use existing personalized targets calculation
+        personalized_targets = nutrition_service.calculate_personalized_targets(db, current_user.id)
+        
+        if not personalized_targets.get('personalized'):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Health profile data not available. Please complete your health profile first."
+            )
+        
+        # Return the calculated targets
+        return {
+            "daily_calorie_target": personalized_targets.get('calorie_target', 2000),
+            "protein_target": personalized_targets.get('protein_target', 100),
+            "carbs_target": personalized_targets.get('carbs_target', 200),
+            "fats_target": personalized_targets.get('fats_target', 60),
+            "bmi": personalized_targets.get('bmi'),
+            "activity_level": personalized_targets.get('activity_level'),
+            "fitness_goal": personalized_targets.get('fitness_goal'),
+            "message": "Targets calculated based on your BMI, activity level, and fitness goals"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error generating targets from BMI: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error generating targets: {str(e)}"
         )
 
 @router.post("/meal-plans/generate-enhanced", response_model=Dict[str, Any])
@@ -998,9 +1036,22 @@ def add_recipe_to_meal_plan(
             "database_source": True
         }
         
+        # CRITICAL FIX: Strip ID numbers from meal names (e.g., "Asian Sunrise Stir-Fry 2030" -> "Asian Sunrise Stir-Fry")
+        def clean_meal_name(name: str) -> str:
+            """Remove trailing ID numbers from meal names"""
+            if not name:
+                return name
+            # Remove trailing numbers (4+ digits) that look like IDs
+            import re
+            # Pattern: space followed by 4+ digits at the end
+            cleaned = re.sub(r'\s+\d{4,}$', '', name.strip())
+            return cleaned if cleaned else name
+        
+        cleaned_recipe_title = clean_meal_name(recipe.title)
+        
         if existing_meal:
             # Update existing meal with new recipe
-            existing_meal.meal_name = recipe.title
+            existing_meal.meal_name = cleaned_recipe_title
             existing_meal.calories = int(per_serving_calories)
             existing_meal.protein = int(per_serving_protein)
             existing_meal.carbs = int(per_serving_carbs)
@@ -1010,14 +1061,14 @@ def add_recipe_to_meal_plan(
             meal_plan_meal = existing_meal
             db.commit()
             db.refresh(meal_plan_meal)
-            logger.info(f"Updated meal slot with recipe '{recipe.title}' for {meal_date} {meal_type}")
+            logger.info(f"Updated meal slot with recipe '{cleaned_recipe_title}' for {meal_date} {meal_type}")
         else:
             # Create new meal
             meal_plan_meal = MealPlanMeal(
                 meal_plan_id=meal_plan_id,
                 meal_date=meal_date,
                 meal_type=meal_type,
-                meal_name=recipe.title,
+                meal_name=cleaned_recipe_title,
                 calories=int(per_serving_calories),
                 protein=int(per_serving_protein),
                 carbs=int(per_serving_carbs),
@@ -1028,7 +1079,7 @@ def add_recipe_to_meal_plan(
             db.add(meal_plan_meal)
             db.commit()
             db.refresh(meal_plan_meal)
-            logger.info(f"Added recipe '{recipe.title}' to meal plan for {meal_date} {meal_type}")
+            logger.info(f"Added recipe '{cleaned_recipe_title}' to meal plan for {meal_date} {meal_type}")
 
         return {
             "message": "Recipe added successfully",
@@ -1561,6 +1612,123 @@ def get_portion_suggestions(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error getting portion suggestions: {str(e)}"
+        )
+
+@router.get("/recipes/{recipe_id}/substitutions/{ingredient_name}")
+def get_ingredient_substitutions(
+    recipe_id: str,
+    ingredient_name: str,
+    reason: str = Query("dietary_preference", description="Reason for substitution"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get AI-generated ingredient substitution suggestions for a recipe ingredient"""
+    try:
+        recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
+        if not recipe:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Recipe not found"
+            )
+        
+        # Convert recipe to dict format
+        recipe_dict = {
+            "id": recipe.id,
+            "title": recipe.title,
+            "ingredients": recipe.ingredients_list or [],
+            "dietary_tags": recipe.dietary_tags or []
+        }
+        
+        # Get user preferences for substitution context
+        integration_service = IntegrationService()
+        user_preferences = integration_service.get_integrated_nutrition_preferences(db, current_user.id)
+        
+        # Get substitution suggestions
+        substitution_service = IngredientSubstitutionService()
+        suggestions = substitution_service.suggest_substitutions(
+            recipe=recipe_dict,
+            ingredient_to_replace=ingredient_name,
+            reason=reason,
+            user_preferences=user_preferences if isinstance(user_preferences, dict) else {}
+        )
+        
+        return {
+            "ingredient": ingredient_name,
+            "recipe_id": recipe_id,
+            "suggestions": suggestions
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting ingredient substitutions: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error getting ingredient substitutions: {str(e)}"
+        )
+
+@router.post("/recipes/{recipe_id}/substitutions/apply")
+def apply_ingredient_substitution(
+    recipe_id: str,
+    request: Dict[str, Any] = Body(..., description="{ ingredient_name: str, substitution: dict }"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Apply an ingredient substitution to a recipe"""
+    try:
+        recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
+        if not recipe:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Recipe not found"
+            )
+        
+        ingredient_name = request.get("ingredient_name")
+        substitution = request.get("substitution")
+        
+        if not ingredient_name or not substitution:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="ingredient_name and substitution are required"
+            )
+        
+        # Convert recipe to dict format
+        recipe_dict = {
+            "id": recipe.id,
+            "title": recipe.title,
+            "ingredients": recipe.ingredients_list or [],
+            "dietary_tags": recipe.dietary_tags or []
+        }
+        
+        # Apply substitution
+        substitution_service = IngredientSubstitutionService()
+        updated_recipe = substitution_service.apply_substitution(
+            recipe=recipe_dict,
+            original_ingredient_name=ingredient_name,
+            substitution=substitution
+        )
+        
+        # Update recipe in database
+        if updated_recipe.get("ingredients"):
+            recipe.ingredients_list = updated_recipe["ingredients"]
+            flag_modified(recipe, "ingredients_list")
+            db.commit()
+            db.refresh(recipe)
+        
+        return {
+            "message": "Substitution applied successfully",
+            "recipe_id": recipe_id,
+            "updated_ingredients": updated_recipe.get("ingredients", [])
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error applying ingredient substitution: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error applying ingredient substitution: {str(e)}"
         )
 
 @router.post("/meal-plans/{meal_plan_id}/optimize-timing")
@@ -3136,9 +3304,10 @@ async def generate_meal_slot(
         remaining_calories = daily_target - current_daily_total
         
         # Determine expected meal types for this day
+        # CRITICAL FIX: Use 'morning snack' and 'afternoon snack' for 5 meals per day to match frontend expectations
         meal_types_list = user_preferences.get('meal_types_list', ['breakfast', 'lunch', 'dinner', 'snack', 'snack'])
         if meals_per_day == 5:
-            meal_types_list = ['breakfast', 'lunch', 'dinner', 'snack', 'snack']
+            meal_types_list = ['breakfast', 'lunch', 'dinner', 'morning snack', 'afternoon snack']
         elif meals_per_day == 4:
             meal_types_list = ['breakfast', 'lunch', 'dinner', 'snack']
         elif meals_per_day == 3:
@@ -3252,6 +3421,22 @@ async def generate_meal_slot(
         from services.hybrid_meal_generator import HybridMealGenerator
         hybrid_generator = HybridMealGenerator()
         
+        # CRITICAL FIX: Include preferred meal times in meal generation
+        import re
+        preferred_meal_times = user_preferences.get('preferred_meal_times', {})
+        # Convert ISO 8601 times to simple time strings for AI
+        meal_times_for_ai = {}
+        if preferred_meal_times:
+            for meal_name, time_value in preferred_meal_times.items():
+                if isinstance(time_value, str):
+                    if 'T' in time_value:
+                        # Extract time from ISO 8601 format
+                        match = re.match(r'.*T(\d{2}):(\d{2})', time_value)
+                        if match:
+                            meal_times_for_ai[meal_name] = f"{match.group(1)}:{match.group(2)}"
+                    else:
+                        meal_times_for_ai[meal_name] = time_value
+        
         # Prepare meal data for sequential RAG generation
         meal_data = {
             'meal_type': meal_type,
@@ -3259,7 +3444,8 @@ async def generate_meal_slot(
             'target_cuisine': target_cuisine,
             'user_preferences': user_preferences,
             'existing_meals': existing_meals_context,
-            'daily_calorie_target': daily_target  # Pass daily target for validation
+            'daily_calorie_target': daily_target,  # Pass daily target for validation
+            'preferred_meal_times': meal_times_for_ai  # CRITICAL FIX: Include preferred meal times
         }
 
         # Generate using Sequential RAG (task.md compliant)

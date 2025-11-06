@@ -16,8 +16,17 @@ load_dotenv()
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 
-# Create Supabase client directly
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+# Create Supabase client directly with error handling
+try:
+    if SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY:
+        # CRITICAL FIX: Only pass url and key, not proxies or other deprecated args
+        supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+    else:
+        supabase = None
+        print("Warning: Supabase credentials not found in environment")
+except Exception as e:
+    print(f"Warning: Failed to initialize Supabase client: {e}")
+    supabase = None
 
 security = HTTPBearer()
 

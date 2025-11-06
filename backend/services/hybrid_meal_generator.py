@@ -1312,7 +1312,8 @@ class HybridMealGenerator:
             if meals_per_day == 3:
                 day_base_types = ['breakfast', 'lunch', 'dinner']
             elif meals_per_day == 5:
-                day_base_types = ['breakfast', 'snack', 'lunch', 'dinner', 'snack']
+                # CRITICAL FIX: Use 'morning snack' and 'afternoon snack' for 5 meals per day to match frontend expectations
+                day_base_types = ['breakfast', 'lunch', 'dinner', 'morning snack', 'afternoon snack']
             else:  # Default to 4
                 day_base_types = ['breakfast', 'lunch', 'dinner', 'snack']
             

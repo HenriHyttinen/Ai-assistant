@@ -725,20 +725,50 @@ const ShoppingList: React.FC<ShoppingListProps> = ({
                 
                 <Divider />
                 
-                <VStack spacing={3} align="stretch">
-                  <Text fontWeight="semibold">Items:</Text>
-                  {selectedList.items?.map((item: any) => (
-                    <ShoppingListItem 
-                      key={item.id} 
-                      item={item} 
-                      onTogglePurchased={toggleItemPurchased}
-                      onRemove={removeItem}
-                      onUpdateQuantity={updateItemQuantity}
-                    />
-                  )) || (
-                    <Text color="gray.500" fontStyle="italic">No items in this list</Text>
-                  )}
-                </VStack>
+                {/* CRITICAL FIX: Group items by category for better organization */}
+                {(() => {
+                  if (!selectedList.items || selectedList.items.length === 0) {
+                    return <Text color="gray.500" fontStyle="italic">No items in this list</Text>;
+                  }
+                  
+                  // Group items by category
+                  const itemsByCategory = selectedList.items.reduce((acc: any, item: any) => {
+                    const category = item.category || 'other';
+                    if (!acc[category]) {
+                      acc[category] = [];
+                    }
+                    acc[category].push(item);
+                    return acc;
+                  }, {});
+                  
+                  return (
+                    <VStack spacing={4} align="stretch">
+                      {Object.entries(itemsByCategory).map(([category, items]: [string, any[]]) => (
+                        <Box key={category}>
+                          <HStack mb={2}>
+                            <Badge colorScheme="blue" size="sm" textTransform="capitalize">
+                              {category.replace('_', ' ')}
+                            </Badge>
+                            <Text fontSize="sm" color="gray.600">
+                              {items.length} {items.length === 1 ? 'item' : 'items'}
+                            </Text>
+                          </HStack>
+                          <VStack spacing={2} align="stretch">
+                            {items.map((item: any) => (
+                              <ShoppingListItem 
+                                key={item.id} 
+                                item={item} 
+                                onTogglePurchased={toggleItemPurchased}
+                                onRemove={removeItem}
+                                onUpdateQuantity={updateItemQuantity}
+                              />
+                            ))}
+                          </VStack>
+                        </Box>
+                      ))}
+                    </VStack>
+                  );
+                })()}
               </VStack>
             )}
           </ModalBody>

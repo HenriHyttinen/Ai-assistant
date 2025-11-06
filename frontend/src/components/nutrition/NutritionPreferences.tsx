@@ -275,7 +275,49 @@ const NutritionPreferences: React.FC<NutritionPreferencesProps> = ({
         body: JSON.stringify(preparedData),
       });
 
+      // CRITICAL FIX: Handle 401/403 responses that might cause logout
+      if (response.status === 401 || response.status === 403) {
+        toast({
+          title: 'Authentication Error',
+          description: 'Your session may have expired. Please try logging in again.',
+          status: 'error',
+          duration: 5000,
+          isClosable: true,
+        });
+        // Don't clear session - let user try again
+        return;
+      }
+      
       if (response.ok) {
+        const savedPreferences = await response.json();
+        // CRITICAL FIX: Update form data with saved preferences to ensure form is prefilled
+        setFormData({
+          dietary_preferences: savedPreferences.dietary_preferences || [],
+          allergies: savedPreferences.allergies || [],
+          disliked_ingredients: savedPreferences.disliked_ingredients || [],
+          cuisine_preferences: savedPreferences.cuisine_preferences || [],
+          daily_calorie_target: savedPreferences.daily_calorie_target || 2000,
+          protein_target: savedPreferences.protein_target || 100,
+          carbs_target: savedPreferences.carbs_target || 200,
+          fats_target: savedPreferences.fats_target || 60,
+          meals_per_day: savedPreferences.meals_per_day || 3,
+          snacks_per_day: savedPreferences.snacks_per_day || 2,
+          preferred_meal_times: savedPreferences.preferred_meal_times ? 
+            Object.fromEntries(
+              Object.entries(savedPreferences.preferred_meal_times).map(([meal, time]) => [
+                meal,
+                typeof time === 'string' && time.includes('T') 
+                  ? time.match(/T(\d{2}):(\d{2})/)?.[1] + ':' + time.match(/T(\d{2}):(\d{2})/)?.[2] || '12:00'
+                  : time
+              ])
+            ) : {
+              breakfast: '08:00',
+              lunch: '12:30',
+              dinner: '19:00'
+            },
+          timezone: savedPreferences.timezone || 'UTC'
+        });
+        
         toast({
           title: 'Preferences saved successfully!',
           description: 'Your dietary preferences have been updated.',
@@ -421,7 +463,7 @@ const NutritionPreferences: React.FC<NutritionPreferencesProps> = ({
                 placeholder="Enter ingredients you dislike (comma-separated)"
                 value={formData.disliked_ingredients.join(', ')}
                 onChange={(e) => {
-                  const ingredients = e.target.value.split(',', 'en').map(i => i.trim()).filter(i => i);
+                  const ingredients = e.target.value.split(',').map(i => i.trim()).filter(i => i);
                   handleArrayChange('disliked_ingredients', ingredients);
                 }}
               />
@@ -510,6 +552,86 @@ const NutritionPreferences: React.FC<NutritionPreferencesProps> = ({
                     Muscle Gain
                   </Button>
                 </HStack>
+              </FormControl>
+
+              {/* CRITICAL FIX: Generate targets based on BMI */}
+              <FormControl>
+                <FormLabel>Generate from Health Profile</FormLabel>
+                <Button
+                  size="sm"
+                  colorScheme="purple"
+                  variant="outline"
+                  isLoading={loading}
+                  onClick={async () => {
+                    try {
+                      setLoading(true);
+                      const { supabase } = await import('../../lib/supabase.ts');
+                      const { data: { session } } = await supabase.auth.getSession();
+                      
+                      if (!session?.access_token) {
+                        toast({
+                          title: 'Please log in',
+                          status: 'warning',
+                          duration: 2500,
+                          isClosable: true,
+                        });
+                        return;
+                      }
+                      
+                      const API_BASE_URL = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8000';
+                      const response = await fetch(`${API_BASE_URL}/nutrition/preferences/generate-targets`, {
+                        method: 'POST',
+                        headers: {
+                          'Content-Type': 'application/json',
+                          'Authorization': `Bearer ${session.access_token}`,
+                        },
+                      });
+                      
+                      if (response.ok) {
+                        const targets = await response.json();
+                        setFormData(prev => ({
+                          ...prev,
+                          daily_calorie_target: targets.daily_calorie_target || prev.daily_calorie_target,
+                          protein_target: targets.protein_target || prev.protein_target,
+                          carbs_target: targets.carbs_target || prev.carbs_target,
+                          fats_target: targets.fats_target || prev.fats_target,
+                        }));
+                        toast({
+                          title: 'Targets Generated!',
+                          description: targets.message || 'Targets calculated based on your BMI, activity level, and fitness goals',
+                          status: 'success',
+                          duration: 4000,
+                          isClosable: true,
+                        });
+                      } else {
+                        const errorData = await response.json().catch(() => ({ detail: 'Failed to generate targets' }));
+                        toast({
+                          title: 'Failed to generate targets',
+                          description: errorData.detail || 'Please complete your health profile first',
+                          status: 'error',
+                          duration: 4000,
+                          isClosable: true,
+                        });
+                      }
+                    } catch (err: any) {
+                      console.error('Error generating targets:', err);
+                      toast({
+                        title: 'Error generating targets',
+                        description: err.message || 'Please try again',
+                        status: 'error',
+                        duration: 3000,
+                        isClosable: true,
+                      });
+                    } finally {
+                      setLoading(false);
+                    }
+                  }}
+                >
+                  Generate from BMI & Health Profile
+                </Button>
+                <Text fontSize="xs" color="gray.500" mt={1}>
+                  Calculates targets based on your BMI, activity level, and fitness goals
+                </Text>
               </FormControl>
 
               <Divider />
@@ -658,7 +780,26 @@ const NutritionPreferences: React.FC<NutritionPreferencesProps> = ({
                 {Object.entries(formData.preferred_meal_times).map(([meal, time]) => (
                   <HStack key={meal} spacing={3}>
                     <FormControl flex={1}>
-                      <FormLabel textTransform="capitalize">{meal}</FormLabel>
+                      <FormLabel>Meal Name</FormLabel>
+                      <Input
+                        value={meal}
+                        onChange={(e) => {
+                          const newName = e.target.value.trim();
+                          if (newName && newName !== meal) {
+                            const newTimes = { ...formData.preferred_meal_times };
+                            newTimes[newName] = newTimes[meal];
+                            delete newTimes[meal];
+                            setFormData(prev => ({
+                              ...prev,
+                              preferred_meal_times: newTimes
+                            }));
+                          }
+                        }}
+                        placeholder="e.g., breakfast, lunch, dinner"
+                      />
+                    </FormControl>
+                    <FormControl flex={1}>
+                      <FormLabel>Time</FormLabel>
                       <Input
                         type="time"
                         value={time}

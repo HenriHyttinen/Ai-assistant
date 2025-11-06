@@ -283,14 +283,27 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
       return;
     }
     
+    // CRITICAL FIX: Prevent multiple simultaneous generations
+    const slotKey = `${date}-${mealType}`;
+    if (generatingMeals.has(slotKey) || isGenerating) {
+      toast({
+        title: 'Generation in progress',
+        description: 'Please wait for the current generation to complete.',
+        status: 'info',
+        duration: 2000,
+        isClosable: true,
+      });
+      return;
+    }
+    
     // CRITICAL FIX: Normalize meal type for backend (morning snack -> snack)
     const normalizedMealType = mealType === 'morning snack' || mealType === 'afternoon snack' || mealType === 'evening snack' 
       ? 'snack' 
       : mealType.toLowerCase();
     
-    const slotKey = `${date}-${mealType}`;
     try {
       setGeneratingMeals(prev => new Set(prev).add(slotKey));
+      setLoading(true); // CRITICAL: Set global loading state
       const { supabase } = await import('../../lib/supabase.ts');
       const { data: { session } } = await supabase.auth.getSession();
       
@@ -388,6 +401,7 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
           next.delete(slotKey);
           return next;
         });
+        setLoading(false); // CRITICAL: Clear global loading state when done
         
         toast({ 
           title: 'Meal Generated!', 
@@ -398,6 +412,9 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
         });
         setRecipeSelectorOpen(false);
         setSelectedSlot(null);
+        
+        // CRITICAL FIX: Notify dashboard to reload
+        window.dispatchEvent(new CustomEvent('mealPlanUpdated', { detail: { date } }));
         
         // Reload from backend after a short delay to ensure consistency (but UI is already updated)
         setTimeout(() => loadMealPlan(), 1000); // Give state update time to render
@@ -420,6 +437,7 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
         next.delete(slotKey);
         return next;
       });
+      setLoading(false); // CRITICAL: Clear global loading state in finally block
     }
   };
 
@@ -460,6 +478,8 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
                 });
                 setRecipeSelectorOpen(false);
                 setSelectedSlot(null);
+                // CRITICAL FIX: Notify dashboard to reload
+                window.dispatchEvent(new CustomEvent('mealPlanUpdated'));
                 loadMealPlan(); // Reload to show the new meal
               } else {
                 throw new Error('Failed to add recipe');
@@ -652,11 +672,30 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
         
         // ROOT CAUSE FIX: Check preserved meal_type from recipe_details (backend stores it there)
         // Try multiple locations to find the preserved meal_type
-        const preservedType = snack.recipe?.meal_type || snack.recipe_details?.meal_type || snack.meal_type || snack.type;
+        let preservedType = snack.recipe?.meal_type || snack.recipe_details?.meal_type || snack.meal_type || snack.type;
+        
+        // CRITICAL FIX: If we still have generic 'snack', try to infer from meal order or assign to first available slot
+        if (preservedType === 'snack' || !preservedType) {
+          // Check if we already have a morning snack assigned for this date
+          const morningSnackSlot = snackSlotMap['morning snack'];
+          const afternoonSnackSlot = snackSlotMap['afternoon snack'];
+          const hasMorningSnack = morningSnackSlot !== undefined && result[date]?.[morningSnackSlot];
+          const hasAfternoonSnack = afternoonSnackSlot !== undefined && result[date]?.[afternoonSnackSlot];
+          
+          // Assign to first available slot
+          if (!hasMorningSnack && morningSnackSlot !== undefined) {
+            preservedType = 'morning snack';
+          } else if (!hasAfternoonSnack && afternoonSnackSlot !== undefined) {
+            preservedType = 'afternoon snack';
+          } else {
+            // Both slots filled or no slots available - keep as generic 'snack' for fallback assignment
+            preservedType = 'snack';
+          }
+        }
         
         // ROOT CAUSE FIX: Use preserved meal_type directly, don't fall back to 'snack'
         // This ensures we match the exact slot (morning snack vs afternoon snack)
-        const snackType = preservedType || 'snack';
+        const snackType = preservedType;
         
         // ROOT CAUSE DEBUG: Log what we're checking for slot assignment
         console.log(`🔍 Snack assignment check: snackId=${snackId}, name='${snack.meal_name || snack.mealName}', preservedType='${preservedType}', snackType='${snackType}', snackSlotMap=`, snackSlotMap);
@@ -1266,6 +1305,8 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
           duration: 4000, 
           isClosable: true 
         });
+        // CRITICAL FIX: Notify dashboard to reload
+        window.dispatchEvent(new CustomEvent('mealPlanUpdated'));
         return; // Exit early - user fills slots progressively
       } else {
         // Structure creation failed
@@ -1368,6 +1409,83 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
         justGeneratedRef.current = null;
       }, 2500); // Clear after 2.5 seconds (slightly longer than the 2-second check)
       setLoading(false);
+    }
+  };
+
+  // CRITICAL FIX: Generate complete meal plan (all meals at once, not progressive)
+  const generateCompleteMealPlan = async () => {
+    try {
+      setIsGenerating(true);
+      setLoading(true);
+      setError(null);
+      setStreamingProgress('Generating complete meal plan...');
+      
+      const { supabase } = await import('../../lib/supabase.ts');
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session?.access_token) {
+        setError('Please log in to generate meal plans');
+        toast({ title: 'Please log in', status: 'warning', duration: 2500, isClosable: true });
+        return;
+      }
+      
+      const headers = { Authorization: `Bearer ${session.access_token}` };
+      const API_BASE_URL = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8000';
+      
+      // Generate complete meal plan (not progressive)
+      const response = await fetch(`${API_BASE_URL}/nutrition/meal-plans/generate?progressive=false`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...headers
+        },
+        body: JSON.stringify({
+          plan_type: planType,
+          start_date: selectedDate,
+          end_date: planType === 'weekly' ? new Date(new Date(selectedDate).getTime() + 6 * 24 * 60 * 60 * 1000).toISOString().split('T')[0] : selectedDate,
+          generation_strategy: 'balanced',
+          preferences_override: {
+            daily_calorie_target: preferences.calorieTarget,
+            meals_per_day: mealsPerDay,
+            dietary_preferences: preferences.dietaryRestrictions,
+            allergies: preferences.allergies,
+            cuisine_preferences: preferences.cuisinePreferences
+          }
+        })
+      });
+      
+        if (response.ok) {
+          const mealPlanData = await response.json();
+          setMealPlan(mealPlanData);
+          setStreamingProgress(null);
+          toast({ 
+            title: 'Meal plan generated!', 
+            description: `Complete ${planType} meal plan with all meals generated.`, 
+            status: 'success', 
+            duration: 4000, 
+            isClosable: true 
+          });
+          // CRITICAL FIX: Notify dashboard to reload
+          window.dispatchEvent(new CustomEvent('mealPlanUpdated'));
+          await loadMealPlan();
+      } else {
+        const errorData = await response.json().catch(() => ({ detail: 'Failed to generate meal plan' }));
+        throw new Error(errorData.detail || 'Failed to generate meal plan');
+      }
+    } catch (err: any) {
+      console.error('Error generating complete meal plan:', err);
+      setError(err.message || 'Failed to generate meal plan');
+      toast({ 
+        title: 'Failed to generate meal plan', 
+        description: err.message || 'Please try again', 
+        status: 'error', 
+        duration: 5000, 
+        isClosable: true 
+      });
+    } finally {
+      setIsGenerating(false);
+      setLoading(false);
+      setStreamingProgress(null);
     }
   };
 
@@ -1660,6 +1778,9 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
         // Reload meal plan to reflect changes
         await loadMealPlan();
         
+        // CRITICAL FIX: Notify dashboard to reload
+        window.dispatchEvent(new CustomEvent('mealPlanUpdated'));
+        
         // Exit swap mode
         setSwapMode(false);
         setSwapSourceMeal(null);
@@ -1834,8 +1955,10 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
       });
       if (resp.ok) {
         const responseData = await resp.json().catch(() => ({}));
-        // Reload meal plan to get updated data
+        // CRITICAL FIX: Reload meal plan to get updated data BEFORE showing toast
         await loadMealPlan();
+        // CRITICAL FIX: Notify dashboard to reload
+        window.dispatchEvent(new CustomEvent('mealPlanUpdated'));
         // Check if it was a swap (has source_meal and target_meal) or just a move
         if (responseData.source_meal && responseData.target_meal) {
           toast({ 
@@ -1916,9 +2039,11 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
         
         // Create a new meal object from the custom meal data
         const newMeal: Meal = {
-          id: result.meal_id,
+          id: result.meal_id || result.id,
           meal_name: customMealData.meal_name,
           meal_type: customMealData.meal_type,
+          meal_date: result.meal_date || selectedDate, // CRITICAL: Ensure meal has a date
+          date: result.meal_date || selectedDate, // CRITICAL: Ensure meal has a date
           calories: customMealData.nutrition.calories,
           protein: customMealData.nutrition.protein,
           carbs: customMealData.nutrition.carbs,
@@ -1945,10 +2070,16 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
           }
         };
         
-        // Add the new meal to the meal plan
-        setMealPlan({
-          ...mealPlan,
-          meals: [...mealPlan.meals, newMeal]
+        // CRITICAL FIX: Reload meal plan from backend to ensure custom meal appears in grid
+        // The backend should have added the meal with proper date/type assignment
+        await loadMealPlan();
+        
+        toast({
+          title: 'Custom meal added!',
+          description: 'Your custom meal has been added to the meal plan.',
+          status: 'success',
+          duration: 3000,
+          isClosable: true,
         });
         
         console.log('✅ Custom meal added successfully');
@@ -2852,25 +2983,53 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
               </VStack>
               <HStack spacing={2}>
                 {!mealPlan && (
-                  <Button 
-                    colorScheme="blue" 
-                    leftIcon={<FiCoffee />}
-                    onClick={async () => {
-                      await generateMealPlan();
-                    }}
-                    isLoading={loading}
-                  >
-                    Create Meal Plan Structure
-                  </Button>
+                  <>
+                    <Button 
+                      colorScheme="blue" 
+                      leftIcon={<FiCoffee />}
+                      onClick={async () => {
+                        await generateMealPlan();
+                      }}
+                      isLoading={loading}
+                    >
+                      Create Meal Plan Structure
+                    </Button>
+                    <Button 
+                      colorScheme="purple" 
+                      leftIcon={<FiCoffee />}
+                      onClick={async () => {
+                        // CRITICAL FIX: Generate complete meal plan (not progressive)
+                        await generateCompleteMealPlan();
+                      }}
+                      isLoading={loading}
+                      variant="outline"
+                    >
+                      Generate Full {planType === 'weekly' ? 'Weekly' : 'Daily'} Plan
+                    </Button>
+                  </>
                 )}
                 {mealPlan && (
-                  <Button 
-                    variant="outline" 
-                    leftIcon={<FiGitBranch />}
-                    onClick={() => setShowVersionHistory(!showVersionHistory)}
-                  >
-                    Version History
-                  </Button>
+                  <>
+                    <Button 
+                      colorScheme="purple" 
+                      leftIcon={<FiCoffee />}
+                      onClick={async () => {
+                        // CRITICAL FIX: Generate all meals for existing plan
+                        await generateCompleteMealPlan();
+                      }}
+                      isLoading={loading || isGenerating}
+                      variant="outline"
+                    >
+                      Generate All Meals
+                    </Button>
+                    <Button 
+                      variant="outline" 
+                      leftIcon={<FiGitBranch />}
+                      onClick={() => setShowVersionHistory(!showVersionHistory)}
+                    >
+                      Version History
+                    </Button>
+                  </>
                 )}
               </HStack>
             </HStack>

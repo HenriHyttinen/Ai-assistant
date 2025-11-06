@@ -140,6 +140,12 @@ const RecipeSearch: React.FC<RecipeSearchProps> = () => {
   const [addToMealPlanRecipe, setAddToMealPlanRecipe] = useState<Recipe | null>(null);
   const { isOpen: isAddToMealPlanOpen, onOpen: onAddToMealPlanOpen, onClose: onAddToMealPlanClose } = useDisclosure();
   
+  // Ingredient substitution state
+  const [substitutionIngredient, setSubstitutionIngredient] = useState<string | null>(null);
+  const [substitutionSuggestions, setSubstitutionSuggestions] = useState<any[]>([]);
+  const [loadingSubstitutions, setLoadingSubstitutions] = useState(false);
+  const { isOpen: isSubstitutionOpen, onOpen: onSubstitutionOpen, onClose: onSubstitutionClose } = useDisclosure();
+  
 
   const cardBg = useColorModeValue('white', 'gray.800');
   const borderColor = useColorModeValue('gray.200', 'gray.600');
@@ -417,6 +423,134 @@ const RecipeSearch: React.FC<RecipeSearchProps> = () => {
       duration: 3000,
       isClosable: true,
     });
+  };
+
+  // CRITICAL FIX: Load ingredient substitution suggestions
+  const loadSubstitutionSuggestions = async (ingredientName: string) => {
+    if (!selectedRecipe) return;
+    
+    try {
+      setLoadingSubstitutions(true);
+      setSubstitutionIngredient(ingredientName);
+      
+      const { supabase } = await import('../../lib/supabase.ts');
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session?.access_token) {
+        toast({ title: 'Please log in', status: 'warning', duration: 2500, isClosable: true });
+        return;
+      }
+      
+      const API_BASE_URL = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8000';
+      const response = await fetch(
+        `${API_BASE_URL}/nutrition/recipes/${selectedRecipe.id}/substitutions/${encodeURIComponent(ingredientName)}?reason=dietary_preference`,
+        {
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+      
+      if (response.ok) {
+        const data = await response.json();
+        setSubstitutionSuggestions(data.suggestions || []);
+        onSubstitutionOpen();
+      } else {
+        const errorData = await response.json().catch(() => ({ detail: 'Failed to load substitutions' }));
+        toast({
+          title: 'Failed to load substitutions',
+          description: errorData.detail || 'Please try again',
+          status: 'error',
+          duration: 3000,
+          isClosable: true,
+        });
+      }
+    } catch (err: any) {
+      console.error('Error loading substitutions:', err);
+      toast({
+        title: 'Error loading substitutions',
+        description: err.message || 'Please try again',
+        status: 'error',
+        duration: 3000,
+        isClosable: true,
+      });
+    } finally {
+      setLoadingSubstitutions(false);
+    }
+  };
+
+  // CRITICAL FIX: Apply ingredient substitution
+  const applySubstitution = async (substitution: any) => {
+    if (!selectedRecipe || !substitutionIngredient) return;
+    
+    try {
+      setLoading(true);
+      const { supabase } = await import('../../lib/supabase.ts');
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session?.access_token) {
+        toast({ title: 'Please log in', status: 'warning', duration: 2500, isClosable: true });
+        return;
+      }
+      
+      const API_BASE_URL = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8000';
+      const response = await fetch(
+        `${API_BASE_URL}/nutrition/recipes/${selectedRecipe.id}/substitutions/apply`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            ingredient_name: substitutionIngredient,
+            substitution: substitution
+          }),
+        }
+      );
+      
+      if (response.ok) {
+        const data = await response.json();
+        toast({
+          title: 'Substitution applied!',
+          description: `${substitutionIngredient} replaced with ${substitution.name}`,
+          status: 'success',
+          duration: 3000,
+          isClosable: true,
+        });
+        onSubstitutionClose();
+        // Reload recipe to show updated ingredients
+        await loadRecipes();
+        // Re-select the recipe to show updated data
+        if (selectedRecipe) {
+          const updatedRecipe = recipes.find(r => r.id === selectedRecipe.id);
+          if (updatedRecipe) {
+            setSelectedRecipe(updatedRecipe);
+          }
+        }
+      } else {
+        const errorData = await response.json().catch(() => ({ detail: 'Failed to apply substitution' }));
+        toast({
+          title: 'Failed to apply substitution',
+          description: errorData.detail || 'Please try again',
+          status: 'error',
+          duration: 3000,
+          isClosable: true,
+        });
+      }
+    } catch (err: any) {
+      console.error('Error applying substitution:', err);
+      toast({
+        title: 'Error applying substitution',
+        description: err.message || 'Please try again',
+        status: 'error',
+        duration: 3000,
+        isClosable: true,
+      });
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleClearFilters = () => {
@@ -1159,34 +1293,65 @@ const RecipeSearch: React.FC<RecipeSearchProps> = () => {
                     </VStack>
                   </Box>
 
+                  {/* CRITICAL FIX: Nutrition Visualization */}
+                  <Box>
+                    <Heading size="sm" mb={3}>Nutrition Information</Heading>
+                    {(() => {
+                      const nutrition = previewServings === (selectedRecipe.servings || 1)
+                        ? {
+                            calories: selectedRecipe.calculated_calories || 0,
+                            protein: selectedRecipe.calculated_protein || 0,
+                            carbs: selectedRecipe.calculated_carbs || 0,
+                            fats: selectedRecipe.calculated_fats || 0
+                          }
+                        : calculateScaledNutrition(previewServings);
+                      const totalMacros = nutrition.protein + nutrition.carbs + nutrition.fats;
+                      const proteinPercent = totalMacros > 0 ? (nutrition.protein * 4 / (nutrition.protein * 4 + nutrition.carbs * 4 + nutrition.fats * 9)) * 100 : 0;
+                      const carbsPercent = totalMacros > 0 ? (nutrition.carbs * 4 / (nutrition.protein * 4 + nutrition.carbs * 4 + nutrition.fats * 9)) * 100 : 0;
+                      const fatsPercent = totalMacros > 0 ? (nutrition.fats * 9 / (nutrition.protein * 4 + nutrition.carbs * 4 + nutrition.fats * 9)) * 100 : 0;
+                      
+                      return (
+                        <VStack spacing={3} align="stretch">
+                          <SimpleGrid columns={4} spacing={2}>
+                            <Box p={3} bg="blue.50" borderRadius="md" textAlign="center">
+                              <Text fontSize="xs" color="gray.600" mb={1}>Calories</Text>
+                              <Text fontSize="lg" fontWeight="bold" color="blue.700">{nutrition.calories}</Text>
+                            </Box>
+                            <Box p={3} bg="green.50" borderRadius="md" textAlign="center">
+                              <Text fontSize="xs" color="gray.600" mb={1}>Protein</Text>
+                              <Text fontSize="lg" fontWeight="bold" color="green.700">{nutrition.protein}g</Text>
+                            </Box>
+                            <Box p={3} bg="orange.50" borderRadius="md" textAlign="center">
+                              <Text fontSize="xs" color="gray.600" mb={1}>Carbs</Text>
+                              <Text fontSize="lg" fontWeight="bold" color="orange.700">{nutrition.carbs}g</Text>
+                            </Box>
+                            <Box p={3} bg="purple.50" borderRadius="md" textAlign="center">
+                              <Text fontSize="xs" color="gray.600" mb={1}>Fats</Text>
+                              <Text fontSize="lg" fontWeight="bold" color="purple.700">{nutrition.fats}g</Text>
+                            </Box>
+                          </SimpleGrid>
+                          
+                          {/* Macro Distribution Bar */}
+                          <Box>
+                            <Text fontSize="xs" color="gray.600" mb={2}>Macro Distribution</Text>
+                            <HStack spacing={0} h="20px" borderRadius="md" overflow="hidden">
+                              <Box bg="green.500" flex={proteinPercent} title={`Protein: ${proteinPercent.toFixed(1)}%`} />
+                              <Box bg="orange.500" flex={carbsPercent} title={`Carbs: ${carbsPercent.toFixed(1)}%`} />
+                              <Box bg="purple.500" flex={fatsPercent} title={`Fats: ${fatsPercent.toFixed(1)}%`} />
+                            </HStack>
+                            <HStack spacing={4} mt={1} fontSize="xs" color="gray.600">
+                              <Text>P: {proteinPercent.toFixed(0)}%</Text>
+                              <Text>C: {carbsPercent.toFixed(0)}%</Text>
+                              <Text>F: {fatsPercent.toFixed(0)}%</Text>
+                            </HStack>
+                          </Box>
+                        </VStack>
+                      );
+                    })()}
+                  </Box>
+
                   {/* Recipe Info */}
                   <HStack justify="space-between">
-                    <HStack spacing={4}>
-                      <Text fontSize="sm">
-                        {previewServings === (selectedRecipe.servings || 1) 
-                          ? (selectedRecipe.calculated_calories || 0)
-                          : calculateScaledNutrition(previewServings).calories
-                        } {t('nutrition.calories', 'en')}
-                      </Text>
-                      <Text fontSize="sm">
-                        {previewServings === (selectedRecipe.servings || 1)
-                          ? (selectedRecipe.calculated_protein || 0)
-                          : calculateScaledNutrition(previewServings).protein
-                        }g {t('nutrition.protein', 'en')}
-                      </Text>
-                      <Text fontSize="sm">
-                        {previewServings === (selectedRecipe.servings || 1)
-                          ? (selectedRecipe.calculated_carbs || 0)
-                          : calculateScaledNutrition(previewServings).carbs
-                        }g {t('nutrition.carbs', 'en')}
-                      </Text>
-                      <Text fontSize="sm">
-                        {previewServings === (selectedRecipe.servings || 1)
-                          ? (selectedRecipe.calculated_fats || 0)
-                          : calculateScaledNutrition(previewServings).fats
-                        }g {t('nutrition.fats', 'en')}
-                      </Text>
-                    </HStack>
                     <HStack spacing={2}>
                       <FiClock />
                       <Text fontSize="sm">{selectedRecipe.prep_time} min</Text>
@@ -1219,13 +1384,29 @@ const RecipeSearch: React.FC<RecipeSearchProps> = () => {
                     <VStack spacing={2} align="stretch">
                       {(selectedRecipe.ingredients_list || selectedRecipe.ingredients || []).map((ingredient: any, index: number) => {
                         const scaledIngredient = calculateScaledIngredient(ingredient, previewServings);
+                        const ingredientName = typeof scaledIngredient === 'string' 
+                          ? scaledIngredient 
+                          : (scaledIngredient.name || 'Unknown');
+                        const ingredientDisplay = typeof scaledIngredient === 'string' 
+                          ? scaledIngredient 
+                          : `${scaledIngredient.name || 'Unknown'} - ${scaledIngredient.quantity || ''}${scaledIngredient.unit || 'g'}`;
+                        
                         return (
-                          <Text key={index} fontSize="sm" pl={4} borderLeft="3px solid" borderColor="blue.200">
-                            {typeof scaledIngredient === 'string' 
-                              ? scaledIngredient 
-                              : `${scaledIngredient.name || 'Unknown'} - ${scaledIngredient.quantity || ''}${scaledIngredient.unit || 'g'}`
-                            }
-                          </Text>
+                          <HStack key={index} spacing={2} align="center">
+                            <Text fontSize="sm" pl={4} borderLeft="3px solid" borderColor="blue.200" flex={1}>
+                              {ingredientDisplay}
+                            </Text>
+                            <Button
+                              size="xs"
+                              variant="ghost"
+                              colorScheme="blue"
+                              onClick={() => loadSubstitutionSuggestions(ingredientName)}
+                              isLoading={loadingSubstitutions && substitutionIngredient === ingredientName}
+                              title="Find substitutions"
+                            >
+                              Substitute
+                            </Button>
+                          </HStack>
                         );
                       })}
                     </VStack>
@@ -1255,6 +1436,17 @@ const RecipeSearch: React.FC<RecipeSearchProps> = () => {
                 {t('close', 'en')}
               </Button>
               <Button 
+                colorScheme="green"
+                variant="outline"
+                mr={3}
+                onClick={async () => {
+                  // CRITICAL FIX: Add recipe to daily log
+                  await handleAddToDailyLog(selectedRecipe);
+                }}
+              >
+                Add to Daily Log ({previewServings} servings)
+              </Button>
+              <Button 
                 colorScheme="blue"
                 onClick={() => {
                   onClose();
@@ -1278,6 +1470,63 @@ const RecipeSearch: React.FC<RecipeSearchProps> = () => {
             initialServings={previewServings}
           />
         )}
+
+        {/* CRITICAL FIX: Ingredient Substitution Modal */}
+        <Modal isOpen={isSubstitutionOpen} onClose={onSubstitutionClose} size="lg">
+          <ModalOverlay />
+          <ModalContent>
+            <ModalHeader>
+              <Text>Substitute: {substitutionIngredient}</Text>
+            </ModalHeader>
+            <ModalCloseButton />
+            <ModalBody pb={6}>
+              {loadingSubstitutions ? (
+                <Box textAlign="center" py={8}>
+                  <Spinner size="xl" color="blue.500" />
+                  <Text mt={4} color="gray.600">Finding substitutions...</Text>
+                </Box>
+              ) : substitutionSuggestions.length > 0 ? (
+                <VStack spacing={3} align="stretch">
+                  <Text fontSize="sm" color="gray.600">
+                    AI-generated substitution suggestions for <strong>{substitutionIngredient}</strong>:
+                  </Text>
+                  {substitutionSuggestions.map((suggestion: any, index: number) => (
+                    <Card key={index} variant="outline">
+                      <CardBody>
+                        <VStack spacing={2} align="stretch">
+                          <HStack justify="space-between">
+                            <Text fontWeight="semibold">{suggestion.name}</Text>
+                            <Badge colorScheme="green">{suggestion.quantity} {suggestion.unit}</Badge>
+                          </HStack>
+                          {suggestion.reason && (
+                            <Text fontSize="sm" color="gray.600">{suggestion.reason}</Text>
+                          )}
+                          {suggestion.nutrition_adjustment && (
+                            <Text fontSize="xs" color="gray.500" fontStyle="italic">
+                              {suggestion.nutrition_adjustment}
+                            </Text>
+                          )}
+                          <Button
+                            size="sm"
+                            colorScheme="blue"
+                            onClick={() => applySubstitution(suggestion)}
+                            isLoading={loading}
+                          >
+                            Use This Substitution
+                          </Button>
+                        </VStack>
+                      </CardBody>
+                    </Card>
+                  ))}
+                </VStack>
+              ) : (
+                <Text color="gray.500" textAlign="center" py={8}>
+                  No substitution suggestions found. Try a different ingredient.
+                </Text>
+              )}
+            </ModalBody>
+          </ModalContent>
+        </Modal>
       </VStack>
     </Box>
   );

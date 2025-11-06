@@ -160,10 +160,16 @@ class NutritionService:
         - Lunch: salads, soups, sandwiches, bowls
         - Dinner: hearty mains
         - Snack: very small/side-like items
+        - Morning snack/Afternoon snack: preserve specific snack types for 5 meals per day
         """
         try:
             t = (title or "").lower()
             mt = (meal_type or "dinner").lower()
+            
+            # CRITICAL FIX: Preserve specific snack types (morning snack, afternoon snack) for 5 meals per day
+            if mt in ["morning snack", "afternoon snack", "evening snack"]:
+                return mt
+            
             def any_kw(kws):
                 return any(k in t for k in kws)
             if any_kw(["oat", "pancake", "waffle", "yogurt", "smoothie", "granola", "egg", "scramble", "toast"]):
@@ -1101,7 +1107,11 @@ class NutritionService:
                         return ['breakfast','lunch','dinner']
                     if meals_per_day == 4:
                         return ['breakfast','lunch','dinner','snack']
-                    return ['breakfast','snack','lunch','snack','dinner']
+                    # CRITICAL FIX: Use 'morning snack' and 'afternoon snack' for 5 meals per day to match frontend expectations
+                    if meals_per_day == 5:
+                        return ['breakfast','lunch','dinner','morning snack','afternoon snack']
+                    # For 6+ meals, use all snack types
+                    return ['breakfast','morning snack','lunch','afternoon snack','dinner','evening snack']
                 base_types = build_meal_types(meals_per_day)
                 _override = getattr(plan_request, 'preferences_override', None)
                 # Calculate target calories per meal from daily target (default 2000 kcal/day)
@@ -1115,8 +1125,64 @@ class NutritionService:
                     day_meals = day_plan.get("meals", []) if day_plan else []
                     used_names = [m.get('meal_name', '') for m in day_meals]
                     
+                    # CRITICAL FIX: Check if all required meals are present for this day
+                    # Get meal types that should exist for this meals_per_day
+                    required_meal_types = build_meal_types(meals_per_day)
+                    existing_meal_types = [m.get('meal_type', '').lower() for m in day_meals]
+                    
+                    # Check for missing meals (especially afternoon snack for 5 meals/day)
+                    missing_meal_types = []
+                    # Track which snack types we have
+                    morning_snack_count = sum(1 for m in day_meals if m.get('meal_type', '').lower() in ['morning snack', 'snack'])
+                    afternoon_snack_count = sum(1 for m in day_meals if m.get('meal_type', '').lower() == 'afternoon snack')
+                    generic_snack_count = sum(1 for m in day_meals if m.get('meal_type', '').lower() == 'snack')
+                    
+                    for required_type in required_meal_types:
+                        # For snacks, check both specific and generic types
+                        if required_type == 'morning snack':
+                            # Check if we have morning snack specifically, or if we have a generic snack that could be assigned
+                            has_morning_snack = any(
+                                m.get('meal_type', '').lower() == 'morning snack' 
+                                or (m.get('recipe', {}).get('meal_type', '').lower() == 'morning snack')
+                                for m in day_meals
+                            )
+                            # If we have generic snacks but no morning snack assigned yet, we can use one
+                            if not has_morning_snack and generic_snack_count == 0:
+                                missing_meal_types.append(required_type)
+                        elif required_type == 'afternoon snack':
+                            # CRITICAL: Check if we have afternoon snack specifically
+                            has_afternoon_snack = any(
+                                m.get('meal_type', '').lower() == 'afternoon snack' 
+                                or (m.get('recipe', {}).get('meal_type', '').lower() == 'afternoon snack')
+                                for m in day_meals
+                            )
+                            # CRITICAL FIX: Always add afternoon snack to missing if not found
+                            # Don't try to be smart about generic snacks - just ensure we have the specific type
+                            if not has_afternoon_snack:
+                                missing_meal_types.append(required_type)
+                                logger.warning(f"⚠️ Afternoon snack missing for day {day_index+1} - will generate fallback")
+                        elif required_type in ['evening snack']:
+                            # Similar logic for evening snack
+                            has_evening_snack = any(
+                                m.get('meal_type', '').lower() == 'evening snack' 
+                                or (m.get('recipe', {}).get('meal_type', '').lower() == 'evening snack')
+                                for m in day_meals
+                            )
+                            if not has_evening_snack:
+                                missing_meal_types.append(required_type)
+                        else:
+                            # For non-snacks, check exact match
+                            if required_type.lower() not in existing_meal_types:
+                                missing_meal_types.append(required_type)
+                    
+                    # Log missing meals
+                    if missing_meal_types:
+                        logger.warning(f"⚠️ Day {day_index+1} ({meal_date_for_day}) is missing {len(missing_meal_types)} meals: {missing_meal_types}")
+                        logger.warning(f"   Expected {meals_per_day} meals ({required_meal_types}), found {len(day_meals)} meals")
+                    
                     # CRITICAL FIX: Fill missing meal types for this day
                     # First, ensure meal_type is set on all existing meals
+                    generic_snacks = []  # Track generic 'snack' meals that need conversion
                     for meal_data in day_meals:
                         if not meal_data.get('meal_type'):
                             # Try to infer from meal name or default
@@ -1129,15 +1195,71 @@ class NutritionService:
                                 meal_data['meal_type'] = 'snack'
                             else:
                                 meal_data['meal_type'] = 'dinner'  # Default
+                        
+                        # Collect generic 'snack' meals for conversion
+                        if meals_per_day == 5 and meal_data.get('meal_type') == 'snack':
+                            generic_snacks.append(meal_data)
                     
-                    meal_types_present = {m.get('meal_type', '').strip() for m in day_meals if m.get('meal_type')}
-                    missing_types = [mt for mt in base_types if mt not in meal_types_present]
+                    # CRITICAL FIX: Convert generic 'snack' to specific snack types for 5 meals per day
+                    # Check which snack types we already have
+                    has_morning_snack = any(
+                        m.get('meal_type', '').lower() == 'morning snack' 
+                        or (m.get('recipe', {}).get('meal_type', '').lower() == 'morning snack')
+                        for m in day_meals
+                    )
+                    has_afternoon_snack = any(
+                        m.get('meal_type', '').lower() == 'afternoon snack' 
+                        or (m.get('recipe', {}).get('meal_type', '').lower() == 'afternoon snack')
+                        for m in day_meals
+                    )
+                    
+                    # Convert generic snacks to specific types
+                    # Priority: assign to missing types first
+                    for i, snack_meal in enumerate(generic_snacks):
+                        if not has_morning_snack:
+                            # Assign first generic snack to morning snack
+                            snack_meal['meal_type'] = 'morning snack'
+                            if snack_meal.get('recipe'):
+                                snack_meal['recipe']['meal_type'] = 'morning snack'
+                            has_morning_snack = True
+                            logger.info(f"✅ Converted generic snack {i+1} to 'morning snack' for day {day_index+1}")
+                        elif not has_afternoon_snack:
+                            # Assign second generic snack to afternoon snack
+                            snack_meal['meal_type'] = 'afternoon snack'
+                            if snack_meal.get('recipe'):
+                                snack_meal['recipe']['meal_type'] = 'afternoon snack'
+                            has_afternoon_snack = True
+                            logger.info(f"✅ Converted generic snack {i+1} to 'afternoon snack' for day {day_index+1}")
+                        else:
+                            # Both slots filled, but we have extra snacks - keep as generic (shouldn't happen)
+                            logger.warning(f"⚠️ Extra generic snack found for day {day_index+1} - both morning and afternoon snacks already assigned")
+                    
+                    # CRITICAL FIX: Re-check meal types after conversion (snack conversion might have changed things)
+                    meal_types_present = {m.get('meal_type', '').strip().lower() for m in day_meals if m.get('meal_type')}
+                    # Also check recipe_details.meal_type for preserved types
+                    for m in day_meals:
+                        if m.get('recipe', {}).get('meal_type'):
+                            meal_types_present.add(m.get('recipe', {}).get('meal_type', '').strip().lower())
+                    
+                    # Find missing types - check against base_types (which are lowercase)
+                    missing_types = []
+                    for mt in base_types:
+                        mt_lower = mt.lower()
+                        # Check if we have this exact type
+                        if mt_lower not in meal_types_present:
+                            missing_types.append(mt)
+                    
+                    # CRITICAL: Log what we have vs what we need
+                    logger.info(f"📊 Day {day_index+1} ({meal_date_for_day}): Have {len(day_meals)} meals, need {len(base_types)}")
+                    logger.info(f"   Present types: {sorted(meal_types_present)}")
+                    logger.info(f"   Required types: {sorted([mt.lower() for mt in base_types])}")
+                    logger.info(f"   Missing types: {missing_types}")
                     
                     # CRITICAL: Ensure we have exactly len(base_types) meals for this day
                     for mt in missing_types:
                         # Generate fallback meal for missing type
                         logger.warning(f"Missing {mt} for day {day_index+1} ({meal_date_for_day}) - generating fallback")
-                        fallback = fallback_generator.generate_unique_recipe(mt, target_calories, 'International', used_names)
+                        fallback = fallback_generator.generate_unique_recipe(mt, target_calories, 'International', used_names, db=db)
                         if 'recipe' not in fallback:
                             fallback['recipe'] = {}
                         # CRITICAL: Set meal_type explicitly
@@ -1167,11 +1289,17 @@ class NutritionService:
                     # CRITICAL: Final validation - ensure we have exactly len(base_types) meals
                     if len(day_meals) < len(base_types):
                         logger.error(f"CRITICAL: Day {day_index+1} ({meal_date_for_day}) only has {len(day_meals)} meals but need {len(base_types)} - filling remaining")
-                        meal_types_present_now = {m.get('meal_type', '').strip() for m in day_meals if m.get('meal_type')}
+                        meal_types_present_now = {m.get('meal_type', '').strip().lower() for m in day_meals if m.get('meal_type')}
+                        # Also check recipe_details.meal_type
+                        for m in day_meals:
+                            if m.get('recipe', {}).get('meal_type'):
+                                meal_types_present_now.add(m.get('recipe', {}).get('meal_type', '').strip().lower())
+                        
                         for mt in base_types:
-                            if mt not in meal_types_present_now:
+                            mt_lower = mt.lower()
+                            if mt_lower not in meal_types_present_now:
                                 logger.error(f"Still missing {mt} for day {day_index+1} - generating emergency fallback")
-                                fallback = fallback_generator.generate_unique_recipe(mt, target_calories, 'International', used_names)
+                                fallback = fallback_generator.generate_unique_recipe(mt, target_calories, 'International', used_names, db=db)
                                 if 'recipe' not in fallback:
                                     fallback['recipe'] = {}
                                 fallback['meal_type'] = mt
@@ -1196,9 +1324,36 @@ class NutritionService:
                                 day_meals.append(fallback)
                                 used_names.append(fallback.get('meal_name', ''))
                     
-                    # CRITICAL: Final check before processing
+                    # CRITICAL: Final check before processing - ensure we have exactly the right number of meals
+                    final_meal_types_check = {m.get('meal_type', '').strip().lower() for m in day_meals if m.get('meal_type')}
+                    # Also check recipe_details.meal_type
+                    for m in day_meals:
+                        if m.get('recipe', {}).get('meal_type'):
+                            final_meal_types_check.add(m.get('recipe', {}).get('meal_type', '').strip().lower())
+                    
+                    # CRITICAL FIX: If we still don't have all required meals, generate them now
+                    if len(day_meals) < len(base_types) or len(final_meal_types_check) < len(base_types):
+                        logger.error(f"FATAL: Day {day_index+1} ({meal_date_for_day}) has {len(day_meals)} meals ({sorted(final_meal_types_check)}) but need {len(base_types)} ({sorted([mt.lower() for mt in base_types])}) - generating missing meals")
+                        for mt in base_types:
+                            mt_lower = mt.lower()
+                            if mt_lower not in final_meal_types_check:
+                                logger.error(f"🔴 CRITICAL: Still missing {mt} for day {day_index+1} - generating final fallback")
+                                fallback = fallback_generator.generate_unique_recipe(mt, target_calories, 'International', used_names, db=db)
+                                if 'recipe' not in fallback:
+                                    fallback['recipe'] = {}
+                                fallback['meal_type'] = mt
+                                # Mark as AI-generated to match other meals
+                                fallback['recipe']['ai_generated'] = True
+                                fallback['recipe']['database_source'] = False
+                                fallback['ai_generated'] = True
+                                day_meals.append(fallback)
+                                used_names.append(fallback.get('meal_name', ''))
+                                final_meal_types_check.add(mt_lower)
+                                logger.info(f"✅ Generated final fallback for {mt} on day {day_index+1}")
+                    
+                    # Final validation
                     if len(day_meals) != len(base_types):
-                        logger.error(f"FATAL: Day {day_index+1} ({meal_date_for_day}) has {len(day_meals)} meals but need {len(base_types)} - THIS SHOULD NOT HAPPEN")
+                        logger.error(f"FATAL: Day {day_index+1} ({meal_date_for_day}) STILL has {len(day_meals)} meals but need {len(base_types)} - THIS SHOULD NOT HAPPEN")
                     
                     # Process all meals for this day (including filled ones)
                     for meal_data in day_meals:
@@ -1247,12 +1402,22 @@ class NutritionService:
                             except Exception:
                                 recipe_data = {}
 
-                        # Sanitize meal type and dietary tags
-                        sanitized_meal_type = self._sanitize_meal_type(
-                            meal_data.get("meal_type", "dinner"),
-                            recipe_data.get("title", meal_data.get("meal_name", "")),
-                            recipe_data.get("ingredients", [])
-                        )
+                        # ROOT CAUSE FIX: Preserve specific snack types BEFORE sanitization
+                        # Check if meal_type is already a specific snack type (morning snack, afternoon snack)
+                        original_meal_type = meal_data.get('meal_type', '').strip()
+                        is_specific_snack = original_meal_type.lower() in ['morning snack', 'afternoon snack', 'evening snack']
+                        
+                        # Sanitize meal type and dietary tags (but preserve specific snack types)
+                        if is_specific_snack:
+                            # Don't sanitize specific snack types - preserve them
+                            sanitized_meal_type = original_meal_type
+                        else:
+                            sanitized_meal_type = self._sanitize_meal_type(
+                                meal_data.get("meal_type", "dinner"),
+                                recipe_data.get("title", meal_data.get("meal_name", "")),
+                                recipe_data.get("ingredients", [])
+                            )
+                        
                         corrected_tags = self._infer_dietary_tags_from_ingredients(
                             recipe_data.get("ingredients", []),
                             recipe_data.get("dietary_tags", []),
@@ -1260,12 +1425,46 @@ class NutritionService:
                         )
                         recipe_data["dietary_tags"] = corrected_tags
                         
-                        nutrition_data = recipe_data.get("nutrition", {})
                         servings = recipe_data.get("servings", 1) or 1
-                        # Estimate if nutrition missing or zeros
-                        if not nutrition_data or all(not nutrition_data.get(k) for k in ["calories","protein","carbs","fats"]):
-                            nutrition_data = self._estimate_nutrition_from_ingredients(recipe_data.get("ingredients", []))
-                            recipe_data["nutrition"] = nutrition_data
+                        
+                        # ROOT CAUSE FIX: ALWAYS recalculate nutrition from ingredients if available
+                        # Don't trust AI's placeholder values (452, 28, 50, 15) - calculate from actual ingredients
+                        nutrition_data = None
+                        ingredients_list = recipe_data.get("ingredients", [])
+                        if ingredients_list and len(ingredients_list) > 0:
+                            try:
+                                # Calculate from actual ingredients using ingredient database
+                                calculated_nutrition = self.nutrition_ai._calculate_recipe_nutrition(
+                                    ingredients_list, db
+                                )
+                                if calculated_nutrition and calculated_nutrition.get('calories', 0) > 0:
+                                    # Use calculated nutrition (accurate)
+                                    nutrition_data = {
+                                        "calories": int(calculated_nutrition.get('calories', 0)),
+                                        "protein": round(calculated_nutrition.get('protein', 0), 1),
+                                        "carbs": round(calculated_nutrition.get('carbs', 0), 1),
+                                        "fats": round(calculated_nutrition.get('fats', 0), 1),
+                                        "per_serving_calories": int(calculated_nutrition.get('calories', 0)),
+                                        "per_serving_protein": round(calculated_nutrition.get('protein', 0), 1),
+                                        "per_serving_carbs": round(calculated_nutrition.get('carbs', 0), 1),
+                                        "per_serving_fats": round(calculated_nutrition.get('fats', 0), 1)
+                                    }
+                                    logger.info(f"✅ Calculated nutrition from {len(ingredients_list)} ingredients: {nutrition_data.get('calories', 0)} cal, {nutrition_data.get('protein', 0)}g protein, {nutrition_data.get('carbs', 0)}g carbs, {nutrition_data.get('fats', 0)}g fats")
+                                else:
+                                    logger.warning(f"⚠️ Nutrition calculation returned 0 calories for meal '{meal_data.get('meal_name', 'unknown')}' with {len(ingredients_list)} ingredients")
+                            except Exception as e:
+                                logger.error(f"⚠️ Failed to calculate nutrition from ingredients for meal '{meal_data.get('meal_name', 'unknown')}': {e}", exc_info=True)
+                        else:
+                            logger.warning(f"⚠️ No ingredients available for nutrition calculation for meal '{meal_data.get('meal_name', 'unknown')}'")
+                        
+                        # Fallback to estimate if calculation failed
+                        if not nutrition_data:
+                            nutrition_data = recipe_data.get("nutrition", {})
+                            # If nutrition is missing or zeros, estimate from ingredients
+                            if not nutrition_data or all(not nutrition_data.get(k) for k in ["calories","protein","carbs","fats"]):
+                                nutrition_data = self._estimate_nutrition_from_ingredients(recipe_data.get("ingredients", []))
+                        
+                        recipe_data["nutrition"] = nutrition_data
                         
                         # CRITICAL FIX: Ensure nutrition is PER-SERVING, not total
                         # If nutrition looks like total (> 500 cal and servings > 1), divide by servings
@@ -1329,15 +1528,71 @@ class NutritionService:
                         meal_fats = nutrition_data.get("per_serving_fats") or nutrition_data.get("fats", 0)
                         
                         # CRITICAL: Ensure meal_type is set - if not, use sanitized_meal_type or fallback
-                        final_meal_type = sanitized_meal_type or meal_data.get('meal_type') or 'dinner'
-                        if not final_meal_type or final_meal_type.strip() not in ['breakfast', 'lunch', 'dinner', 'snack']:
+                        # CRITICAL FIX: Preserve specific snack types (already preserved in sanitized_meal_type if is_specific_snack)
+                        if is_specific_snack:
+                            # Use the preserved specific snack type
+                            final_meal_type = sanitized_meal_type
+                        else:
+                            # Use sanitized_meal_type or fallback
+                            final_meal_type = sanitized_meal_type or original_meal_type or 'dinner'
+                        
+                        # CRITICAL FIX: Allow specific snack types in validation
+                        valid_meal_types = ['breakfast', 'lunch', 'dinner', 'snack', 'morning snack', 'afternoon snack', 'evening snack']
+                        if not final_meal_type or final_meal_type.strip() not in valid_meal_types:
                             logger.warning(f"Invalid meal_type '{final_meal_type}' for meal '{meal_data.get('meal_name')}' on day {day_index+1}, defaulting to 'dinner'")
                             final_meal_type = 'dinner'
                         else:
                             final_meal_type = final_meal_type.strip()
                         
                         try:
-                            # CRITICAL: Check if meal already exists to prevent duplicates
+                            # CRITICAL FIX: Strip ID numbers from meal names (e.g., "Asian Sunrise Stir-Fry 2030" -> "Asian Sunrise Stir-Fry")
+                            # CRITICAL FIX: Check for duplicate base names (normalized) across the entire meal plan
+                            # This prevents the AI from bypassing duplicate detection by appending ID numbers
+                            import re
+                            
+                            def clean_meal_name(name: str) -> str:
+                                """Remove trailing ID numbers from meal names"""
+                                if not name:
+                                    return name
+                                # Remove trailing numbers (4+ digits) that look like IDs
+                                # Pattern: space followed by 4+ digits at the end
+                                cleaned = re.sub(r'\s+\d{4,}$', '', name.strip())
+                                return cleaned if cleaned else name
+                            
+                            def normalize_meal_name(name: str) -> str:
+                                """Normalize meal name for duplicate detection (remove IDs, suffixes, etc.)"""
+                                if not name:
+                                    return ""
+                                # Remove trailing numbers (4+ digits) that look like IDs
+                                normalized = re.sub(r'\s+\d{4,}$', '', name.strip())
+                                # Remove common suffixes that create duplicates
+                                normalized = re.sub(r'\s+(Special|Deluxe|Gourmet|Premium|Artisan|Ultimate|Classic|Traditional)$', '', normalized, flags=re.IGNORECASE)
+                                return normalized.lower().strip()
+                            
+                            # ROOT CAUSE FIX: Get meal name and clean it
+                            raw_meal_name = meal_data.get("meal_name", recipe_data.get("title", "Meal"))
+                            cleaned_meal_name = clean_meal_name(raw_meal_name)
+                            normalized_cleaned_name = normalize_meal_name(cleaned_meal_name)
+                            
+                            # Check for duplicate base names in the meal plan (normalized comparison)
+                            existing_meals_in_plan = db.query(MealPlanMeal).filter(
+                                MealPlanMeal.meal_plan_id == meal_plan.id
+                            ).all()
+                            
+                            duplicate_found = False
+                            for existing_meal_check in existing_meals_in_plan:
+                                existing_normalized = normalize_meal_name(existing_meal_check.meal_name)
+                                if existing_normalized == normalized_cleaned_name and existing_normalized:
+                                    duplicate_found = True
+                                    logger.warning(f"⚠️ DUPLICATE DETECTED: '{cleaned_meal_name}' (normalized: '{normalized_cleaned_name}') matches existing meal '{existing_meal_check.meal_name}' (normalized: '{existing_normalized}') - rejecting duplicate")
+                                    break
+                            
+                            if duplicate_found:
+                                # Reject duplicate and log warning
+                                logger.warning(f"Rejecting duplicate meal name '{cleaned_meal_name}' (normalized: '{normalized_cleaned_name}') - AI tried to bypass duplicate detection")
+                                continue  # Skip this meal and move to next
+                            
+                            # CRITICAL: Check if meal already exists for this date/type to prevent duplicates
                             existing_meal = db.query(MealPlanMeal).filter(
                                 MealPlanMeal.meal_plan_id == meal_plan.id,
                                 MealPlanMeal.meal_date == meal_date_for_day,
@@ -1348,7 +1603,7 @@ class NutritionService:
                                 # Update existing meal instead of creating duplicate
                                 logger.warning(f"Meal already exists for day {day_index+1} ({meal_date_for_day}), type {final_meal_type} - updating instead of creating duplicate")
                                 meal = existing_meal
-                                meal.meal_name = meal_data.get("meal_name", recipe_data.get("title", "Meal"))
+                                meal.meal_name = cleaned_meal_name
                                 meal.calories = meal_calories
                                 meal.protein = meal_protein
                                 meal.carbs = meal_carbs
@@ -1359,7 +1614,7 @@ class NutritionService:
                                     meal_plan_id=meal_plan.id,
                                     meal_date=meal_date_for_day,
                                     meal_type=final_meal_type,
-                                    meal_name=meal_data.get("meal_name", recipe_data.get("title", "Meal")),
+                                    meal_name=cleaned_meal_name,
                                     calories=meal_calories,  # PER-SERVING
                                     protein=meal_protein,
                                     carbs=meal_carbs,
@@ -1370,9 +1625,16 @@ class NutritionService:
                             
                             # CRITICAL: Verify meal was added
                             if not meal.id:
-                                logger.error(f"Meal not properly added for day {day_index+1} ({meal_date_for_day}), type {final_meal_type}, name: {meal.meal_name}")
+                                logger.error(f"🔴 Meal not properly added for day {day_index+1} ({meal_date_for_day}), type {final_meal_type}, name: {meal.meal_name}")
                             else:
-                                logger.debug(f"Added meal: Day {day_index+1}, {final_meal_type}, {meal.meal_name}, ID: {meal.id}")
+                                logger.info(f"✅ Added meal: Day {day_index+1} ({meal_date_for_day}), type '{final_meal_type}', name '{meal.meal_name}', ID: {meal.id}, calories: {meal.calories}")
+                                # CRITICAL: Log afternoon snack specifically
+                                if final_meal_type.lower() == 'afternoon snack':
+                                    logger.info(f"🎯 AFTERNOON SNACK SAVED: Day {day_index+1}, ID: {meal.id}, name: {meal.meal_name}, type: {meal.meal_type}")
+                                
+                                # CRITICAL FIX: Preserve original meal_type in recipe_details for frontend slot assignment
+                                if recipe_data:
+                                    recipe_data['meal_type'] = final_meal_type  # Preserve specific snack types (morning snack, afternoon snack)
                         except Exception as meal_err:
                             logger.error(f"ERROR adding meal for day {day_index+1} ({meal_date_for_day}), type {final_meal_type}: {meal_err}")
                             # Try to continue with next meal
@@ -1415,7 +1677,8 @@ class NutritionService:
                                 "dietary_tags": recipe_data.get("dietary_tags", []),
                                 "nutrition": nutrition_data,
                                 "ai_generated": ai_flag,  # Explicitly set AI flag
-                                "database_source": not ai_flag  # Explicitly set database flag
+                                "database_source": not ai_flag,  # Explicitly set database flag
+                                "meal_type": final_meal_type  # CRITICAL FIX: Preserve specific snack types (morning snack, afternoon snack) for frontend slot assignment
                             }
                             logger.debug(f"💾 Saved meal '{meal_data.get('meal_name')}' with ai_generated={ai_flag}, database_source={not ai_flag}")
                             meal.cuisine = recipe_data.get("cuisine", "")
@@ -1599,9 +1862,17 @@ class NutritionService:
             
             # Only validate meal count for bulk-generated meal plans (not progressive)
             if meal_plan.plan_type == 'weekly' and not is_progressive_plan:
-                expected_count = 28  # 7 days × 4 meals (default)
+                # ROOT CAUSE FIX: Calculate expected count based on actual meals_per_day, not hardcoded 4
+                # Get meals_per_day from preferences or default to 4
+                meals_per_day = 4  # Default
+                if hasattr(meal_plan, 'generation_strategy') and isinstance(meal_plan.generation_strategy, dict):
+                    prefs_override = meal_plan.generation_strategy.get('preferences_override', {})
+                    if isinstance(prefs_override, dict):
+                        meals_per_day = prefs_override.get('meals_per_day', 4)
+                
+                expected_count = 7 * meals_per_day  # 7 days × meals_per_day
                 if saved_meals_count < expected_count:
-                    logger.warning(f"Only saved {saved_meals_count}/{expected_count} meals for weekly meal plan {meal_plan.id}")
+                    logger.warning(f"Only saved {saved_meals_count}/{expected_count} meals for weekly meal plan {meal_plan.id} (expected {meals_per_day} meals/day)")
                     # Try to count by meal_date to see distribution
                     from sqlalchemy import func
                     date_counts = db.query(
@@ -1611,6 +1882,13 @@ class NutritionService:
                         MealPlanMeal.meal_plan_id == meal_plan.id
                     ).group_by(MealPlanMeal.meal_date).all()
                     logger.warning(f"   Date distribution: {dict(date_counts)}")
+                    
+                    # CRITICAL: Check for afternoon snacks specifically
+                    afternoon_snacks = db.query(MealPlanMeal).filter(
+                        MealPlanMeal.meal_plan_id == meal_plan.id,
+                        MealPlanMeal.meal_type == 'afternoon snack'
+                    ).count()
+                    logger.warning(f"   Afternoon snacks saved: {afternoon_snacks} (expected: {7 if meals_per_day >= 5 else 0})")
                     
                     # Determine base meal types for validation (same logic as generation)
                     def build_meal_types(meals_per_day: int) -> list:
@@ -2662,13 +2940,48 @@ class NutritionService:
                 # Ensure meal_date is properly formatted as ISO 8601 string for frontend
                 meal_date_str = meal.meal_date.isoformat() if hasattr(meal.meal_date, 'isoformat') else str(meal.meal_date)
                 
+                # CRITICAL FIX: Use preserved meal_type from recipe_details if available (for morning snack/afternoon snack)
+                # Otherwise fall back to database meal_type
+                preserved_meal_type = None
+                if isinstance(recipe_details, dict):
+                    preserved_meal_type = recipe_details.get('meal_type')
+                
+                # CRITICAL FIX: If meal_type is generic 'snack' and we have 5 meals per day, try to infer from meal position
+                # Check if this is a morning or afternoon snack based on meal order for the day
+                if meal.meal_type == 'snack' and not preserved_meal_type and db:
+                    try:
+                        # Try to infer from meal order - first snack is morning, second is afternoon
+                        meals_for_date = db.query(MealPlanMeal).filter(
+                            MealPlanMeal.meal_plan_id == meal.meal_plan_id,
+                            MealPlanMeal.meal_date == meal.meal_date
+                        ).order_by(MealPlanMeal.id).all()
+                        
+                        snack_meals = [m for m in meals_for_date if m.meal_type == 'snack']
+                        if len(snack_meals) >= 2:
+                            snack_index = snack_meals.index(meal)
+                            if snack_index == 0:
+                                preserved_meal_type = 'morning snack'
+                            elif snack_index == 1:
+                                preserved_meal_type = 'afternoon snack'
+                    except Exception as e:
+                        logger.debug(f"Could not infer snack type from meal order: {e}")
+                        # Fall back to default behavior
+                
+                # Use preserved meal_type if it's a specific snack type (morning snack, afternoon snack)
+                # Otherwise use database meal_type
+                final_meal_type = preserved_meal_type if preserved_meal_type in ['morning snack', 'afternoon snack', 'evening snack'] else (meal.meal_type or preserved_meal_type or 'dinner')
+                
+                # CRITICAL FIX: Update recipe_details with the final meal_type if it was inferred
+                if preserved_meal_type and preserved_meal_type != meal.meal_type and isinstance(recipe_details, dict):
+                    recipe_details['meal_type'] = preserved_meal_type
+                
                 meals_response.append({
                     "id": meal.id,  # CRITICAL FIX: Include meal ID for move/delete operations
                     "meal_plan_id": meal.meal_plan_id,
                     "meal_date": meal_date_str,  # String format for frontend
                     "date": meal_date_str,  # Also include as 'date' for frontend compatibility
-                "meal_type": meal.meal_type,
-                    "type": meal.meal_type,  # Also include as 'type' for frontend compatibility
+                    "meal_type": final_meal_type,  # CRITICAL FIX: Use preserved meal_type for specific snack types
+                    "type": final_meal_type,  # Also include as 'type' for frontend compatibility
                     "meal_time": getattr(meal, 'meal_time', None),
                 "meal_name": meal.meal_name,
                     "recipe": recipe_details if recipe_details else None,

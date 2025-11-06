@@ -464,14 +464,20 @@ class NutritionAI:
           * Proper protein portions for satiety
           * Complex carbs for sustained energy
         
-        VARIETY REQUIREMENT: Create unique, diverse recipes with different cuisines, cooking methods, and ingredients. Avoid repeating the same dishes.
+        CRITICAL VARIETY REQUIREMENT: Create unique, diverse recipes with different cuisines, cooking methods, and ingredients. Avoid repeating the same dishes.
         
-        Prevent duplicates across meal plans for at least a month
-        - **NEVER create recipes with the same name as these recent recipes (last 30 days): {', '.join(preferences.get('existing_meal_names', [])[:20]) if preferences.get('existing_meal_names') else 'none'}**
-        - **NEVER create recipes with similar names to recent recipes** (e.g., if "Savory Tofu Wraps" exists, do NOT create "Tofu Wraps" or "Savory Tofu Wrap" or any variation)
-        - **NEVER repeat the same recipe name from previous meal plans**
-        - Each recipe must have a completely unique name that doesn't match any existing recipe name
-        - If you need inspiration, look at the recent recipes above but create something completely different
+        CRITICAL: Prevent duplicates and variations of the same recipe
+        - **NEVER create recipes with the same base name as these recent recipes (last 30 days): {', '.join(preferences.get('existing_meal_names', [])[:20]) if preferences.get('existing_meal_names') else 'none'}**
+        - **NEVER create variations of existing recipes** (e.g., if "Italian Risotto Special" exists, do NOT create "Italian Risotto Premium", "Italian Risotto Deluxe", "Italian Risotto Gourmet", "Italian Risotto Artisan", or any other variation with just a different suffix)
+        - **NEVER add generic suffixes** like "Special", "Deluxe", "Gourmet", "Premium", "Artisan" to create "unique" names - these create duplicates
+        - **NEVER append ID numbers, timestamps, or any numeric identifiers to recipe names** (e.g., do NOT create "Asian Sunrise Stir-Fry 2030", "Mediterranean Power Bowl 2032", etc.) - these are still duplicates
+        - **Recipe names must be clean and descriptive** - no numbers, no IDs, no timestamps, just the recipe name
+        - **If a recipe name already exists, create a completely different dish** - do NOT try to make it "unique" by adding numbers or suffixes
+        - **Create truly unique recipes** with different ingredients, cooking methods, or cuisines instead of just changing the name
+        - **Each recipe must be fundamentally different** - not just the same dish with a different title
+        - If a recipe concept already exists, create a completely different dish instead of a variation
+        - Use different cuisines, different main ingredients, or different cooking techniques to ensure variety
+        - **Within the same meal plan, ensure each recipe is unique** - no two meals should share the same base recipe name
         
         IMPORTANT: Respond with ONLY valid JSON. No explanations, no markdown, no extra text.
         For each meal, provide this exact JSON format:
@@ -1056,6 +1062,10 @@ Flavor Profile: Note aromatic base, spices used, acid elements, and finishing to
 
         Create a meal structure that includes:
         1. Meal types for each day (breakfast, lunch, dinner, snacks)
+           - **CRITICAL: For 5 meals per day, you MUST include EXACTLY 5 meals: ["breakfast", "lunch", "dinner", "morning snack", "afternoon snack"] - DO NOT skip the afternoon snack**
+           - For 4 meals per day: use ["breakfast", "lunch", "dinner", "snack"]
+           - For 3 meals per day: use ["breakfast", "lunch", "dinner"]
+           - **IMPORTANT: Each day must have the EXACT number of meals specified by meals_per_day - do not skip any meals**
         2. Calorie distribution per meal
         3. Cuisine assignment per day
         4. Complexity level per meal
@@ -1086,19 +1096,29 @@ Flavor Profile: Note aromatic base, spices used, acid elements, and finishing to
         - Daily Calorie Target: {preferences.get('daily_calorie_target', 2000)} kcal
 
         REQUIREMENTS:
+        - **CRITICAL: Meals per Day: {preferences.get('meals_per_day', 3)} - You MUST generate EXACTLY this many meals for EACH day**
+          - If meals_per_day=5, you MUST include: breakfast, lunch, dinner, morning snack, AND afternoon snack (5 meals total)
+          - If meals_per_day=4, you MUST include: breakfast, lunch, dinner, AND snack (4 meals total)
+          - If meals_per_day=3, you MUST include: breakfast, lunch, AND dinner (3 meals total)
+          - **DO NOT skip any meals - each day must have the exact number of meals specified**
         - CALORIE TARGET: Each day must total close to {preferences.get('daily_calorie_target', 2000)} calories
         - DIETARY RESTRICTIONS: STRICTLY follow: {preferences.get('dietary_preferences', [])}
         - ALLERGIES: NEVER include: {preferences.get('allergies', [])}
         - VARIETY: Each day should have different cuisines and flavors
         - NUTRITION: Balance macronutrients across the week
         
-        Prevent duplicates across meal plans for at least a month
-        - **NEVER create recipes with the same name as these recent recipes (last 30 days): {', '.join(preferences.get('existing_meal_names', [])[:20]) if preferences.get('existing_meal_names') else 'none'}**
-        - **NEVER create recipes with similar names to recent recipes** (e.g., if "Savory Tofu Wraps" exists, do NOT create "Tofu Wraps" or "Savory Tofu Wrap" or any variation)
-        - **NEVER repeat the same recipe name from previous meal plans**
-        - Each recipe must have a completely unique name that doesn't match any existing recipe name
-        - If you need inspiration, look at the recent recipes above but create something completely different
-        - Ensure variety across the week - no two meals should have similar names or ingredients
+        CRITICAL: Prevent duplicates and variations of the same recipe
+        - **NEVER create recipes with the same base name as these recent recipes (last 30 days): {', '.join(preferences.get('existing_meal_names', [])[:20]) if preferences.get('existing_meal_names') else 'none'}**
+        - **NEVER create variations of existing recipes** (e.g., if "Italian Risotto Special" exists, do NOT create "Italian Risotto Premium", "Italian Risotto Deluxe", "Italian Risotto Gourmet", "Italian Risotto Artisan", or any other variation with just a different suffix)
+        - **NEVER add generic suffixes** like "Special", "Deluxe", "Gourmet", "Premium", "Artisan" to create "unique" names - these create duplicates
+        - **NEVER append ID numbers, timestamps, or any numeric identifiers to recipe names** (e.g., do NOT create "Asian Sunrise Stir-Fry 2030", "Mediterranean Power Bowl 2032", etc.) - these are still duplicates
+        - **Recipe names must be clean and descriptive** - no numbers, no IDs, no timestamps, just the recipe name
+        - **If a recipe name already exists, create a completely different dish** - do NOT try to make it "unique" by adding numbers or suffixes
+        - **Create truly unique recipes** with different ingredients, cooking methods, or cuisines instead of just changing the name
+        - **Each recipe must be fundamentally different** - not just the same dish with a different title
+        - If a recipe concept already exists, create a completely different dish instead of a variation
+        - Use different cuisines, different main ingredients, or different cooking techniques to ensure variety
+        - **Within the same meal plan, ensure each recipe is unique** - no two meals should share the same base recipe name
 
         Respond with a JSON object:
         {{
@@ -1108,7 +1128,7 @@ Flavor Profile: Note aromatic base, spices used, acid elements, and finishing to
                         "day": "Monday",
                         "meals": [
                             {{
-                                "meal_type": "breakfast",
+                                "meal_type": "breakfast|lunch|dinner|morning snack|afternoon snack|snack",
                                 "meal_name": "string",
                                 "recipe": {{
                                     "title": "string",
@@ -1653,10 +1673,29 @@ Return ONLY minified JSON (no markdown):
                     'allowed': ['nuts', 'fruits', 'crackers', 'yogurt', 'light bites', 'trail mix', 'veggie sticks', 'cheese', 'protein bars', 'small portions'],
                     'forbidden': ['full meals', 'large portions', 'heavy dishes', 'main courses', 'dinners', 'breakfast dishes'],
                     'description': 'small portions like nuts, fruits, crackers, yogurt, cheese, or light bites - appropriate for between-meal snacking'
+                },
+                'morning snack': {
+                    'allowed': ['nuts', 'fruits', 'crackers', 'yogurt', 'light bites', 'trail mix', 'veggie sticks', 'cheese', 'protein bars', 'small portions'],
+                    'forbidden': ['full meals', 'large portions', 'heavy dishes', 'main courses', 'dinners', 'breakfast dishes'],
+                    'description': 'small portions like nuts, fruits, crackers, yogurt, cheese, or light bites - appropriate for morning snacking between breakfast and lunch'
+                },
+                'afternoon snack': {
+                    'allowed': ['nuts', 'fruits', 'crackers', 'yogurt', 'light bites', 'trail mix', 'veggie sticks', 'cheese', 'protein bars', 'small portions'],
+                    'forbidden': ['full meals', 'large portions', 'heavy dishes', 'main courses', 'dinners', 'breakfast dishes'],
+                    'description': 'small portions like nuts, fruits, crackers, yogurt, cheese, or light bites - appropriate for afternoon snacking between lunch and dinner'
                 }
             }
             
-            constraints = meal_type_constraints.get(meal_type, meal_type_constraints['breakfast'])
+            # CRITICAL FIX: Normalize snack types to use the same constraints
+            normalized_meal_type = meal_type.lower()
+            if 'snack' in normalized_meal_type and normalized_meal_type != 'snack':
+                # Use specific snack constraints if available, otherwise fall back to generic snack
+                if normalized_meal_type in meal_type_constraints:
+                    constraints = meal_type_constraints[normalized_meal_type]
+                else:
+                    constraints = meal_type_constraints['snack']
+            else:
+                constraints = meal_type_constraints.get(normalized_meal_type, meal_type_constraints['breakfast'])
             
             # STEP 2: RECIPE GENERATION - Generate recipe with RAG guidance and strict meal type enforcement
             logger.info(f"🎨 STEP 2: Recipe Generation with RAG guidance")

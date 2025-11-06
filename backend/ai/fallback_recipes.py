@@ -159,7 +159,7 @@ class FallbackRecipeGenerator:
             ]
         }
     
-    def generate_unique_recipe(self, meal_type: str, target_calories: int, target_cuisine: str, existing_names: List[str]) -> Dict[str, Any]:
+    def generate_unique_recipe(self, meal_type: str, target_calories: int, target_cuisine: str, existing_names: List[str], db=None) -> Dict[str, Any]:
         """Generate a unique recipe avoiding duplicates"""
         import time
         
@@ -176,40 +176,42 @@ class FallbackRecipeGenerator:
         for attempt in range(max_attempts):
             template = random.choice(cuisine_templates)
             
-            # Create variations to ensure uniqueness
-            timestamp = int(time.time() * 1000) % 1000
-            variation_suffix = random.choice(['Special', 'Deluxe', 'Gourmet', 'Premium', 'Artisan'])
-            
-            # Create unique name
+            # CRITICAL FIX: Avoid adding suffixes that create duplicates - use cuisine and ingredients instead
             base_name = template['base_name']
-            unique_name = f"{base_name} {variation_suffix}"
             
-            # Add more uniqueness if needed
-            if unique_name in existing_names:
-                unique_name = f"{base_name} {variation_suffix} {timestamp}"
+            # Check if base_name already exists (with or without suffix)
+            base_exists = any(base_name.lower() in name.lower() for name in existing_names)
+            
+            if base_exists:
+                # Try a different template instead of adding a suffix
+                continue  # Try next template
+            else:
+                # Use base name without suffix if it's unique
+                unique_name = base_name
             
             # Check if this name is unique
             if unique_name not in existing_names:
-                return self._build_recipe(unique_name, template, target_calories, target_cuisine)
+                return self._build_recipe(unique_name, template, target_calories, target_cuisine, db=db)
         
-        # If we can't find a unique name, use timestamp
-        template = random.choice(cuisine_templates)
-        timestamp = int(time.time() * 1000)
-        unique_name = f"{template['base_name']} {timestamp}"
+        # If we can't find a unique name, try a completely different template
+        # CRITICAL FIX: Don't add timestamp suffixes - use a different template instead
+        all_templates = self.recipe_templates.get(meal_type, self.recipe_templates['breakfast'])
+        used_templates = [t for t in all_templates if any(t['base_name'].lower() in name.lower() for name in existing_names)]
+        available_templates = [t for t in all_templates if t not in used_templates]
         
-        return self._build_recipe(unique_name, template, target_calories, target_cuisine)
+        if available_templates:
+            template = random.choice(available_templates)
+            unique_name = template['base_name']
+        else:
+            # Last resort: use timestamp but make it clear it's a fallback
+            template = random.choice(cuisine_templates)
+            timestamp = int(time.time() * 1000) % 10000
+            unique_name = f"{template['base_name']} {timestamp}"
+        
+        return self._build_recipe(unique_name, template, target_calories, target_cuisine, db=db)
     
-    def _build_recipe(self, name: str, template: Dict[str, Any], target_calories: int, target_cuisine: str) -> Dict[str, Any]:
+    def _build_recipe(self, name: str, template: Dict[str, Any], target_calories: int, target_cuisine: str, db=None) -> Dict[str, Any]:
         """Build a complete recipe from template"""
-        
-        # Calculate nutrition based on target calories
-        protein_cals = int(target_calories * 0.25)
-        carbs_cals = int(target_calories * 0.45)
-        fats_cals = int(target_calories * 0.30)
-        
-        protein_g = protein_cals // 4
-        carbs_g = carbs_cals // 4
-        fats_g = fats_cals // 9
         
         # Create detailed ingredients
         ingredients = []
@@ -221,6 +223,40 @@ class FallbackRecipeGenerator:
                 'quantity': quantity,
                 'unit': unit
             })
+        
+        # CRITICAL FIX: Calculate nutrition from actual ingredients instead of placeholder values
+        # Use ingredient database to get accurate nutrition values
+        calculated_nutrition = None
+        if db:
+            try:
+                from ai.nutrition_ai import NutritionAI
+                nutrition_ai = NutritionAI()
+                calculated_nutrition = nutrition_ai._calculate_recipe_nutrition(ingredients, db)
+                if calculated_nutrition and calculated_nutrition.get('calories', 0) > 0:
+                    # Use calculated nutrition from ingredients (accurate)
+                    calories = int(calculated_nutrition.get('calories', target_calories))
+                    protein = round(calculated_nutrition.get('protein', 0), 1)
+                    carbs = round(calculated_nutrition.get('carbs', 0), 1)
+                    fats = round(calculated_nutrition.get('fats', 0), 1)
+                else:
+                    # Fallback to formula if calculation fails
+                    calculated_nutrition = None
+            except Exception as e:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(f"Failed to calculate nutrition from ingredients for fallback recipe: {e}")
+                calculated_nutrition = None
+        
+        # Fallback to formula-based calculation if database calculation failed
+        if not calculated_nutrition:
+            protein_cals = int(target_calories * 0.25)
+            carbs_cals = int(target_calories * 0.45)
+            fats_cals = int(target_calories * 0.30)
+            
+            calories = target_calories
+            protein = protein_cals // 4
+            carbs = carbs_cals // 4
+            fats = fats_cals // 9
         
         # Create detailed instructions
         instructions = [
@@ -251,14 +287,22 @@ class FallbackRecipeGenerator:
                 "instructions": instructions,
                 "dietary_tags": dietary_tags,
                 "nutrition": {
-                    "calories": target_calories,
-                    "protein": protein_g,
-                    "carbs": carbs_g,
-                    "fats": fats_g
+                    "calories": calories,
+                    "protein": protein,
+                    "carbs": carbs,
+                    "fats": fats,
+                    "per_serving_calories": calories,
+                    "per_serving_protein": protein,
+                    "per_serving_carbs": carbs,
+                    "per_serving_fats": fats
                 },
                 "ai_generated": False,
                 "database_fallback": True
-            }
+            },
+            "calories": calories,
+            "protein": protein,
+            "carbs": carbs,
+            "fats": fats
         }
 
 # Global instance
