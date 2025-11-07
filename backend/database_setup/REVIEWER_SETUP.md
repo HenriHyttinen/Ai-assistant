@@ -38,9 +38,9 @@ print('Database setup complete!')
 "
 ```
 
-## Seed Database (Optional but Recommended)
+## Seed Database (Required for Full Functionality)
 
-After initializing the database, you can seed it with recipes and ingredients:
+**Step 1: Seed Basic Recipes and Ingredients**
 
 ```bash
 cd backend
@@ -49,11 +49,42 @@ python scripts/comprehensive_seeder.py
 ```
 
 This will seed:
-- 500+ recipes with vector embeddings
-- 15,532+ ingredients with nutritional data
-- Vector embeddings for RAG functionality
+- 500+ recipes
+- ~155 basic ingredients
 
-**Note:** Seeding can take a few minutes depending on your system.
+**Step 2: Import Full Ingredient Database (IMPORTANT)**
+
+The comprehensive seeder only creates ~155 ingredients. To get the full ingredient database (5,388 ingredients), import from JSON:
+
+```bash
+cd backend
+source venv/bin/activate
+python scripts/import_ingredients_from_json.py
+```
+
+This will:
+- Import 5,388 ingredients from `ingredients_list.json`
+- Add to existing ingredients (total: ~5,543 ingredients)
+
+**Step 3: Generate Embeddings (REQUIRED for RAG)**
+
+Embeddings are required for recipe search and RAG functionality. Generate them after seeding:
+
+```bash
+cd backend
+source venv/bin/activate
+
+# Generate recipe embeddings (takes ~5-15 minutes)
+python scripts/generate_recipe_embeddings.py
+
+# Generate ingredient embeddings (takes ~2-5 minutes)
+python scripts/generate_ingredient_embeddings.py
+```
+
+**Note:** 
+- Basic seeding takes a few minutes
+- Importing ingredients takes ~2-5 minutes
+- Embedding generation takes ~10-20 minutes total
 
 ## Verify Database Setup
 

@@ -9,7 +9,8 @@ These are the scripts you need for initial setup:
 ### 1. Database Seeding
 
 **`comprehensive_seeder.py`** ⭐ (Recommended)
-- **Purpose**: Seeds database with 500+ recipes and 15,532+ ingredients
+- **Purpose**: Seeds database with 500+ recipes and ~155 basic ingredients
+- **Note**: To get the full ingredient database (5,388 ingredients), run `import_ingredients_from_json.py` after seeding
 - **When to use**: Initial database setup
 - **Usage**: `python scripts/comprehensive_seeder.py`
 - **Time**: ~5-10 minutes
@@ -18,6 +19,13 @@ These are the scripts you need for initial setup:
 - `direct_seeder.py` - Faster SQL-based seeder
 - `generate_500_authentic_recipes.py` - Generates recipes using AI
 - `minimal_seeder.py` - Basic seeder for quick testing
+
+**`import_ingredients_from_json.py`** ⭐ (IMPORTANT - Required for Full Database)
+- **Purpose**: Imports 5,388 ingredients from `ingredients_list.json`
+- **When to use**: After running `comprehensive_seeder.py` to get the full ingredient database
+- **Usage**: `python scripts/import_ingredients_from_json.py`
+- **Time**: ~2-5 minutes
+- **Note**: The comprehensive seeder only creates ~155 ingredients. This script adds the remaining 5,388 ingredients.
 
 ### 2. Vector Embeddings (for RAG)
 
@@ -28,8 +36,19 @@ These are the scripts you need for initial setup:
 - **Requirements**: `sentence-transformers` package
 - **Time**: ~5-15 minutes (depends on recipe count)
 
-**Related:**
-- `generate_ingredient_embeddings.py` - For ingredient embeddings
+**`generate_ingredient_embeddings.py`** ⭐
+- **Purpose**: Generates vector embeddings for ingredient search (RAG)
+- **When to use**: After seeding ingredients
+- **Usage**: `python scripts/generate_ingredient_embeddings.py`
+- **Requirements**: `sentence-transformers` package
+- **Time**: ~2-5 minutes (depends on ingredient count)
+
+**`recalculate_recipe_nutrition.py`** ⭐ (IMPORTANT - Fixes 0 Calorie Issue)
+- **Purpose**: Recalculates recipe nutrition from ingredients
+- **When to use**: After seeding recipes (fixes recipes showing 0 calories)
+- **Usage**: `python scripts/recalculate_recipe_nutrition.py`
+- **Time**: ~1-2 minutes
+- **Note**: The comprehensive seeder creates recipes with ingredients but doesn't calculate nutrition. This script fixes that.
 
 ### 3. Goal Templates
 
@@ -146,8 +165,12 @@ These scripts are from development iterations and are not needed for review:
 # 1. Seed recipes and ingredients
 python scripts/comprehensive_seeder.py
 
-# 2. Generate embeddings (optional but recommended)
+# 2. Generate embeddings (REQUIRED for recipe search and RAG)
 python scripts/generate_recipe_embeddings.py
+python scripts/generate_ingredient_embeddings.py
+
+# 3. Recalculate recipe nutrition (IMPORTANT - fixes 0 calorie issue)
+python scripts/recalculate_recipe_nutrition.py
 
 # 3. Seed goal templates (optional)
 python scripts/seed_goals_direct.py

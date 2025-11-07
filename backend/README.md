@@ -13,7 +13,7 @@ FastAPI backend service for the Numbers Don't Lie wellness platform. Handles hea
 - **AI Integration** - OpenAI-powered health recommendations and insights
 - **Nutrition Planning** - Meal plan generation with 17 dietary preferences and 13 allergies
 - **Recipe Management** - 500+ recipe database with RAG-based search and AI generation
-- **Ingredient Database** - 15,532+ ingredients with comprehensive nutritional data
+- **Ingredient Database** - 5,388+ ingredients with comprehensive nutritional data (requires import from JSON)
 
 ## Prerequisites
 
@@ -49,15 +49,40 @@ OPENAI_API_KEY=your-openai-api-key
 python database_setup/init_db.py
 ```
 
-5. Seed the database (optional but recommended):
+5. Seed the database:
+
+**Step 1: Seed Basic Recipes and Ingredients**
 ```bash
 python scripts/comprehensive_seeder.py
 ```
 
 This will seed:
-- 500+ recipes with vector embeddings
-- 15,532+ ingredients with nutritional data
-- Vector embeddings for RAG functionality
+- 500+ recipes
+- ~155 basic ingredients
+
+**Step 2: Import Full Ingredient Database (IMPORTANT)**
+
+The comprehensive seeder only creates ~155 ingredients. To get the full ingredient database (5,388 ingredients), import from JSON:
+
+```bash
+python scripts/import_ingredients_from_json.py
+```
+
+This will:
+- Import 5,388 ingredients from `ingredients_list.json`
+- Add to existing ingredients (total: ~5,543 ingredients)
+
+**Step 3: Generate Embeddings (REQUIRED for Recipe Search)**
+
+Embeddings are required for recipe search and RAG functionality:
+
+```bash
+# Generate recipe embeddings (takes ~5-15 minutes)
+python scripts/generate_recipe_embeddings.py
+
+# Generate ingredient embeddings (takes ~2-5 minutes)
+python scripts/generate_ingredient_embeddings.py
+```
 
 ## Running the Server
 
@@ -149,7 +174,7 @@ See [`docs/MODEL_RATIONALE.md`](docs/MODEL_RATIONALE.md) for detailed rationale.
 The system uses vector embeddings for similarity search:
 - **Embedding Model**: `SentenceTransformer('all-MiniLM-L6-v2')` (384 dimensions)
 - **Recipe Database**: 500+ recipes with vector embeddings
-- **Ingredient Database**: 15,532+ ingredients with nutritional data
+- **Ingredient Database**: 5,388+ ingredients with nutritional data (requires import from JSON)
 - **Similarity Search**: Cosine similarity with meal type filtering
 
 See [`docs/RAG_IMPLEMENTATION.md`](docs/RAG_IMPLEMENTATION.md) for implementation details.
@@ -174,7 +199,7 @@ See [`docs/ERROR_HANDLING.md`](docs/ERROR_HANDLING.md) for detailed approach.
 
 This script:
 1. Creates all database tables
-2. Seeds 500+ recipes and 15,532+ ingredients
+2. Seeds 500+ recipes and ~155 basic ingredients (import from JSON for full 5,388 ingredients)
 3. Generates vector embeddings for RAG
 4. Verifies database population
 
@@ -210,7 +235,7 @@ python verify_database.py
 
 This checks:
 - Recipe count (≥500)
-- Ingredient count (≥500, target: 15,532+)
+- Ingredient count (≥500, target: 5,388+ with JSON import)
 - Embedding coverage (100% for recipes and ingredients)
 - Embedding dimensions (384 for all-MiniLM-L6-v2)
 

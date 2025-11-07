@@ -44,8 +44,18 @@ cp .env.example .env
 # Initialize database
 python database_setup/init_db.py
 
-# Seed recipes and ingredients (optional but recommended)
+# Seed basic recipes and ingredients
 python scripts/comprehensive_seeder.py
+
+# Import full ingredient database (IMPORTANT - adds 5,388 ingredients)
+python scripts/import_ingredients_from_json.py
+
+# Generate embeddings (REQUIRED for recipe search and RAG)
+python scripts/generate_recipe_embeddings.py
+python scripts/generate_ingredient_embeddings.py
+
+# Recalculate recipe nutrition from ingredients (IMPORTANT - fixes 0 calorie issue)
+python scripts/recalculate_recipe_nutrition.py
 
 # Start the backend server
 uvicorn main:app --reload
@@ -128,19 +138,65 @@ python database_setup/init_db.py
 
 This creates all necessary database tables.
 
-### Seed Database (Optional but Recommended)
+### Seed Database (Required for Full Functionality)
 
-To populate the database with recipes and ingredients:
+**Step 1: Seed Basic Recipes and Ingredients**
 
 ```bash
 cd backend
 python scripts/comprehensive_seeder.py
 ```
 
-This seeds:
-- 500+ recipes with vector embeddings
-- 15,532+ ingredients with nutritional data
-- Vector embeddings for RAG functionality
+This will seed:
+- 500+ recipes
+- ~155 basic ingredients
+
+**Step 2: Import Full Ingredient Database (IMPORTANT)**
+
+The comprehensive seeder only creates ~155 ingredients. To get the full ingredient database (5,388 ingredients), import from JSON:
+
+```bash
+cd backend
+python scripts/import_ingredients_from_json.py
+```
+
+This will:
+- Import 5,388 ingredients from `ingredients_list.json`
+- Add to existing ingredients (total: ~5,543 ingredients)
+
+**Step 3: Generate Embeddings (REQUIRED for Recipe Search)**
+
+Embeddings are required for recipe search and RAG functionality. Generate them after seeding:
+
+```bash
+cd backend
+
+# Generate recipe embeddings (takes ~5-15 minutes)
+python scripts/generate_recipe_embeddings.py
+
+# Generate ingredient embeddings (takes ~2-5 minutes)
+python scripts/generate_ingredient_embeddings.py
+```
+
+**Step 4: Recalculate Recipe Nutrition (IMPORTANT - Fixes 0 Calorie Issue)**
+
+The seeder creates recipes with ingredients but doesn't calculate nutrition. Recalculate nutrition from ingredients:
+
+```bash
+cd backend
+python scripts/recalculate_recipe_nutrition.py
+```
+
+This will:
+- Calculate calories, protein, carbs, fats from recipe ingredients
+- Update per-serving and total nutrition values
+- Fix recipes showing 0 calories/nutrition
+
+**Summary:**
+1. ✅ Seed basic data: `python scripts/comprehensive_seeder.py` (500 recipes, 155 ingredients)
+2. ✅ Import full ingredients: `python scripts/import_ingredients_from_json.py` (adds 5,388 ingredients)
+3. ✅ Generate embeddings: Run both embedding scripts (required for search/RAG)
+4. ✅ Recalculate nutrition: `python scripts/recalculate_recipe_nutrition.py` (fixes 0 calorie issue)
 
 ### Verify Database
 

@@ -15,7 +15,7 @@ python-jose[cryptography]==3.3.0
 email-validator==2.1.0.post1
 alembic==1.12.1
 pytest==7.4.3
-httpx>=0.26.0,<0.28.0  # CRITICAL: Keep >=0.26.0 for supabase 2.22.1+, and <0.28.0 to avoid 'proxies' argument removal
+httpx>=0.24.0,<0.25.0  # Compatible with supabase 2.3.0 (requires <0.25.0) and openai 1.3.5 (requires >=0.23.0)
 authlib==1.2.1
 itsdangerous==2.1.2
 pyotp==2.9.0

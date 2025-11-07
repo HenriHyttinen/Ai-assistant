@@ -13,7 +13,7 @@ This platform helps users track their health metrics, plan meals, and manage the
 - Support for 17 dietary preferences (vegetarian, vegan, keto, paleo, etc.)
 - Handles 13 common allergies and intolerances
 - Cultural meal patterns (Mediterranean, Asian, Indian, Mexican, etc.)
-- Recipe database with 500+ entries
+- Recipe database with 500+ entries (requires embedding generation for search)
 - Accurate nutritional calculations from ingredient database
 
 ### Recipe Management
@@ -52,6 +52,53 @@ This platform helps users track their health metrics, plan meals, and manage the
 
 **For detailed setup instructions, see [SETUP_FOR_REVIEWERS.md](./SETUP_FOR_REVIEWERS.md)**
 
+### Docker Setup (Recommended)
+
+If you have Docker and Docker Compose installed, this is the easiest way to get started:
+
+**Note:** If you get a "Permission denied" error, you need to add your user to the docker group:
+```bash
+sudo usermod -aG docker $USER
+# Then log out and log back in, or run: newgrp docker
+```
+
+For detailed Docker setup instructions, see [DOCKER_SETUP.md](./DOCKER_SETUP.md)
+
+```bash
+# Clone the repository
+git clone <repository-url>
+cd numbers-dont-lie
+
+# Build and start all services
+docker-compose up --build
+
+# Or run in detached mode
+docker-compose up -d --build
+```
+
+This will start:
+- PostgreSQL database on port 5433
+- Redis cache on port 6379
+- Backend API on port 8000
+- Frontend on port 80 (via nginx)
+
+The application will be available at:
+- Frontend: http://localhost
+- Backend API: http://localhost:8000
+- API Documentation: http://localhost:8000/docs
+
+To stop the services:
+```bash
+docker-compose down
+```
+
+To seed recipes and ingredients (optional, takes a few minutes):
+```bash
+docker-compose exec app bash -c "cd /app/backend && SEED_RECIPES=true python scripts/comprehensive_seeder.py"
+```
+
+Or set `SEED_RECIPES=true` in docker-compose.yml environment section to seed automatically on startup.
+
 ### Manual Setup
 
 #### 1. Backend Setup
@@ -78,8 +125,18 @@ cp .env.example .env
 # Initialize database
 python database_setup/init_db.py
 
-# Seed recipes and ingredients (optional but recommended)
+# Seed basic recipes and ingredients
 python scripts/comprehensive_seeder.py
+
+# Import full ingredient database (IMPORTANT - adds 5,388 ingredients)
+python scripts/import_ingredients_from_json.py
+
+# Generate embeddings (REQUIRED for recipe search and RAG)
+python scripts/generate_recipe_embeddings.py
+python scripts/generate_ingredient_embeddings.py
+
+# Recalculate recipe nutrition from ingredients (IMPORTANT - fixes 0 calorie issue)
+python scripts/recalculate_recipe_nutrition.py
 
 # Start the backend server
 uvicorn main:app --reload
@@ -130,7 +187,9 @@ SUPABASE_ANON_KEY=your-supabase-anon-key
 
 ### Database Setup
 
-After initializing the database, you can seed it with recipes and ingredients:
+After initializing the database, seed it with recipes and ingredients:
+
+**Step 1: Seed Basic Recipes and Ingredients**
 
 ```bash
 cd backend
@@ -138,9 +197,55 @@ python scripts/comprehensive_seeder.py
 ```
 
 This will seed:
-- 500+ recipes with vector embeddings
-- 15,532+ ingredients with nutritional data
-- Vector embeddings for RAG functionality
+- 500+ recipes
+- ~155 basic ingredients
+
+**Step 2: Import Full Ingredient Database (IMPORTANT)**
+
+The comprehensive seeder only creates ~155 ingredients. To get the full ingredient database (5,388 ingredients), import from JSON:
+
+```bash
+cd backend
+python scripts/import_ingredients_from_json.py
+```
+
+This will:
+- Import 5,388 ingredients from `ingredients_list.json`
+- Add to existing ingredients (total: ~5,543 ingredients)
+
+**Step 3: Generate Embeddings (REQUIRED for Recipe Search)**
+
+Embeddings are required for recipe search and RAG functionality. Generate them after seeding:
+
+```bash
+cd backend
+
+# Generate recipe embeddings (takes ~5-15 minutes)
+python scripts/generate_recipe_embeddings.py
+
+# Generate ingredient embeddings (takes ~2-5 minutes)
+python scripts/generate_ingredient_embeddings.py
+```
+
+**Step 4: Recalculate Recipe Nutrition (IMPORTANT - Fixes 0 Calorie Issue)**
+
+The seeder creates recipes with ingredients but doesn't calculate nutrition. Recalculate nutrition from ingredients:
+
+```bash
+cd backend
+python scripts/recalculate_recipe_nutrition.py
+```
+
+This will:
+- Calculate calories, protein, carbs, fats from recipe ingredients
+- Update per-serving and total nutrition values
+- Fix recipes showing 0 calories/nutrition
+
+**Summary:**
+1. ✅ Seed basic data: `python scripts/comprehensive_seeder.py` (500 recipes, 155 ingredients)
+2. ✅ Import full ingredients: `python scripts/import_ingredients_from_json.py` (adds 5,388 ingredients)
+3. ✅ Generate embeddings: Run both embedding scripts (required for search/RAG)
+4. ✅ Recalculate nutrition: `python scripts/recalculate_recipe_nutrition.py` (fixes 0 calorie issue)
 
 ## Dietary Preferences & Restrictions
 
@@ -199,7 +304,7 @@ All dietary preferences and allergies are validated through Pydantic schemas and
 
 ### Database
 - **Recipes**: 500+ recipes with vector embeddings for RAG
-- **Ingredients**: 15,532+ ingredients with comprehensive nutritional data
+- **Ingredients**: 5,388+ ingredients with comprehensive nutritional data (requires import from JSON)
 - All recipes and ingredients have vector embeddings for similarity search
 
 ## API Endpoints
@@ -281,7 +386,7 @@ The system uses a 4-step sequential prompting process:
 - Vector Database: 500+ recipes with embeddings
 - Similarity Search: Cosine similarity for recipe retrieval
 - Context Augmentation: Enhanced prompts with retrieved examples
-- Ingredient Database: 15,532+ ingredients with nutritional data
+- Ingredient Database: 5,388+ ingredients with nutritional data (requires import from JSON)
 
 ## Error Handling
 
@@ -332,7 +437,7 @@ I've implemented several bonus features beyond the core requirements:
 7. **Automatic Portion Adjustment** - Smart scaling based on calorie targets
 8. **Dynamic Grid Sizing** - Support for 3-6 meals per day
 9. **Standardized Unit Conversion** - Automatic conversion to g/ml/piece
-10. **Database-Backed Nutrition Calculation** - Uses 15,532+ ingredient database
+10. **Database-Backed Nutrition Calculation** - Uses 5,388+ ingredient database (requires import from JSON)
 11. **Nutritionist-Recommended Calorie Distribution** - Optimal meal distribution
 12. **LocalStorage State Persistence** - Offline support
 13. **Enhanced Recipe Search & Filtering** - Comprehensive filters including macronutrients

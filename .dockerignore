@@ -1,10 +1,12 @@
 # Git
 .git
 .gitignore
+.git/
 
 # Documentation
 README.md
 *.md
+docs/
 
 # IDE
 .vscode
@@ -17,45 +19,119 @@ README.md
 Thumbs.db
 
 # Node modules (will be installed in container)
+node_modules
+node_modules/
+**/node_modules
+**/node_modules/
 frontend/node_modules
+frontend/node_modules/
 frontend/dist
+frontend/dist/
+dist
+dist/
 
-# Python
+# Python virtual environments (CRITICAL - 7.4GB!)
+venv
+venv/
+.venv
+.venv/
+env
+env/
+.env
+.env/
+backend/venv
+backend/venv/
+backend/.venv
+backend/.venv/
+backend/env
+backend/env/
+**/venv
+**/venv/
+**/.venv
+**/.venv/
+**/env
+**/env/
+
+# Python cache
 __pycache__
+__pycache__/
+**/__pycache__
+**/__pycache__/
 *.pyc
 *.pyo
 *.pyd
 .Python
-env
-venv
-.venv
+*.py[cod]
+*$py.class
+
+# Python build artifacts
+*.egg-info/
+*.egg
+build/
+develop-eggs/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info
 pip-log.txt
 pip-delete-this-directory.txt
 
-# Database
+# Database files
 *.db
 *.sqlite
 *.sqlite3
+backend/*.db
+backend/*.sqlite
+backend/*.sqlite3
+**/*.db
+**/*.sqlite
+**/*.sqlite3
 
 # Logs
 *.log
 logs/
+**/*.log
 
 # Environment files
 .env
 .env.local
 .env.production
+.env.*
+backend/.env
+backend/.env.*
 
 # Docker
 Dockerfile
 docker-compose.yml
 .dockerignore
+# Note: docker/nginx.conf and docker/start.sh are NEEDED by Dockerfile
+# Only exclude docker logs/temp files if any
+docker/*.log
+docker/tmp/
+docker/temp/
 
 # Testing
 coverage/
-.pytest_cache/
 .coverage
+.pytest_cache/
+.tox/
+.hypothesis/
+.pytest_cache
 
 # Temporary files
 tmp/
 temp/
+*.tmp
+*.bak
+*.swp
+*~
+
+# Large data files
+backend/ingredients_list.json
+**/*.json.bak
