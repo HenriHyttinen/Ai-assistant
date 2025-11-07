@@ -386,7 +386,13 @@ class RecipeSearchRequest(BaseModel):
     meal_type: Optional[MealType] = None
     dietary_tags: Optional[List[str]] = []
     max_calories: Optional[float] = None
+    min_calories: Optional[float] = None
     min_protein: Optional[float] = None
+    max_protein: Optional[float] = None
+    min_carbs: Optional[float] = None
+    max_carbs: Optional[float] = None
+    min_fats: Optional[float] = None
+    max_fats: Optional[float] = None
     max_prep_time: Optional[int] = None
     difficulty_level: Optional[DifficultyLevel] = None
     # Micronutrient filters

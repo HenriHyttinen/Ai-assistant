@@ -18,9 +18,11 @@ class MealAlternativesService:
         self.nutrition_ai = NutritionAI()
     
     def generate_meal_alternatives(self, db: Session, meal_plan_id: str, meal_type: str, 
-                                 user_preferences: Dict[str, Any], count: int = 3) -> List[Dict[str, Any]]:
+                                 user_preferences: Dict[str, Any], count: int = 3, 
+                                 user_id: Optional[int] = None) -> List[Dict[str, Any]]:
         """
         Generate alternative meal options for a specific meal type
+        Now considers food item availability from shopping lists and user preferences
         """
         try:
             # Get the original meal plan to understand the context
@@ -41,14 +43,34 @@ class MealAlternativesService:
             target_calories = self._extract_calories_from_meal(original_meal)
             target_cuisine = original_meal.cuisine or "International"
             
+            # Get available ingredients from shopping lists (if user_id provided)
+            available_ingredients = []
+            if user_id:
+                available_ingredients = self._get_available_ingredients_from_shopping_lists(db, user_id)
+                logger.info(f"Found {len(available_ingredients)} available ingredients from shopping lists")
+            
+            # Enhance user preferences with available ingredients
+            enhanced_preferences = user_preferences.copy()
+            if available_ingredients:
+                enhanced_preferences['available_ingredients'] = available_ingredients
+                enhanced_preferences['prefer_available_ingredients'] = True
+            
             # Generate alternatives using AI
             alternatives = []
             for i in range(count):
                 try:
                     alternative = self._generate_single_alternative(
-                        meal_type, target_calories, target_cuisine, user_preferences, i, db
+                        meal_type, target_calories, target_cuisine, enhanced_preferences, i, db
                     )
-                    alternatives.append(alternative)
+                    if alternative:
+                        # Score alternative based on ingredient availability
+                        if available_ingredients:
+                            availability_score = self._score_ingredient_availability(
+                                alternative, available_ingredients
+                            )
+                            alternative['availability_score'] = availability_score
+                            alternative['uses_available_ingredients'] = availability_score > 0.5
+                        alternatives.append(alternative)
                 except Exception as e:
                     logger.warning(f"Failed to generate alternative {i+1}: {str(e)}")
                     continue
@@ -56,8 +78,12 @@ class MealAlternativesService:
             # If AI fails, provide fallback alternatives
             if not alternatives:
                 alternatives = self._generate_fallback_alternatives(
-                    meal_type, target_calories, user_preferences
+                    meal_type, target_calories, enhanced_preferences
                 )
+            
+            # Sort by availability score if available ingredients were provided
+            if available_ingredients:
+                alternatives.sort(key=lambda x: x.get('availability_score', 0), reverse=True)
             
             return alternatives
             
@@ -79,6 +105,31 @@ class MealAlternativesService:
         
         selected_cuisine = cuisine_variations.get(variation_index, target_cuisine)
         
+        # Get available ingredients and cuisine preferences
+        available_ingredients = user_preferences.get('available_ingredients', [])
+        prefer_available = user_preferences.get('prefer_available_ingredients', False)
+        cuisine_preferences = user_preferences.get('cuisine_preferences', [])
+        
+        # Build ingredient availability section
+        availability_section = ""
+        if available_ingredients and prefer_available:
+            ingredient_names = [ing.get('name', '') for ing in available_ingredients[:10]]  # Limit to 10 for prompt
+            availability_section = f"""
+        INGREDIENT AVAILABILITY:
+        - Prefer using these available ingredients: {', '.join(ingredient_names)}
+        - Prioritize recipes that use ingredients the user already has
+        - This helps reduce shopping needs and food waste
+        """
+        
+        # Build cuisine preferences section
+        cuisine_section = ""
+        if cuisine_preferences:
+            cuisine_section = f"""
+        CUISINE PREFERENCES:
+        - User prefers: {', '.join(cuisine_preferences)}
+        - Consider these cuisines when generating alternatives
+        """
+        
         # Create a focused prompt for this specific alternative
         prompt = f"""
         Generate a single {meal_type} alternative with these exact requirements:
@@ -90,12 +141,14 @@ class MealAlternativesService:
         - Dietary Preferences: {user_preferences.get('dietary_preferences', [])}
         - Allergies: {user_preferences.get('allergies', [])}
         - Disliked Ingredients: {user_preferences.get('disliked_ingredients', [])}
-        
+        {availability_section}
+        {cuisine_section}
         VARIATION REQUIREMENTS:
         - This is alternative #{variation_index + 1} - make it different from typical {meal_type} options
         - Use {selected_cuisine} cuisine style
         - Include unique ingredients or cooking methods
         - Ensure it's appealing and nutritious
+        - Respect all dietary preferences, allergies, and restrictions
         
         Respond with ONLY valid JSON in this exact format:
         {{
@@ -327,6 +380,110 @@ class MealAlternativesService:
         except Exception as e:
             logger.error(f"Error getting alternatives from database: {str(e)}")
             return []
+    
+    def _get_available_ingredients_from_shopping_lists(self, db: Session, user_id: int) -> List[Dict[str, Any]]:
+        """
+        Get available ingredients from user's shopping lists (purchased items)
+        """
+        try:
+            from models.nutrition import ShoppingList, ShoppingListItem
+            from models.recipe import Ingredient
+            
+            # Get all active shopping lists for the user
+            shopping_lists = db.query(ShoppingList).filter(
+                ShoppingList.user_id == user_id,
+                ShoppingList.is_active == True
+            ).all()
+            
+            available_ingredients = []
+            ingredient_quantities = {}  # Track quantities per ingredient
+            
+            for shopping_list in shopping_lists:
+                # Get purchased items (available ingredients)
+                items = db.query(ShoppingListItem).filter(
+                    ShoppingListItem.shopping_list_id == shopping_list.id,
+                    ShoppingListItem.is_purchased == True
+                ).all()
+                
+                for item in items:
+                    # Get ingredient details
+                    ingredient = db.query(Ingredient).filter(
+                        Ingredient.id == item.ingredient_id
+                    ).first()
+                    
+                    if ingredient:
+                        ingredient_id = ingredient.id
+                        if ingredient_id not in ingredient_quantities:
+                            ingredient_quantities[ingredient_id] = {
+                                'ingredient_id': ingredient_id,
+                                'name': ingredient.name,
+                                'category': ingredient.category,
+                                'total_quantity': 0,
+                                'unit': item.unit
+                            }
+                        
+                        # Sum up quantities (assuming same unit)
+                        ingredient_quantities[ingredient_id]['total_quantity'] += item.quantity
+            
+            # Convert to list
+            available_ingredients = list(ingredient_quantities.values())
+            
+            logger.info(f"Found {len(available_ingredients)} available ingredients from shopping lists")
+            return available_ingredients
+            
+        except Exception as e:
+            logger.warning(f"Error getting available ingredients from shopping lists: {str(e)}")
+            return []
+    
+    def _score_ingredient_availability(self, alternative: Dict[str, Any], 
+                                      available_ingredients: List[Dict[str, Any]]) -> float:
+        """
+        Score how well an alternative uses available ingredients (0.0 to 1.0)
+        """
+        try:
+            recipe = alternative.get('recipe', {})
+            ingredients = recipe.get('ingredients', [])
+            
+            if not ingredients:
+                return 0.0
+            
+            # Create a set of available ingredient names (normalized)
+            available_names = set()
+            for ing in available_ingredients:
+                name = ing.get('name', '').lower().strip()
+                if name:
+                    available_names.add(name)
+                    # Also add partial matches (e.g., "chicken" matches "chicken breast")
+                    words = name.split()
+                    for word in words:
+                        if len(word) > 3:  # Only meaningful words
+                            available_names.add(word)
+            
+            # Count how many recipe ingredients are available
+            matching_count = 0
+            total_count = len(ingredients)
+            
+            for ing in ingredients:
+                ingredient_name = str(ing.get('name', '')).lower().strip()
+                if not ingredient_name:
+                    continue
+                
+                # Check for exact or partial match
+                for available_name in available_names:
+                    if available_name in ingredient_name or ingredient_name in available_name:
+                        matching_count += 1
+                        break
+            
+            # Score: percentage of ingredients that are available
+            if total_count == 0:
+                return 0.0
+            
+            score = matching_count / total_count
+            return round(score, 2)
+            
+        except Exception as e:
+            logger.warning(f"Error scoring ingredient availability: {str(e)}")
+            return 0.0
 
 
 

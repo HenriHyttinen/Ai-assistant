@@ -2496,6 +2496,31 @@ class NutritionService:
             if search_request.max_prep_time:
                 query = query.filter(Recipe.prep_time <= search_request.max_prep_time)
             
+            # Apply macronutrient filters (calories, protein, carbs, fats)
+            if search_request.min_calories is not None:
+                query = query.filter(Recipe.per_serving_calories >= search_request.min_calories)
+            
+            if search_request.max_calories is not None:
+                query = query.filter(Recipe.per_serving_calories <= search_request.max_calories)
+            
+            if search_request.min_protein is not None:
+                query = query.filter(Recipe.per_serving_protein >= search_request.min_protein)
+            
+            if search_request.max_protein is not None:
+                query = query.filter(Recipe.per_serving_protein <= search_request.max_protein)
+            
+            if search_request.min_carbs is not None:
+                query = query.filter(Recipe.per_serving_carbs >= search_request.min_carbs)
+            
+            if search_request.max_carbs is not None:
+                query = query.filter(Recipe.per_serving_carbs <= search_request.max_carbs)
+            
+            if search_request.min_fats is not None:
+                query = query.filter(Recipe.per_serving_fat >= search_request.min_fats)
+            
+            if search_request.max_fats is not None:
+                query = query.filter(Recipe.per_serving_fat <= search_request.max_fats)
+            
             # Apply micronutrient filters
             if search_request.micronutrient_filters and search_request.micronutrient_filters.nutrients:
                 micronutrient_filters = search_request.micronutrient_filters

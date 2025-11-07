@@ -372,19 +372,54 @@ class PortionAdjustmentService:
                     daily_calorie_target = personalized_targets['calorie_target']
                     target_calories_per_meal = daily_calorie_target / meals_per_day
                 
-                # Calculate suggested servings to meet calorie target
+                # Adjust portions and macros based on activity level
+                activity_level = None
+                activity_multiplier = 1.0
+                if health_profile.activity_level:
+                    activity_level = health_profile.activity_level.lower()
+                    # Activity multipliers for portion adjustment
+                    activity_multipliers = {
+                        'sedentary': 0.9,      # Reduce portions for sedentary
+                        'lightly_active': 1.0,  # Baseline
+                        'moderately_active': 1.1,  # Slightly increase
+                        'active': 1.2,         # Increase portions
+                        'very_active': 1.3,    # Significantly increase
+                        'extremely_active': 1.4  # Maximum increase
+                    }
+                    activity_multiplier = activity_multipliers.get(activity_level, 1.0)
+                
+                # Calculate suggested servings to meet calorie target, adjusted for activity
                 if meal.calories and meal.calories > 0:
-                    suggested_servings = target_calories_per_meal / meal.calories
+                    # Base serving calculation
+                    base_servings = target_calories_per_meal / meal.calories
+                    # Apply activity level multiplier
+                    suggested_servings = base_servings * activity_multiplier
                     suggested_servings = max(0.5, min(3.0, suggested_servings))  # Reasonable range
                     
                     personalized_adjustment = self.adjust_meal_portion(db, meal_id, suggested_servings)
                     
-                    # Create personalized reasoning based on user context
-                    reasoning_parts = [f"Based on your daily calorie target of {daily_calorie_target} kcal"]
+                    # Adjust macros based on activity level
+                    adjusted_protein = personalized_adjustment["adjusted_nutrition"]["protein"]
+                    adjusted_carbs = personalized_adjustment["adjusted_nutrition"]["carbs"]
+                    adjusted_fats = personalized_adjustment["adjusted_nutrition"]["fats"]
                     
-                    if personalized_targets.get('activity_level'):
-                        activity = personalized_targets['activity_level'].replace('_', ' ').title()
-                        reasoning_parts.append(f"and {activity} lifestyle")
+                    # For very active users, increase carbs and protein
+                    if activity_level in ['very_active', 'extremely_active']:
+                        # Increase carbs for energy (1.15x) and protein for recovery (1.1x)
+                        adjusted_carbs = int(adjusted_carbs * 1.15)
+                        adjusted_protein = int(adjusted_protein * 1.1)
+                    elif activity_level == 'sedentary':
+                        # Reduce carbs slightly for sedentary users (0.95x)
+                        adjusted_carbs = int(adjusted_carbs * 0.95)
+                    
+                    # Create personalized reasoning based on user context
+                    reasoning_parts = [f"Based on your daily calorie target of {int(daily_calorie_target)} kcal"]
+                    
+                    if activity_level:
+                        activity_display = activity_level.replace('_', ' ').title()
+                        reasoning_parts.append(f"and {activity_display} activity level")
+                        if activity_multiplier != 1.0:
+                            reasoning_parts.append(f"(adjusted by {activity_multiplier:.1f}x for your activity level)")
                     
                     if personalized_targets.get('fitness_goal'):
                         goal = personalized_targets['fitness_goal'].replace('_', ' ').title()
@@ -395,9 +430,14 @@ class PortionAdjustmentService:
                     suggestions.append({
                         "serving_size": suggested_servings,
                         "label": "Personalized Suggestion",
-                        "description": "Optimized for your health profile and goals",
+                        "description": "Optimized for your health profile, activity level, and goals",
                         "calories": personalized_adjustment["adjusted_nutrition"]["calories"],
-                        "reasoning": reasoning
+                        "protein": adjusted_protein,
+                        "carbs": adjusted_carbs,
+                        "fats": adjusted_fats,
+                        "reasoning": reasoning,
+                        "activity_level": activity_level,
+                        "activity_adjusted": activity_multiplier != 1.0
                     })
                     
                     # Reset to original

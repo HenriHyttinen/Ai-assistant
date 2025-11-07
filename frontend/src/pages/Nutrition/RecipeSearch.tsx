@@ -117,8 +117,17 @@ const RecipeSearch: React.FC<RecipeSearchProps> = () => {
     cuisine: '',
     mealType: '',
     difficulty: '',
+    minCalories: '',
     maxCalories: '',
-    maxPrepTime: ''
+    minProtein: '',
+    maxProtein: '',
+    minCarbs: '',
+    maxCarbs: '',
+    minFats: '',
+    maxFats: '',
+    maxPrepTime: '',
+    allergies: [] as string[],
+    dietaryRestrictions: [] as string[]
   });
   const [micronutrientFilters, setMicronutrientFilters] = useState({
     nutrients: [] as string[],
@@ -212,18 +221,37 @@ const RecipeSearch: React.FC<RecipeSearchProps> = () => {
         cuisine: filters.cuisine || undefined,
         meal_type: filters.mealType || undefined,
         difficulty_level: filters.difficulty || undefined,
-        max_calories: filters.maxCalories ? parseInt(filters.maxCalories) : undefined,
+        min_calories: filters.minCalories ? parseFloat(filters.minCalories) : undefined,
+        max_calories: filters.maxCalories ? parseFloat(filters.maxCalories) : undefined,
+        min_protein: filters.minProtein ? parseFloat(filters.minProtein) : undefined,
+        max_protein: filters.maxProtein ? parseFloat(filters.maxProtein) : undefined,
+        min_carbs: filters.minCarbs ? parseFloat(filters.minCarbs) : undefined,
+        max_carbs: filters.maxCarbs ? parseFloat(filters.maxCarbs) : undefined,
+        min_fats: filters.minFats ? parseFloat(filters.minFats) : undefined,
+        max_fats: filters.maxFats ? parseFloat(filters.maxFats) : undefined,
         max_prep_time: filters.maxPrepTime && filters.maxPrepTime !== '' ? parseInt(filters.maxPrepTime) : undefined,
         sort_by: sortBy || undefined,
         sort_order: sortOrder,
         limit: 20,
         page: currentPage,
+        // Micronutrient filters
+        micronutrient_filters: micronutrientFilters.nutrients.length > 0 ? {
+          nutrients: micronutrientFilters.nutrients,
+          min_values: micronutrientFilters.minValues,
+          max_values: micronutrientFilters.maxValues,
+          categories: micronutrientFilters.categories
+        } : undefined,
         // Include user preferences for automatic filtering
-        user_preferences: userPreferences ? {
-          dietary_preferences: userPreferences.dietary_preferences || [],
-          allergies: userPreferences.allergies || [],
-          disliked_ingredients: userPreferences.disliked_ingredients || []
-        } : undefined
+        // Also include manual filter selections for allergies and dietary restrictions
+        user_preferences: {
+          dietary_preferences: filters.dietaryRestrictions.length > 0 
+            ? filters.dietaryRestrictions 
+            : (userPreferences?.dietary_preferences || []),
+          allergies: filters.allergies.length > 0 
+            ? filters.allergies 
+            : (userPreferences?.allergies || []),
+          disliked_ingredients: userPreferences?.disliked_ingredients || []
+        }
       };
       
       const response = await fetch('http://localhost:8000/nutrition/recipes/search', {
@@ -304,7 +332,14 @@ const RecipeSearch: React.FC<RecipeSearchProps> = () => {
         cuisine: filters.cuisine || undefined,
         meal_type: filters.mealType || undefined,
         difficulty_level: filters.difficulty || undefined,
-        max_calories: filters.maxCalories ? parseInt(filters.maxCalories) : undefined,
+        min_calories: filters.minCalories ? parseFloat(filters.minCalories) : undefined,
+        max_calories: filters.maxCalories ? parseFloat(filters.maxCalories) : undefined,
+        min_protein: filters.minProtein ? parseFloat(filters.minProtein) : undefined,
+        max_protein: filters.maxProtein ? parseFloat(filters.maxProtein) : undefined,
+        min_carbs: filters.minCarbs ? parseFloat(filters.minCarbs) : undefined,
+        max_carbs: filters.maxCarbs ? parseFloat(filters.maxCarbs) : undefined,
+        min_fats: filters.minFats ? parseFloat(filters.minFats) : undefined,
+        max_fats: filters.maxFats ? parseFloat(filters.maxFats) : undefined,
         max_prep_time: filters.maxPrepTime && filters.maxPrepTime !== '' ? parseInt(filters.maxPrepTime) : undefined,
         sort_by: sortBy || undefined,
         sort_order: sortOrder,
@@ -318,11 +353,16 @@ const RecipeSearch: React.FC<RecipeSearchProps> = () => {
           categories: micronutrientFilters.categories
         } : undefined,
         // Include user preferences for automatic filtering
-        user_preferences: userPreferences ? {
-          dietary_preferences: userPreferences.dietary_preferences || [],
-          allergies: userPreferences.allergies || [],
-          disliked_ingredients: userPreferences.disliked_ingredients || []
-        } : undefined
+        // Also include manual filter selections for allergies and dietary restrictions
+        user_preferences: {
+          dietary_preferences: filters.dietaryRestrictions.length > 0 
+            ? filters.dietaryRestrictions 
+            : (userPreferences?.dietary_preferences || []),
+          allergies: filters.allergies.length > 0 
+            ? filters.allergies 
+            : (userPreferences?.allergies || []),
+          disliked_ingredients: userPreferences?.disliked_ingredients || []
+        }
       };
       
       console.log('🔍 FRONTEND SENDING REQUEST:', searchRequest);
@@ -564,8 +604,17 @@ const RecipeSearch: React.FC<RecipeSearchProps> = () => {
       cuisine: '',
       mealType: '',
       difficulty: '',
+      minCalories: '',
       maxCalories: '',
-      maxPrepTime: ''
+      minProtein: '',
+      maxProtein: '',
+      minCarbs: '',
+      maxCarbs: '',
+      minFats: '',
+      maxFats: '',
+      maxPrepTime: '',
+      allergies: [],
+      dietaryRestrictions: []
     });
     setMicronutrientFilters({
       nutrients: [],
@@ -669,15 +718,6 @@ const RecipeSearch: React.FC<RecipeSearchProps> = () => {
                   </datalist>
                 </InputGroup>
                 <Button
-                  colorScheme="blue"
-                  leftIcon={<FiSearch />}
-                  onClick={handleSearch}
-                  isLoading={loading}
-                  px={8}
-                >
-                  Search
-                </Button>
-                <Button
                   variant="outline"
                   onClick={handleClearFilters}
                   size="md"
@@ -747,12 +787,82 @@ const RecipeSearch: React.FC<RecipeSearchProps> = () => {
                 </FormControl>
 
                 <FormControl>
+                  <FormLabel>Min Calories</FormLabel>
+                  <Input
+                    type="number"
+                    placeholder="e.g. 200"
+                    value={filters.minCalories}
+                    onChange={(e: any) => setFilters({...filters, minCalories: e.target.value})}
+                  />
+                </FormControl>
+
+                <FormControl>
                   <FormLabel>{t('nutrition.maxCalories', 'en')}</FormLabel>
                   <Input
                     type="number"
                     placeholder="e.g. 500"
                     value={filters.maxCalories}
                     onChange={(e: any) => setFilters({...filters, maxCalories: e.target.value})}
+                  />
+                </FormControl>
+
+                <FormControl>
+                  <FormLabel>Min Protein (g)</FormLabel>
+                  <Input
+                    type="number"
+                    placeholder="e.g. 20"
+                    value={filters.minProtein}
+                    onChange={(e: any) => setFilters({...filters, minProtein: e.target.value})}
+                  />
+                </FormControl>
+
+                <FormControl>
+                  <FormLabel>Max Protein (g)</FormLabel>
+                  <Input
+                    type="number"
+                    placeholder="e.g. 50"
+                    value={filters.maxProtein}
+                    onChange={(e: any) => setFilters({...filters, maxProtein: e.target.value})}
+                  />
+                </FormControl>
+
+                <FormControl>
+                  <FormLabel>Min Carbs (g)</FormLabel>
+                  <Input
+                    type="number"
+                    placeholder="e.g. 30"
+                    value={filters.minCarbs}
+                    onChange={(e: any) => setFilters({...filters, minCarbs: e.target.value})}
+                  />
+                </FormControl>
+
+                <FormControl>
+                  <FormLabel>Max Carbs (g)</FormLabel>
+                  <Input
+                    type="number"
+                    placeholder="e.g. 60"
+                    value={filters.maxCarbs}
+                    onChange={(e: any) => setFilters({...filters, maxCarbs: e.target.value})}
+                  />
+                </FormControl>
+
+                <FormControl>
+                  <FormLabel>Min Fats (g)</FormLabel>
+                  <Input
+                    type="number"
+                    placeholder="e.g. 10"
+                    value={filters.minFats}
+                    onChange={(e: any) => setFilters({...filters, minFats: e.target.value})}
+                  />
+                </FormControl>
+
+                <FormControl>
+                  <FormLabel>Max Fats (g)</FormLabel>
+                  <Input
+                    type="number"
+                    placeholder="e.g. 30"
+                    value={filters.maxFats}
+                    onChange={(e: any) => setFilters({...filters, maxFats: e.target.value})}
                   />
                 </FormControl>
 
@@ -767,6 +877,62 @@ const RecipeSearch: React.FC<RecipeSearchProps> = () => {
                 </FormControl>
 
               </Grid>
+
+              {/* Allergies and Dietary Restrictions Filters */}
+              <VStack spacing={4} align="stretch" mt={4}>
+                <Divider />
+                <Heading size="md">Allergies & Dietary Restrictions</Heading>
+                
+                <FormControl>
+                  <FormLabel>Allergies</FormLabel>
+                  <CheckboxGroup
+                    value={filters.allergies}
+                    onChange={(values: any) => setFilters({...filters, allergies: values as string[]})}
+                  >
+                    <Stack direction="row" wrap="wrap" spacing={4}>
+                      <Checkbox value="nuts">Nuts</Checkbox>
+                      <Checkbox value="peanuts">Peanuts</Checkbox>
+                      <Checkbox value="dairy">Dairy</Checkbox>
+                      <Checkbox value="eggs">Eggs</Checkbox>
+                      <Checkbox value="soy">Soy</Checkbox>
+                      <Checkbox value="wheat">Wheat</Checkbox>
+                      <Checkbox value="gluten">Gluten</Checkbox>
+                      <Checkbox value="fish">Fish</Checkbox>
+                      <Checkbox value="shellfish">Shellfish</Checkbox>
+                      <Checkbox value="sesame">Sesame</Checkbox>
+                      <Checkbox value="sulfites">Sulfites</Checkbox>
+                      <Checkbox value="lupin">Lupin</Checkbox>
+                      <Checkbox value="mollusk">Mollusk</Checkbox>
+                    </Stack>
+                  </CheckboxGroup>
+                </FormControl>
+
+                <FormControl>
+                  <FormLabel>Dietary Restrictions</FormLabel>
+                  <CheckboxGroup
+                    value={filters.dietaryRestrictions}
+                    onChange={(values: any) => setFilters({...filters, dietaryRestrictions: values as string[]})}
+                  >
+                    <Stack direction="row" wrap="wrap" spacing={4}>
+                      <Checkbox value="vegetarian">Vegetarian</Checkbox>
+                      <Checkbox value="vegan">Vegan</Checkbox>
+                      <Checkbox value="keto">Keto</Checkbox>
+                      <Checkbox value="paleo">Paleo</Checkbox>
+                      <Checkbox value="mediterranean">Mediterranean</Checkbox>
+                      <Checkbox value="low-carb">Low-Carb</Checkbox>
+                      <Checkbox value="low-fat">Low-Fat</Checkbox>
+                      <Checkbox value="high-protein">High-Protein</Checkbox>
+                      <Checkbox value="low-sodium">Low-Sodium</Checkbox>
+                      <Checkbox value="whole30">Whole30</Checkbox>
+                      <Checkbox value="dash">DASH</Checkbox>
+                      <Checkbox value="pescatarian">Pescatarian</Checkbox>
+                      <Checkbox value="flexitarian">Flexitarian</Checkbox>
+                      <Checkbox value="gluten-free">Gluten-Free</Checkbox>
+                      <Checkbox value="dairy-free">Dairy-Free</Checkbox>
+                    </Stack>
+                  </CheckboxGroup>
+                </FormControl>
+              </VStack>
 
               <Button colorScheme="blue" onClick={handleSearch} isLoading={loading}>
                 <FiSearch />

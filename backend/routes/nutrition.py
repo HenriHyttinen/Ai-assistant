@@ -610,7 +610,7 @@ def get_meal_alternatives(
         # The service will find the original meal by normalized type, then generate alternatives
         alternatives_service = MealAlternativesService()
         alternatives = alternatives_service.generate_meal_alternatives(
-            db, meal_plan_id, meal_type_normalized, prefs_dict, count
+            db, meal_plan_id, meal_type_normalized, prefs_dict, count, current_user.id
         )
         
         return {
