@@ -2,59 +2,102 @@
 
 This directory contains all database-related setup and migration scripts.
 
-## Files:
+## Quick Setup (Recommended)
 
-- `init_db.py` - Main database initialization
-- `init_db.sh` - Shell script for database setup
-- `setup_database.py` - Database schema setup
+### Option 1: Using init_db.py (Recommended)
+
+```bash
+cd backend
+source venv/bin/activate
+python database_setup/init_db.py
+```
+
+This creates all necessary database tables.
+
+### Option 2: Using Python One-liner
+
+```bash
+cd backend
+source venv/bin/activate
+python -c "from database import engine; from models import Base; Base.metadata.create_all(bind=engine); print('Database setup complete!')"
+```
+
+## Seed Database (Optional but Recommended)
+
+After initializing the database, seed it with recipes and ingredients:
+
+```bash
+cd backend
+source venv/bin/activate
+python scripts/comprehensive_seeder.py
+```
+
+This seeds:
+- 500+ recipes with vector embeddings
+- 15,532+ ingredients with nutritional data
+- Vector embeddings for RAG functionality
+
+## Available Scripts
+
+### Core Setup Scripts
+- `init_db.py` - Main database initialization (creates all tables)
 - `setup_achievements.py` - Achievement system setup
-- `setup_reviewer.py` - Reviewer account setup
-- `create_achievements.py` - Achievement creation
 - `create_test_account.py` - Test account creation
+- `create_achievements.py` - Achievement creation
+
+### Migration Scripts
 - `migrate_activity_logs.py` - Activity logs migration
 - `migrate_encrypt_data.py` - Data encryption migration
 - `fix_performed_at_column.py` - Column fix migration
+
+### Shell Scripts
+- `init_db.sh` - Shell script for database setup
+- `quick_setup.sh` - Quick setup script
 - `setup.sh` - Complete setup script
+
+## Documentation
+
 - `DATABASE_SETUP.md` - Database setup documentation
+- `REVIEWER_SETUP.md` - Reviewer-specific setup guide
+- `README.md` - This file
 
-## Usage:
+## Usage Examples
 
-### Quick Setup (Recommended for Reviewers)
-
-**Option 1: Simple Shell Script**
+### Basic Setup
 ```bash
-cd /path/to/numbers-dont-lie/backend
-./database_setup/quick_setup.sh
-```
-
-**Option 2: Python Script**
-```bash
-cd /path/to/numbers-dont-lie/backend
-python database_setup/simple_setup.py
-```
-
-**Option 3: Manual Setup**
-```bash
-cd /path/to/numbers-dont-lie/backend
+cd backend
 source venv/bin/activate
-python -c "
-from database import SessionLocal, engine
-from models import Base
-Base.metadata.create_all(bind=engine)
-print('Database setup complete!')
-"
+python database_setup/init_db.py
 ```
 
-### Manual Setup
-
-For complete setup with all features:
+### Full Setup with Seeding
 ```bash
-cd database_setup
-./setup.sh
+cd backend
+source venv/bin/activate
+python database_setup/init_db.py
+python scripts/comprehensive_seeder.py
+python database_setup/setup_achievements.py
 ```
 
-Or run individual scripts as needed for specific setup tasks.
+### Create Test Account
+```bash
+cd backend
+source venv/bin/activate
+python database_setup/create_test_account.py
+```
 
-### Troubleshooting
+### Fix Database Issues
+```bash
+cd backend
+source venv/bin/activate
+python database_setup/fix_performed_at_column.py
+```
 
-If you encounter issues, see `REVIEWER_SETUP.md` for detailed troubleshooting steps.
+## Troubleshooting
+
+If you encounter issues:
+1. Make sure you're in the `backend/` directory
+2. Ensure virtual environment is activated
+3. Verify all dependencies are installed: `pip install -r requirements.txt`
+4. See `REVIEWER_SETUP.md` for detailed troubleshooting steps
+5. See `DATABASE_SETUP.md` for complete setup guide

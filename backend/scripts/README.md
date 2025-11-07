@@ -9,7 +9,7 @@ These are the scripts you need for initial setup:
 ### 1. Database Seeding
 
 **`comprehensive_seeder.py`** ⭐ (Recommended)
-- **Purpose**: Seeds database with 500+ recipes and 500+ ingredients
+- **Purpose**: Seeds database with 500+ recipes and 15,532+ ingredients
 - **When to use**: Initial database setup
 - **Usage**: `python scripts/comprehensive_seeder.py`
 - **Time**: ~5-10 minutes

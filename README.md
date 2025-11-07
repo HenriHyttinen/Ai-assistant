@@ -1,25 +1,27 @@
 # Numbers Don't Lie - Health & Nutrition Platform
 
-A health and nutrition tracking platform with meal planning, recipe management, and nutritional analysis. Built with FastAPI backend and React frontend.
+A comprehensive health and nutrition tracking platform I built for meal planning, recipe management, and nutritional analysis. Built with FastAPI backend and React frontend.
+
+## What This Does
+
+This platform helps users track their health metrics, plan meals, and manage their nutrition goals. It's got meal planning with AI-generated recipes, a recipe database with search and filtering, nutritional tracking, and integration with health analytics.
 
 ## Features
 
 ### Meal Planning
-- Daily and weekly meal plan generation
-- Support for 17 dietary preferences and 13 allergies/intolerances
+- Daily and weekly meal plan generation using AI
+- Support for 17 dietary preferences (vegetarian, vegan, keto, paleo, etc.)
+- Handles 13 common allergies and intolerances
 - Cultural meal patterns (Mediterranean, Asian, Indian, Mexican, etc.)
-- Seasonal ingredient preferences
-- User behavior analysis for better recommendations
-- Multi-step AI generation process
 - Recipe database with 500+ entries
-- Accurate nutritional calculations
+- Accurate nutritional calculations from ingredient database
 
 ### Recipe Management
 - Search and filter recipes by name, ingredients, cuisine, dietary restrictions
+- Filter by macronutrients (protein, carbs, fats) and calories
 - Generate custom recipes based on preferences
 - Ingredient substitution suggestions
 - Portion size adjustments with automatic nutrition recalculation
-- Recipe ratings and reviews
 
 ### Nutritional Analysis
 - Track calories, protein, carbs, fats, vitamins, and minerals
@@ -32,180 +34,113 @@ A health and nutrition tracking platform with meal planning, recipe management, 
 - Set and track nutrition goals
 - Achievement system for motivation
 - Milestone tracking and streak counting
-- Pre-defined goal templates
 
 ### Additional Features
-- Personalized recommendations based on cultural and seasonal preferences
 - Shopping list generation with ingredient categorization
 - Meal plan versioning and restore functionality
 - Integration with health dashboard
 - Error handling with fallback mechanisms
 
-### Bonus Features
-
-#### 1. Progressive Meal Generation
-- **On-demand generation**: Generate individual meal slots one at a time instead of bulk generation
-- **Reduced API load**: Lighter requests, better performance
-- **Improved UX**: Users see meals appear progressively as they fill the grid
-- **Flexible workflow**: Users choose which slots to fill and in what order
-- **Full compliance**: Each meal still uses Sequential RAG (4 steps) as per requirements
-- **Location**: `backend/routes/nutrition.py:generate_meal_slot`, `frontend/src/pages/Nutrition/MealPlanning.tsx`
-
-#### 2. Meal Plan Versioning
-- **Version history**: Track all changes to meal plans over time
-- **Restore functionality**: Revert to any previous version of a meal plan
-- **Version comparison**: Compare different versions side-by-side
-- **Automatic versioning**: New versions created on major changes
-- **Version management API**: Full CRUD operations for versions
-- **Location**: `backend/services/meal_plan_versioning_service.py`, `backend/routes/meal_plan_versioning.py`
-
-#### 3. Manual Portion Adjustment UI
-- **Live preview**: See calorie and nutrition changes in real-time
-- **Ingredient recalculation**: Automatically scales all ingredients proportionally
-- **Database-backed nutrition**: Recalculates nutrition from ingredient database
-- **User-friendly controls**: Easy-to-use slider or input for serving adjustments
-- **Location**: `backend/services/portion_adjustment_service.py`, `frontend/src/pages/Nutrition/MealPlanning.tsx`
-
-#### 4. Atomic Meal Swapping
-- **Smart swapping**: Swap two meals between slots instead of blocking moves
-- **No calorie restrictions**: Users can swap freely as it's their decision
-- **Preserves meal data**: All meal information transferred correctly
-- **Frontend/backend sync**: Immediate UI updates with proper state management
-- **Location**: `backend/routes/nutrition.py:move_meal_to_date`, `frontend/src/pages/Nutrition/MealPlanning.tsx`
-
-#### 5. Comprehensive Micronutrient Tracking
-- **18+ micronutrients**: Track vitamins (A, B complex, C, D, E, K), minerals (calcium, iron, magnesium, zinc, etc.)
-- **Ingredient-based calculation**: Micronutrients calculated from ingredient database
-- **Enrichment service**: Automatically populate micronutrient data for recipes
-- **Analysis and insights**: Micronutrient diversity scoring and recommendations
-- **Location**: `backend/services/micronutrient_service.py`, `backend/services/micronutrient_enrichment_service.py`
-
-#### 6. Enhanced Duplicate Prevention
-- **30-day window**: Prevents duplicate recipes across meal plans for at least a month
-- **Multi-signature detection**: Checks normalized titles, ingredient signatures, and instruction signatures
-- **RAG integration**: Uses retrieved recipes as negative examples during generation
-- **Post-generation validation**: Additional checks after AI generation completes
-- **Location**: `backend/services/hybrid_meal_generator.py`, `backend/ai/nutrition_ai.py`
-
-#### 7. Automatic Portion Adjustment
-- **Smart scaling**: Automatically adjusts portion sizes if calories exceed targets
-- **Aggressive scaling for snacks**: Snacks scale to exact targets (1g/ml minimum)
-- **Contextual scaling for meals**: Different thresholds for main meals (50 cal tolerance)
-- **Maintains realism**: Preserves minimum ingredient quantities for recipe integrity
-- **Ingredient recalculation**: All quantities and nutrition recalculated from database
-- **Location**: `backend/ai/nutrition_ai.py:_generate_single_meal_with_sequential_rag`
-
-#### 8. Dynamic Grid Sizing
-- **Flexible meal structures**: Support for 3-6 meals per day
-- **Dynamic grid layout**: UI automatically adjusts based on `mealsPerDay` setting
-- **Smart snack assignment**: Distinguishes morning, afternoon, and evening snacks
-- **Unique React keys**: Proper key management prevents rendering issues
-- **Location**: `frontend/src/pages/Nutrition/MealPlanning.tsx`
-
-#### 9. Standardized Unit Conversion
-- **Consistent units**: All ingredients stored as grams (g) for solids, milliliters (ml) for liquids
-- **Automatic conversion**: Converts piece-based ingredients (eggs, bananas) to grams
-- **Database integration**: Uses standardized units from ingredient database
-- **Nutrition accuracy**: Consistent units ensure accurate nutrition calculations
-- **Location**: `backend/ai/functions.py:_convert_to_grams`, `backend/services/measurement_standardization_service.py`
-
-#### 10. Database-Backed Nutrition Calculation
-- **Ingredient database**: Uses 15,532+ ingredient entries for accurate nutrition
-- **Fuzzy matching**: Intelligent ingredient name matching (e.g., "cheddar cheese" matches "cheese")
-- **Fallback handling**: Estimates for unknown ingredients when database lookup fails
-- **Per-piece handling**: Special logic for ingredients stored as "piece" (e.g., eggs)
-- **Micronutrient lookup**: Includes micronutrients in nutrition calculations
-- **Location**: `backend/ai/functions.py:_get_nutrition_from_database`
-
-#### 11. Nutritionist-Recommended Calorie Distribution
-- **Optimal distribution**: Breakfast 25%, Lunch 35%, Dinner 30%, Snacks 10%
-- **Meal-specific targets**: Each meal type gets appropriate calorie allocation
-- **Flexible adjustment**: Adjusts based on number of meals per day
-- **AI guidance**: Prompts AI with target calories for each meal type
-- **Location**: `backend/routes/nutrition.py:generate_meal_slot`
-
-#### 12. LocalStorage State Persistence
-- **Offline support**: Meal plans persist across browser sessions
-- **Race condition prevention**: Refs prevent multiple simultaneous restores
-- **Smart loading**: Prioritizes API fetch but falls back to localStorage
-- **User preference persistence**: Stores plan type, selected date, meals per day
-- **Location**: `frontend/src/pages/Nutrition/MealPlanning.tsx`
-
-#### 13. Enhanced Recipe Search & Filtering
-- **Comprehensive filters**: Cuisine, meal type, difficulty, calories, micronutrients
-- **Pagination support**: Efficient handling of large result sets
-- **Dietary compliance**: Filters respect dietary preferences and allergies
-- **Location**: `backend/routes/recipes.py:search_recipes`
-
-#### 14. Ingredient Substitution Service
-- **AI-powered suggestions**: Intelligent alternatives based on dietary restrictions
-- **Nutritional equivalence**: Suggests substitutes with similar nutrition profiles
-- **Allergy-aware**: Excludes allergenic ingredients from suggestions
-- **Location**: `backend/services/ingredient_substitution_service.py`
-
-#### 15. Shopping List Categorization
-- **8 ingredient categories**: protein, dairy, vegetables, fruits, grains, nuts_seeds, oils_fats, herbs_spices
-- **Automatic categorization**: Ingredients automatically sorted into categories
-- **Quantity aggregation**: Combines same ingredients across multiple recipes
-- **Location**: `backend/services/shopping_list_service.py:_categorize_ingredient`
-
-#### 16. Comprehensive Error Handling
-- **Try/except blocks**: All critical operations wrapped in error handling
-- **Fallback mechanisms**: Multiple fallback strategies for AI failures
-- **User-friendly messages**: Clear error messages for frontend display
-- **Detailed logging**: Comprehensive logging for debugging and monitoring
-- **Location**: Throughout codebase, especially `backend/ai/nutrition_ai.py`, `backend/services/`
-
 ## Quick Start
 
 ### Prerequisites
-- Docker and Docker Compose installed (or Docker Compose v2)
-- **For manual setup**: **Python 3.11 or 3.12 REQUIRED** (Python 3.14 NOT supported - many packages lack pre-built wheels)
-- No other dependencies required
+- **Python 3.11 or 3.12** (Python 3.14 NOT supported - many packages lack pre-built wheels)
+- **Node.js 16+** (for frontend)
+- **PostgreSQL 12+** (optional, SQLite works for development)
+- **pip** (Python package manager)
+- **npm** (Node package manager)
 
 **For detailed setup instructions, see [SETUP_FOR_REVIEWERS.md](./SETUP_FOR_REVIEWERS.md)**
 
-### Docker Setup (Recommended)
+### Manual Setup
+
+#### 1. Backend Setup
+
 ```bash
 # Clone the repository
 git clone <repository-url>
 cd numbers-dont-lie
 
-# Copy environment file
-cp backend/.env.example backend/.env
-# Edit backend/.env if needed (optional for basic setup)
+# Navigate to backend
+cd backend
 
-# Start the application
-docker compose up --build
-# OR (older versions): docker-compose up --build
+# Create virtual environment
+python3 -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Copy environment file
+cp .env.example .env
+# Edit .env with your settings (see Environment Variables below)
+
+# Initialize database
+python database_setup/init_db.py
+
+# Seed recipes and ingredients (optional but recommended)
+python scripts/comprehensive_seeder.py
+
+# Start the backend server
+uvicorn main:app --reload
 ```
 
-### Manual Setup
-See [SETUP_FOR_REVIEWERS.md](./SETUP_FOR_REVIEWERS.md) for step-by-step instructions.
-
-The application will be available at:
-- Frontend: http://localhost
+The backend API will be available at:
 - Backend API: http://localhost:8000
 - API Documentation: http://localhost:8000/docs
 
-### Docker Commands
+#### 2. Frontend Setup (in a new terminal)
+
 ```bash
-# Build and start
-docker compose up --build
-# OR: docker-compose up --build (older versions)
+# Navigate to frontend directory
+cd frontend
 
-# Run in background
-docker compose up -d
+# Install dependencies
+npm install
 
-# View logs
-docker compose logs -f
-
-# Stop application
-docker compose down
-
-# Check service status
-docker compose ps
+# Start the frontend development server
+npm run dev
 ```
+
+The frontend will be available at `http://localhost:5173` (or the port Vite assigns)
+
+### Environment Variables
+
+Create a `backend/.env` file with the following variables:
+
+```env
+# Database
+DATABASE_URL=postgresql://postgres:postgres@localhost/numbers_dont_lie
+# OR for SQLite (development):
+# DATABASE_URL=sqlite:///./numbers_dont_lie.db
+
+# JWT Authentication
+SECRET_KEY=your-secret-key-here
+ALGORITHM=HS256
+ACCESS_TOKEN_EXPIRE_MINUTES=30
+
+# OpenAI (optional - for AI meal generation)
+OPENAI_API_KEY=your-openai-api-key
+USE_OPENAI=true
+
+# Supabase (optional - for authentication)
+SUPABASE_URL=your-supabase-url
+SUPABASE_ANON_KEY=your-supabase-anon-key
+```
+
+### Database Setup
+
+After initializing the database, you can seed it with recipes and ingredients:
+
+```bash
+cd backend
+python scripts/comprehensive_seeder.py
+```
+
+This will seed:
+- 500+ recipes with vector embeddings
+- 15,532+ ingredients with nutritional data
+- Vector embeddings for RAG functionality
 
 ## Dietary Preferences & Restrictions
 
@@ -248,7 +183,7 @@ All dietary preferences and allergies are validated through Pydantic schemas and
 ## Architecture
 
 ### Backend (FastAPI)
-- OpenAI GPT-4 integration with sequential prompting
+- OpenAI GPT-3.5-turbo integration with sequential prompting
 - PostgreSQL database with SQLAlchemy ORM
 - Redis caching for performance
 - Supabase JWT authentication
@@ -262,12 +197,10 @@ All dietary preferences and allergies are validated through Pydantic schemas and
 - Supabase client for authentication
 - Mobile-first responsive design
 
-### AI Components
-- Multi-step meal plan generation
-- Recipe database with 500+ entries and vector embeddings
-- Nutritional calculations and analysis
-- User preference learning
-- Cultural meal pattern adaptation
+### Database
+- **Recipes**: 500+ recipes with vector embeddings for RAG
+- **Ingredients**: 15,532+ ingredients with comprehensive nutritional data
+- All recipes and ingredients have vector embeddings for similarity search
 
 ## API Endpoints
 
@@ -279,10 +212,10 @@ All dietary preferences and allergies are validated through Pydantic schemas and
 - `GET /nutrition/comprehensive-ai-analysis` - Nutritional analysis
 
 ### Recipes
-- `GET /recipes/search` - Search recipes with filters
-- `GET /recipes/{id}` - Get recipe details
-- `POST /recipes/generate` - Generate custom recipes
-- `POST /recipes/{id}/substitute` - Ingredient substitution
+- `GET /nutrition/recipes/search` - Search recipes with filters
+- `GET /nutrition/recipes/{id}` - Get recipe details
+- `POST /nutrition/recipes/generate` - Generate custom recipes
+- `POST /nutrition/recipes/{id}/substitute` - Ingredient substitution
 
 ### Goals & Analytics
 - `GET /nutrition-goals/dashboard/summary` - Goals dashboard
@@ -293,24 +226,15 @@ All dietary preferences and allergies are validated through Pydantic schemas and
 ## Project Requirements
 
 ### Core Requirements
-- 17 dietary preferences supported (vegetarian, vegan, keto, paleo, etc.)
-- 13 food allergies/intolerances handled (nuts, dairy, gluten, etc.)
+- 17 dietary preferences supported
+- 13 food allergies/intolerances handled
 - ISO 8601 date format throughout
-- Sequential prompting with 3+ steps
+- Sequential prompting with 4 steps
 - Function calling for nutritional calculations
 - RAG implementation with 500+ recipes
 - Recipe management with search, filter, and generation
 - Nutritional analysis with macro tracking and visualization
 - Cross-feature integration with health dashboard
-
-### Advanced Features
-- Enhanced dietary restrictions with severity levels
-- Cultural meal patterns for 5+ cuisines
-- Seasonal ingredient integration
-- Behavioral pattern analysis
-- Achievement system for motivation
-- Meal plan versioning and restore
-- Comprehensive error handling
 
 ## Development
 
@@ -335,59 +259,20 @@ cd backend
 python -c "from database import engine; from models import Base; Base.metadata.create_all(bind=engine)"
 
 # Seed initial data
-python scripts/seed_goals_direct.py
-```
-
-## Data Models
-
-### Recipe Schema
-```json
-{
-  "id": "r789",
-  "title": "Mediterranean Quinoa Bowl",
-  "cuisine": "Mediterranean",
-  "meal": "lunch",
-  "servings": 2,
-  "ingredients": [
-    {"id": "ing123", "name": "quinoa", "quantity": 180, "unit": "g"}
-  ],
-  "nutrition": {
-    "calories": 425,
-    "protein": 12.5,
-    "carbs": 48.3,
-    "fats": 22.7
-  },
-  "dietary_tags": ["vegetarian", "gluten-free", "high-protein"],
-  "preparation": [
-    {"step": "Cook quinoa", "description": "Rinse and cook quinoa", "ingredients": ["ing123"]}
-  ]
-}
-```
-
-### Enhanced Nutritional Data
-```json
-{
-  "glycemic_index": 45,
-  "antioxidant_profile": {
-    "polyphenols": "high",
-    "flavonoids": "medium"
-  },
-  "nutrient_density_score": 8.5,
-  "satiety_index": 76
-}
+python scripts/comprehensive_seeder.py
 ```
 
 ## AI Integration
 
 ### Sequential Prompting Strategy
-1. Strategy Generation: Analyze user profile and define meal plan approach
-2. Meal Structure: Design specific meals and timing
-3. Recipe Generation: Create detailed recipes with RAG enhancement
-4. Nutritional Analysis: Evaluate and adjust nutritional balance
-5. Refinement: Address gaps and optimize for user preferences
+The system uses a 4-step sequential prompting process:
+1. **Strategy Generation**: Analyze user profile and define meal plan approach
+2. **Meal Structure**: Design specific meals and timing
+3. **Recipe Generation**: Create detailed recipes with RAG enhancement
+4. **Nutritional Analysis**: Evaluate and adjust nutritional balance
 
 ### Function Calling Implementation
-- Nutritional Calculations: Accurate macro/micro nutrient analysis
+- Nutritional Calculations: Accurate macro/micro nutrient analysis from ingredient database
 - Ingredient Substitution: AI-driven alternatives based on availability
 - Portion Scaling: Automatic quantity and nutrition recalculation
 - Dietary Compliance: Verification against user restrictions
@@ -396,29 +281,15 @@ python scripts/seed_goals_direct.py
 - Vector Database: 500+ recipes with embeddings
 - Similarity Search: Cosine similarity for recipe retrieval
 - Context Augmentation: Enhanced prompts with retrieved examples
-- Quality Improvement: Community-driven recipe enhancement
+- Ingredient Database: 15,532+ ingredients with nutritional data
 
 ## Error Handling
 
-### API Reliability
+The system includes comprehensive error handling:
 - Graceful degradation with fallback to cached data when AI fails
 - Retry logic with exponential backoff for transient failures
 - Circuit breaker to prevent cascade failures
 - User-friendly error messages
-
-### Recovery Mechanisms
-- Redis caching for frequently accessed data
-- Alternative AI models when primary fails
-- Comprehensive input validation
-- Detailed error tracking and monitoring
-
-## Mobile Optimization
-
-### Responsive Design
-- Mobile-first approach optimized for mobile devices
-- Touch-friendly interface with large buttons
-- Optimized loading and rendering
-- Offline support with cached recipes and meal plans
 
 ## Security
 
@@ -434,36 +305,44 @@ python scripts/seed_goals_direct.py
 - Database indexing for optimized queries
 - Redis caching layer for frequently accessed data
 - Lazy loading for on-demand components
-- Image optimization with compression
+- Vector embeddings for fast similarity search
 
 ## Testing
 
-### Test Coverage
-- Unit tests for backend services
-- Integration tests for API endpointsudo docker-compose exec app grep -A 12 "allow_origins" /app/backend/main.py 2>&1 | head -15
-- Frontend component testing
-- End-to-end tests for user journeys
+Current test coverage is minimal. Manual testing has been performed throughout development. See `backend/docs/TESTING_COVERAGE.md` for details.
 
 ## Documentation
 
-### Additional Resources
-- API documentation available at `/docs` endpoint
+Additional documentation is available:
+- API documentation at `/docs` endpoint
 - Comprehensive inline code comments
-- System design documentation
+- System design documentation in `backend/docs/`
 - Production deployment instructions
 
-## Contributing
+## Bonus Features
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests if applicable
-5. Submit a pull request
+I've implemented several bonus features beyond the core requirements:
 
+1. **Progressive Meal Generation** - Generate meals one slot at a time
+2. **Meal Plan Versioning** - Track and restore previous versions
+3. **Manual Portion Adjustment UI** - Live preview with automatic recalculation
+4. **Atomic Meal Swapping** - Swap meals between slots
+5. **Comprehensive Micronutrient Tracking** - 18+ vitamins and minerals
+6. **Enhanced Duplicate Prevention** - 30-day window with multi-signature detection
+7. **Automatic Portion Adjustment** - Smart scaling based on calorie targets
+8. **Dynamic Grid Sizing** - Support for 3-6 meals per day
+9. **Standardized Unit Conversion** - Automatic conversion to g/ml/piece
+10. **Database-Backed Nutrition Calculation** - Uses 15,532+ ingredient database
+11. **Nutritionist-Recommended Calorie Distribution** - Optimal meal distribution
+12. **LocalStorage State Persistence** - Offline support
+13. **Enhanced Recipe Search & Filtering** - Comprehensive filters including macronutrients
+14. **Ingredient Substitution Service** - AI-powered suggestions
+15. **Shopping List Categorization** - Automatic ingredient grouping
+16. **Comprehensive Error Handling** - Multiple fallback strategies
 
 ## Acknowledgments
 
-- OpenAI for GPT-4 API
+- OpenAI for GPT-3.5-turbo API
 - Supabase for authentication and database
 - Chakra UI for component library
 - Recharts for data visualization

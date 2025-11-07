@@ -2,59 +2,76 @@
 
 This guide will help you get the Numbers Don't Lie project up and running quickly for review.
 
-## Quick Start (Recommended)
-
-### Option 1: Docker (Easiest)
-```bash
-# Clone the repository
-git clone <repository-url>
-cd numbers-dont-lie
-
-# Copy environment file
-cp backend/.env.example backend/.env
-# Edit backend/.env with your configuration if needed
-
-# Start everything
-# For Docker Compose v2 (default on newer systems):
-docker compose up --build
-
-# OR for Docker Compose v1 (if you have docker-compose installed):
-# docker-compose up --build
-
-# The app will be available at:
-# Frontend: http://localhost
-# Backend API: http://localhost:8000
-# API Docs: http://localhost:8000/docs
-```
-
-### Option 2: Manual Setup
-```bash
-# Backend setup
-cd backend
-python3 -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-pip install -r requirements.txt
-cp .env.example .env
-# Edit .env with your settings
-python database_setup/init_db.py
-python scripts/comprehensive_seeder.py  # Optional: seeds recipes
-uvicorn main:app --reload
-
-# Frontend setup (in another terminal)
-cd frontend
-npm install
-npm run dev
-```
-
 ## Prerequisites
 
-- **Docker & Docker Compose** (for Docker setup)
-- **Python 3.11 or 3.12** (for manual setup - **STRONGLY RECOMMENDED**)
+- **Python 3.11 or 3.12** (STRONGLY RECOMMENDED)
   - ⚠️ **Python 3.14 is NOT recommended** - many packages don't have pre-built wheels yet
   - Python 3.14 requires building from source, which often fails on macOS
   - **Use Python 3.11 or 3.12 to avoid compilation issues**
 - **Node.js 16+** (for frontend)
 - **PostgreSQL 12+** (optional, SQLite works for development)
+- **pip** (Python package manager)
+- **npm** (Node package manager)
+
+## Quick Start
+
+### 1. Clone the Repository
+
+```bash
+git clone <repository-url>
+cd numbers-dont-lie
+```
+
+### 2. Backend Setup
+
+```bash
+# Navigate to backend directory
+cd backend
+
+# Create virtual environment
+python3 -m venv venv
+
+# Activate virtual environment
+# On Linux/Mac:
+source venv/bin/activate
+# On Windows:
+# venv\Scripts\activate
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Copy environment file
+cp .env.example .env
+# Edit .env with your settings (see Environment Variables below)
+
+# Initialize database
+python database_setup/init_db.py
+
+# Seed recipes and ingredients (optional but recommended)
+python scripts/comprehensive_seeder.py
+
+# Start the backend server
+uvicorn main:app --reload
+```
+
+The backend API will be available at:
+- Backend API: http://localhost:8000
+- API Documentation: http://localhost:8000/docs
+
+### 3. Frontend Setup (in a new terminal)
+
+```bash
+# Navigate to frontend directory
+cd frontend
+
+# Install dependencies
+npm install
+
+# Start the frontend development server
+npm run dev
+```
+
+The frontend will be available at `http://localhost:5173` (or the port Vite assigns)
 
 ## Environment Variables
 
@@ -62,30 +79,63 @@ Copy `backend/.env.example` to `backend/.env` and configure:
 
 **Required:**
 - `DATABASE_URL` - PostgreSQL or SQLite connection string
-- `SECRET_KEY` - Random secret key for JWT
+  - For SQLite: `sqlite:///./numbers_dont_lie.db`
+  - For PostgreSQL: `postgresql://postgres:postgres@localhost/numbers_dont_lie`
+- `SECRET_KEY` - Random secret key for JWT (generate a random string)
 
 **Optional (for full functionality):**
 - `OPENAI_API_KEY` - For AI meal generation features
-- `USE_OPENAI` - Set to `false` to disable AI features
+- `USE_OPENAI` - Set to `false` to disable AI features (default: `true`)
 - `SUPABASE_URL` and `SUPABASE_ANON_KEY` - For authentication
+
+Example `.env` file:
+```env
+DATABASE_URL=sqlite:///./numbers_dont_lie.db
+SECRET_KEY=your-random-secret-key-here
+ALGORITHM=HS256
+ACCESS_TOKEN_EXPIRE_MINUTES=30
+OPENAI_API_KEY=your-openai-api-key
+USE_OPENAI=true
+```
 
 ## Database Setup
 
-### With Docker:
-Database is automatically set up when you run `docker-compose up`.
+### Initialize Database
 
-### Manual:
 ```bash
 cd backend
-# Option 1: Using init_db.py (must run from backend/ directory)
 python database_setup/init_db.py
-
-# Option 2: Using setup_database.py (handles path automatically)
-python database_setup/setup_database.py
-
-# Then seed recipes
-python scripts/comprehensive_seeder.py  # Seeds 500+ recipes
 ```
+
+This creates all necessary database tables.
+
+### Seed Database (Optional but Recommended)
+
+To populate the database with recipes and ingredients:
+
+```bash
+cd backend
+python scripts/comprehensive_seeder.py
+```
+
+This will seed:
+- 500+ recipes with vector embeddings
+- 15,532+ ingredients with nutritional data
+- Vector embeddings for RAG functionality
+
+### Verify Database
+
+To verify the database is set up correctly:
+
+```bash
+cd backend
+python verify_database.py
+```
+
+This checks:
+- Recipe count (≥500)
+- Ingredient count (≥500, target: 15,532+)
+- Embedding coverage (100% for recipes and ingredients)
 
 ## Running Tests
 
@@ -94,6 +144,8 @@ cd backend
 source venv/bin/activate
 pytest tests/
 ```
+
+Note: Current test coverage is minimal. Manual testing has been performed throughout development.
 
 ## Troubleshooting
 
@@ -124,12 +176,6 @@ python3.12 -m venv venv
 source venv/bin/activate
 ```
 
-**If you must use Python 3.14** (not recommended):
-- Expect multiple compilation errors
-- May need to install build tools: `brew install gcc libomp`
-- May need to upgrade packages: `pip install "pandas>=2.2.0" "scikit-learn>=1.4.0"`
-- Compilation may still fail for some packages
-
 **Error: `psycopg2-binary` or `pydantic-core` compilation fails**
 ```
 Building wheel for psycopg2-binary (pyproject.toml) ... error
@@ -154,13 +200,7 @@ ModuleNotFoundError: No module named 'models'
    python database_setup/init_db.py
    ```
 
-2. **Alternative**: Use `setup_database.py` which handles paths automatically:
-   ```bash
-   cd backend
-   python database_setup/setup_database.py
-   ```
-
-3. **Or use the Python one-liner** (works from any directory):
+2. **Alternative**: Use the Python one-liner (works from any directory):
    ```bash
    cd backend
    python -c "from database import engine; from models import Base; Base.metadata.create_all(bind=engine)"
@@ -185,14 +225,10 @@ scikit-learn cannot be built with OpenMP
    pip install "scikit-learn>=1.4.0"
    ```
 
-**Docker issues:**
-- Make sure Docker is running
-- Check logs: `docker-compose logs -f`
-
 **Database issues:**
-- Check DATABASE_URL in .env
+- Check DATABASE_URL in `.env`
 - For SQLite, ensure write permissions
-- For PostgreSQL, ensure it's running
+- For PostgreSQL, ensure it's running and accessible
 
 **AI features not working:**
 - Set `USE_OPENAI=false` to disable (project works without AI)
@@ -201,7 +237,7 @@ scikit-learn cannot be built with OpenMP
 **Frontend not connecting:**
 - Ensure backend is running on port 8000
 - Check CORS settings in backend
-- Verify FRONTEND_URL in backend/.env
+- Verify API URL in frontend configuration
 
 ## Verification Checklist
 
@@ -211,7 +247,7 @@ After setup, verify:
 - [ ] API docs accessible at http://localhost:8000/docs
 - [ ] Can create user account
 - [ ] Can generate meal plan
-- [ ] Database has recipes (check with: `SELECT COUNT(*) FROM recipes`)
+- [ ] Database has recipes (check with: `python verify_database.py`)
 
 ## Project Structure
 
@@ -222,29 +258,31 @@ numbers-dont-lie/
 │   ├── routes/       # API endpoints
 │   ├── services/     # Business logic
 │   ├── ai/           # AI integration
+│   ├── scripts/      # Utility scripts (seeding, etc.)
+│   ├── database_setup/  # Database initialization
 │   ├── tests/        # Test suite
 │   └── .env.example  # Environment template
 ├── frontend/         # React frontend
-├── docker/           # Docker configuration
-├── docker-compose.yml
-└── Dockerfile
+├── docs/             # Documentation
+└── README.md         # Main README
 ```
 
 ## Key Features to Test
 
 1. **Meal Planning**: Generate daily/weekly meal plans
-2. **Recipe Search**: Search and filter 500+ recipes
+2. **Recipe Search**: Search and filter 500+ recipes by cuisine, dietary restrictions, macronutrients
 3. **Daily Logging**: Log food intake and track nutrition
 4. **Shopping Lists**: Generate shopping lists from meal plans
 5. **Nutritional Analysis**: View macros and micronutrients
 6. **Portion Adjustment**: Adjust serving sizes with automatic recalculation
-7. **Meal Swapping**: Two-click meal swap functionality
+7. **Meal Swapping**: Swap meals between dates
+8. **Meal Alternatives**: Get alternative meal suggestions based on preferences
 
 ## Notes
 
 - Test suite is in `backend/tests/`
 - All API endpoints are documented at `/docs`
 - Project uses SQLite by default (no PostgreSQL required)
-- AI features are optional (set USE_OPENAI=false if needed)
-- Full setup script: `backend/setup_complete.sh`
-
+- AI features are optional (set `USE_OPENAI=false` if needed)
+- Database seeding is optional but recommended for full functionality
+- Full database verification: `python backend/verify_database.py`

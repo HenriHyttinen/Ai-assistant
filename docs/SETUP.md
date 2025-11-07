@@ -4,14 +4,16 @@ This is a wellness platform built with FastAPI (backend) and React (frontend) th
 
 ## Prerequisites
 
-- Python 3.8+ 
-- Node.js 16+
-- npm or yarn
-- Git
+- **Python 3.11 or 3.12** (Python 3.14 NOT supported - many packages lack pre-built wheels)
+- **Node.js 16+**
+- **npm** or **yarn**
+- **Git**
+- **PostgreSQL 12+** (optional, SQLite works for development)
 
 ## Quick Setup
 
 ### 1. Clone the Repository
+
 ```bash
 git clone <your-repo-url>
 cd numbers-dont-lie
@@ -40,18 +42,18 @@ cp .env.example .env
 # Edit .env with your configuration (see Environment Variables section)
 
 # Initialize database
-python init_db.py
+python database_setup/init_db.py
 
-# Note: The init_db.py script creates all necessary tables.
-# If you encounter Alembic migration errors, you can skip them as the database
-# is already properly initialized with all required tables.
-
-# Create test account for reviewers (optional but recommended)
-python create_test_account.py
+# Seed recipes and ingredients (optional but recommended)
+python scripts/comprehensive_seeder.py
 
 # Start the backend server
-python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000
+uvicorn main:app --reload
 ```
+
+The backend will be available at:
+- Backend API: http://localhost:8000
+- API Documentation: http://localhost:8000/docs
 
 ### 3. Frontend Setup
 
@@ -66,6 +68,8 @@ npm install
 npm run dev
 ```
 
+The frontend will be available at `http://localhost:5173` (or the port Vite assigns)
+
 ### 4. Access the Application
 
 - Frontend: http://localhost:5173
@@ -78,9 +82,24 @@ Create a `.env` file in the `backend` directory with the following variables:
 
 ```env
 # Database
-DATABASE_URL=sqlite:///./dev.db
+DATABASE_URL=sqlite:///./numbers_dont_lie.db
+# OR for PostgreSQL:
+# DATABASE_URL=postgresql://postgres:postgres@localhost/numbers_dont_lie
 
-# Email (for development - optional)
+# JWT Authentication
+SECRET_KEY=your-random-secret-key-here
+ALGORITHM=HS256
+ACCESS_TOKEN_EXPIRE_MINUTES=30
+
+# OpenAI (optional - for AI meal generation)
+OPENAI_API_KEY=your-openai-api-key
+USE_OPENAI=true
+
+# Supabase (optional - for authentication)
+SUPABASE_URL=your-supabase-url
+SUPABASE_ANON_KEY=your-supabase-anon-key
+
+# Email (optional - for email verification)
 MAIL_USERNAME=your-email@example.com
 MAIL_PASSWORD=your-app-password
 MAIL_FROM=your-email@example.com
@@ -96,12 +115,40 @@ GOOGLE_CLIENT_ID=your-google-client-id
 GOOGLE_CLIENT_SECRET=your-google-client-secret
 GITHUB_CLIENT_ID=your-github-client-id
 GITHUB_CLIENT_SECRET=your-github-client-secret
+```
 
-# OpenAI API (optional - for AI insights)
-OPENAI_API_KEY=your-openai-api-key
+## Database Setup
 
-# JWT Secret (generate a random string)
-SECRET_KEY=your-super-secret-jwt-key
+### Initialize Database
+
+```bash
+cd backend
+python database_setup/init_db.py
+```
+
+This creates all necessary database tables.
+
+### Seed Database (Optional but Recommended)
+
+To populate the database with recipes and ingredients:
+
+```bash
+cd backend
+python scripts/comprehensive_seeder.py
+```
+
+This seeds:
+- 500+ recipes with vector embeddings
+- 15,532+ ingredients with nutritional data
+- Vector embeddings for RAG functionality
+
+### Verify Database
+
+To verify the database is set up correctly:
+
+```bash
+cd backend
+python verify_database.py
 ```
 
 ## Features
@@ -112,6 +159,9 @@ SECRET_KEY=your-super-secret-jwt-key
 - **Password Reset**: Secure password reset with email tokens (with fallback to console output)
 - **2FA Support**: Two-factor authentication with TOTP
 - **Health Profile**: Complete health data collection and management
+- **Meal Planning**: AI-generated meal plans with 17 dietary preferences and 13 allergies
+- **Recipe Management**: 500+ recipe database with search and filtering
+- **Nutrition Tracking**: Track calories, macros, and micronutrients
 - **AI Insights**: Personalized health recommendations (requires OpenAI API key)
 - **Analytics**: Data visualization and progress tracking
 - **Goals Management**: Set and track health/fitness goals
@@ -158,6 +208,8 @@ Then login with:
 ### 3. Explore Features
 - Dashboard: View your wellness score and AI insights
 - Analytics: See your progress charts
+- Meal Planning: Generate meal plans
+- Recipe Search: Search and filter recipes
 - Goals: Set and track health goals
 - Settings: Change language and measurement system
 
@@ -169,6 +221,7 @@ Then login with:
 - Check if Python virtual environment is activated
 - Ensure all dependencies are installed: `pip install -r requirements.txt`
 - Check if port 8000 is available
+- Verify Python version is 3.11 or 3.12
 
 **Frontend won't start:**
 - Check if Node.js is installed: `node --version`
@@ -176,9 +229,10 @@ Then login with:
 - Check if port 5173 is available
 
 **Database errors:**
-- Delete `dev.db` and run `python init_db.py` again
-- If you get SQLite syntax errors with `alembic upgrade head`, you can skip this step
-- The `init_db.py` script creates all necessary tables directly
+- Delete database file and run `python database_setup/init_db.py` again
+- Check DATABASE_URL in `.env`
+- For SQLite, ensure write permissions
+- For PostgreSQL, ensure it's running
 
 **Email not working:**
 - Check your email configuration in `.env`
@@ -189,21 +243,29 @@ Then login with:
 **AI insights not working:**
 - Add your OpenAI API key to `.env`
 - Without the API key, the app will show mock insights
+- Set `USE_OPENAI=false` to disable AI features
+
+**Module import errors:**
+- Make sure you're in the `backend/` directory when running scripts
+- Ensure virtual environment is activated
+- Verify all dependencies are installed
 
 ## Project Structure
 
 ```
 numbers-dont-lie/
 ├── backend/                 # FastAPI backend
-│   ├── ai/                 # AI insights generation
+│   ├── ai/                 # AI integration (OpenAI, RAG)
 │   ├── alembic/            # Database migrations
 │   ├── analytics/          # Health metrics calculations
 │   ├── auth/               # Authentication logic
+│   ├── database_setup/     # Database initialization
 │   ├── middleware/         # Rate limiting, CORS
 │   ├── models/             # SQLAlchemy models
 │   ├── routes/             # API endpoints
 │   ├── schemas/            # Pydantic schemas
 │   ├── services/           # Business logic
+│   ├── scripts/            # Utility scripts (seeding, etc.)
 │   ├── templates/          # Email templates
 │   ├── utils/              # Utility functions
 │   ├── main.py             # FastAPI app
@@ -220,6 +282,7 @@ numbers-dont-lie/
 │   │   └── utils/          # Utility functions
 │   ├── package.json        # Node dependencies
 │   └── vite.config.ts      # Vite configuration
+├── docs/                    # Documentation
 ├── .gitignore              # Git ignore rules
 ├── README.md               # Project overview
 └── SETUP.md                # This file
@@ -236,35 +299,15 @@ For production deployment:
 5. **Frontend**: Build with `npm run build`
 6. **Backend**: Use production WSGI server (Gunicorn)
 
-## What's Actually Implemented
-
-### Email System
-- **Full email infrastructure**: SMTP configuration, HTML templates, FastMail integration
-- **Email verification**: Complete flow with HTML email templates
-- **Password reset**: Complete flow with secure tokens and HTML templates
-- **Development fallback**: If email fails, links are printed to console
-- **Templates included**: verification_email.html, password_reset_email.html, 2fa_setup_email.html
-
-### OAuth Authentication
-- **Google OAuth**: Complete implementation with AuthLib integration
-- **GitHub OAuth**: Complete implementation with AuthLib integration
-- **OAuth callbacks**: Proper redirect handling and user creation
-- **Environment variables**: GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET
-
-### 2FA System
-- **TOTP implementation**: Complete two-factor authentication
-- **QR code generation**: For authenticator app setup
-- **Backup codes**: Recovery mechanism
-- **Email notifications**: 2FA setup instructions via email
-
 ## Development Notes
 
 - The project uses SQLite for development (easy setup)
 - All data is stored locally in the database
 - Email features work with SMTP configuration, but have fallbacks for development
-- AI insights require OpenAI API key (mock insights provided without key)
+- AI features require OpenAI API key (mock insights provided without key)
 - OAuth features require Google/GitHub app configuration
 - Email verification and password reset links are shown in console if email fails
+- Database seeding is optional but recommended for full functionality
 
 ## Contributing
 
@@ -273,4 +316,3 @@ For production deployment:
 3. Make your changes
 4. Test thoroughly
 5. Submit a pull request
-
