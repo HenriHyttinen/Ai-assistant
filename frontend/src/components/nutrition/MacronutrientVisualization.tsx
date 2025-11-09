@@ -414,9 +414,19 @@ const MacronutrientVisualization: React.FC<MacronutrientVisualizationProps> = ({
                 <AreaChart data={trendData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                   <XAxis dataKey="date" stroke="#718096" />
-                  <YAxis stroke="#718096" />
+                  <YAxis yAxisId="left" stroke="#718096" />
+                  <YAxis yAxisId="right" orientation="right" stroke="#e53e3e" />
                   <RechartsTooltip />
                   <Legend />
+                  <Line
+                    yAxisId="right"
+                    type="monotone"
+                    dataKey="calories"
+                    stroke="#e53e3e"
+                    strokeWidth={2}
+                    dot={{ r: 4 }}
+                    name="Calories"
+                  />
                   <Area
                     type="monotone"
                     dataKey="protein"

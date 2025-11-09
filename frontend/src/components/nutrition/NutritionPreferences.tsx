@@ -115,7 +115,7 @@ const NutritionPreferences: React.FC<NutritionPreferencesProps> = ({
         protein_target: preferences.protein_target || 100,
         carbs_target: preferences.carbs_target || 200,
         fats_target: preferences.fats_target || 60,
-        meals_per_day: preferences.meals_per_day || 3,
+        meals_per_day: Math.min(preferences.meals_per_day || 3, 5), // CRITICAL FIX: Cap at 5 to match backend validation
         snacks_per_day: preferences.snacks_per_day || 2,
         preferred_meal_times: convertedMealTimes,
         timezone: preferences.timezone || 'UTC'
@@ -286,6 +286,7 @@ const NutritionPreferences: React.FC<NutritionPreferencesProps> = ({
       // Backend expects ISO 8601 datetime strings, not just time strings
       const preparedData = {
         ...formData,
+        meals_per_day: Math.min(formData.meals_per_day || 3, 5), // CRITICAL FIX: Cap at 5 to match backend validation
         allergies: normalizeAllergies(formData.allergies || []),
         preferred_meal_times: formData.preferred_meal_times ? 
           Object.fromEntries(
@@ -338,7 +339,7 @@ const NutritionPreferences: React.FC<NutritionPreferencesProps> = ({
           protein_target: savedPreferences.protein_target || 100,
           carbs_target: savedPreferences.carbs_target || 200,
           fats_target: savedPreferences.fats_target || 60,
-          meals_per_day: savedPreferences.meals_per_day || 3,
+          meals_per_day: Math.min(savedPreferences.meals_per_day || 3, 5), // CRITICAL FIX: Cap at 5 to match backend validation
           snacks_per_day: savedPreferences.snacks_per_day || 2,
           preferred_meal_times: savedPreferences.preferred_meal_times ? 
             Object.fromEntries(
@@ -498,10 +499,16 @@ const NutritionPreferences: React.FC<NutritionPreferencesProps> = ({
             <FormControl>
               <FormLabel>Disliked Ingredients:</FormLabel>
               <Input
-                placeholder="Enter ingredients you dislike (comma-separated)"
+                placeholder="Enter ingredients you dislike (comma or space-separated)"
                 value={formData.disliked_ingredients.join(', ')}
                 onChange={(e) => {
-                  const ingredients = e.target.value.split(',').map(i => i.trim()).filter(i => i);
+                  // Split by comma first, then by space for each part
+                  const value = e.target.value;
+                  const ingredients = value
+                    .split(',')
+                    .flatMap(part => part.split(/\s+/))
+                    .map(i => i.trim())
+                    .filter(i => i.length > 0);
                   handleArrayChange('disliked_ingredients', ingredients);
                 }}
               />
@@ -791,7 +798,6 @@ const NutritionPreferences: React.FC<NutritionPreferencesProps> = ({
                   <option value={3}>3 meals</option>
                   <option value={4}>4 meals</option>
                   <option value={5}>5 meals</option>
-                  <option value={6}>6 meals</option>
                 </Select>
               </FormControl>
 

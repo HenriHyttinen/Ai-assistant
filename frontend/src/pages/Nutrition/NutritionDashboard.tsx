@@ -184,8 +184,20 @@ const NutritionDashboard: React.FC<NutritionDashboardProps> = ({ user = null }) 
     
     const sum = (arr: any[], key: 'calories'|'protein'|'carbs'|'fats') =>
       arr.reduce((s, m) => {
-        const value = m[key] || m.recipe?.nutrition?.[key] || 0;
-        return s + (typeof value === 'number' ? value : 0);
+        // CRITICAL FIX: Prioritize per-serving values (same as meal planning page)
+        // Use per_serving_* fields first, then fall back to regular fields
+        const perServingKey = `per_serving_${key}` as keyof typeof m;
+        const value = 
+          m[perServingKey] ??  // Per-serving value (highest priority)
+          m[key] ??  // Direct value (meal.calories, meal.protein, etc.)
+          m.recipe?.nutrition?.[perServingKey] ??  // From recipe.nutrition per-serving
+          m.recipe?.nutrition?.[key] ??  // From recipe.nutrition
+          m.recipe_details?.nutrition?.[perServingKey] ??  // From recipe_details per-serving
+          m.recipe_details?.nutrition?.[key] ??  // From recipe_details
+          0;
+        // CRITICAL FIX: Ensure we're using a number, not NaN or undefined
+        const numValue = typeof value === 'number' && !isNaN(value) ? value : 0;
+        return s + numValue;
       }, 0);
     
     return {
@@ -462,13 +474,16 @@ const NutritionDashboard: React.FC<NutritionDashboardProps> = ({ user = null }) 
   };
 
   const getMacroProgress = (current: number, target: number) => {
-    return Math.min((current / target) * 100, 100);
+    // CRITICAL FIX: Don't cap at 100% - show actual percentage even if over target
+    if (target === 0) return 0;
+    return (current / target) * 100;
   };
 
   const getProgressColor = (progress: number) => {
     if (progress < 80) return 'red';
     if (progress < 100) return 'yellow';
-    return 'green';
+    if (progress <= 120) return 'green'; // Green for up to 20% over
+    return 'orange'; // Orange for more than 20% over target
   };
 
   if (loading) {
@@ -664,10 +679,39 @@ const NutritionDashboard: React.FC<NutritionDashboardProps> = ({ user = null }) 
                       {visible.map((meal: any) => {
                         const title = meal.name || meal.meal_name || meal.recipe?.title || 'Meal';
                         const type = meal.type || meal.meal_type || 'meal';
-                        const calories = meal.calories || meal.recipe?.nutrition?.calories || 0;
-                        const protein = meal.protein || meal.recipe?.nutrition?.protein || 0;
-                        const carbs = meal.carbs || meal.recipe?.nutrition?.carbs || 0;
-                        const fats = meal.fats || meal.recipe?.nutrition?.fats || 0;
+                        // CRITICAL FIX: Prioritize per-serving values and direct meal fields
+                        const calories = 
+                          meal.calories ?? 
+                          meal.per_serving_calories ?? 
+                          meal.recipe?.nutrition?.per_serving_calories ?? 
+                          meal.recipe?.nutrition?.calories ?? 
+                          meal.recipe_details?.nutrition?.per_serving_calories ?? 
+                          meal.recipe_details?.nutrition?.calories ?? 
+                          0;
+                        const protein = 
+                          meal.protein ?? 
+                          meal.per_serving_protein ?? 
+                          meal.recipe?.nutrition?.per_serving_protein ?? 
+                          meal.recipe?.nutrition?.protein ?? 
+                          meal.recipe_details?.nutrition?.per_serving_protein ?? 
+                          meal.recipe_details?.nutrition?.protein ?? 
+                          0;
+                        const carbs = 
+                          meal.carbs ?? 
+                          meal.per_serving_carbs ?? 
+                          meal.recipe?.nutrition?.per_serving_carbs ?? 
+                          meal.recipe?.nutrition?.carbs ?? 
+                          meal.recipe_details?.nutrition?.per_serving_carbs ?? 
+                          meal.recipe_details?.nutrition?.carbs ?? 
+                          0;
+                        const fats = 
+                          meal.fats ?? 
+                          meal.per_serving_fats ?? 
+                          meal.recipe?.nutrition?.per_serving_fats ?? 
+                          meal.recipe?.nutrition?.fats ?? 
+                          meal.recipe_details?.nutrition?.per_serving_fats ?? 
+                          meal.recipe_details?.nutrition?.fats ?? 
+                          0;
                         return (
                           <Box key={(meal.id ?? `${meal.meal_plan_id || 'mp'}_${(meal.meal_type || type)}_${(meal.meal_date || meal.date || new Date().toISOString().split('T')[0])}_${title}`)} p={3} borderWidth={1} borderRadius="md" borderColor={borderColor} _hover={{ bg: 'gray.50' }}>
                             <HStack justify="space-between" mb={1}>

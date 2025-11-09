@@ -139,18 +139,10 @@ class HybridMealGenerator:
             
             # Apply dietary preferences - handle JSON column safely
             dietary_prefs = user_preferences.get('dietary_preferences', [])
-            if dietary_prefs:
-                # For JSON columns, use a safer approach that works across databases
-                # We'll filter in Python after fetching, or use database-specific JSON functions
-                # For now, skip strict filtering to avoid errors - filter later in Python if needed
-                pass  # TODO: Implement database-agnostic JSON array filtering
+            disliked_ingredients = user_preferences.get('disliked_ingredients', [])
             
             # Filter out allergies - recipes should NOT contain allergens
             allergies = user_preferences.get('allergies', [])
-            if allergies:
-                # For now, skip strict allergy filtering via dietary_tags to avoid errors
-                # The dietary tag inference will handle this in _recipe_to_meal_format
-                pass  # TODO: Implement database-agnostic JSON array filtering
             
             # Get a broad pool and filter intelligently per meal type
             # CRITICAL FIX: Use actual database meal types (breakfast, lunch, dinner, snack)
@@ -191,12 +183,52 @@ class HybridMealGenerator:
                         continue
                     if not self._is_appropriate_for_meal_type(recipe, meal_type):
                         continue
+                    
+                    # CRITICAL FIX: Filter out recipes with allergies
+                    if allergies:
+                        recipe_tags = recipe.dietary_tags or []
+                        recipe_text = f"{recipe.title} {recipe.summary or ''}".lower()
+                        skip_recipe = False
+                        for allergy in allergies:
+                            allergen_tag = f"contains-{allergy}"
+                            if allergen_tag in recipe_tags or allergy in recipe_tags:
+                                skip_recipe = True
+                                break
+                            # Also check recipe text for allergen mentions
+                            if allergy.lower() in recipe_text:
+                                skip_recipe = True
+                                break
+                        if skip_recipe:
+                            continue
+                    
+                    # CRITICAL FIX: Filter out recipes with disliked ingredients
+                    if disliked_ingredients:
+                        recipe_text = f"{recipe.title} {recipe.summary or ''}".lower()
+                        for ingredient in disliked_ingredients:
+                            if ingredient.lower() in recipe_text:
+                                continue  # Skip this recipe
+                    
+                    # CRITICAL FIX: Filter by dietary preferences
+                    if dietary_prefs:
+                        recipe_tags = recipe.dietary_tags or []
+                        # Check if recipe matches at least one dietary preference
+                        matches = False
+                        for pref in dietary_prefs:
+                            if pref in recipe_tags:
+                                matches = True
+                                break
+                        # If we have dietary preferences but recipe doesn't match any, skip
+                        if not matches and len(dietary_prefs) > 0:
+                            # Exception: if recipe has no tags, allow it (might be neutral)
+                            if recipe_tags:
+                                continue  # Skip this recipe
+                    
                     calories = (recipe.per_serving_calories or 0)
                     # Penalize undershooting more than overshooting so we aim closer to or above target
                     score = (target_calories - calories) * 2 if calories < target_calories else (calories - target_calories)
                     if best_score is None or score < best_score:
                         best_score = score
-                    best_recipe = recipe
+                        best_recipe = recipe
                 
                 # If no exact match, try the broader category
                 if not best_recipe:
@@ -207,6 +239,40 @@ class HybridMealGenerator:
                             continue
                         if not self._is_appropriate_for_meal_type(recipe, meal_type):
                             continue
+                        
+                        # CRITICAL FIX: Apply same filtering for allergies, disliked ingredients, and dietary preferences
+                        if allergies:
+                            recipe_tags = recipe.dietary_tags or []
+                            recipe_text = f"{recipe.title} {recipe.summary or ''}".lower()
+                            skip_recipe = False
+                            for allergy in allergies:
+                                allergen_tag = f"contains-{allergy}"
+                                if allergen_tag in recipe_tags or allergy in recipe_tags:
+                                    skip_recipe = True
+                                    break
+                                if allergy.lower() in recipe_text:
+                                    skip_recipe = True
+                                    break
+                            if skip_recipe:
+                                continue
+                        
+                        if disliked_ingredients:
+                            recipe_text = f"{recipe.title} {recipe.summary or ''}".lower()
+                            for ingredient in disliked_ingredients:
+                                if ingredient.lower() in recipe_text:
+                                    continue
+                        
+                        if dietary_prefs:
+                            recipe_tags = recipe.dietary_tags or []
+                            matches = False
+                            for pref in dietary_prefs:
+                                if pref in recipe_tags:
+                                    matches = True
+                                    break
+                            if not matches and len(dietary_prefs) > 0:
+                                if recipe_tags:
+                                    continue
+                        
                         # choose the closest calorie match with undershoot penalty
                         calories = (recipe.per_serving_calories or 0)
                         score = (target_calories - calories) * 2 if calories < target_calories else (calories - target_calories)

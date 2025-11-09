@@ -427,11 +427,19 @@ const ShoppingList: React.FC<ShoppingListProps> = ({
       });
 
       if (response.ok) {
-        // Update local state
-        setLists(prev => prev.map(list => ({
-          ...list,
-          items: list.items?.filter((item: any) => item.id !== itemId)
-        })));
+        // Update local state - ensure we create a new array reference for React to detect the change
+        setLists(prev => {
+          const updated = prev.map(list => ({
+            ...list,
+            items: (list.items || []).filter((item: any) => String(item.id) !== String(itemId))
+          }));
+          return updated;
+        });
+        
+        // Also trigger parent update if available
+        if (onUpdate) {
+          onUpdate();
+        }
         
         toast({
           title: 'Item removed!',

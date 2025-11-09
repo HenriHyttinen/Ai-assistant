@@ -111,7 +111,7 @@ class UserNutritionPreferencesCreate(BaseModel):
     protein_target: Optional[float] = Field(None, ge=0)
     carbs_target: Optional[float] = Field(None, ge=0)
     fats_target: Optional[float] = Field(None, ge=0)
-    meals_per_day: int = Field(3, ge=1, le=6)
+    meals_per_day: int = Field(3, ge=1, le=5)
     snacks_per_day: int = Field(2, ge=0, le=5)  # Number of snacks per day
     preferred_meal_times: Optional[Dict[str, str]] = None
     timezone: str = Field("UTC", description="Timezone in ISO format")
@@ -160,7 +160,7 @@ class UserNutritionPreferencesUpdate(BaseModel):
     protein_target: Optional[float] = Field(None, ge=0)
     carbs_target: Optional[float] = Field(None, ge=0)
     fats_target: Optional[float] = Field(None, ge=0)
-    meals_per_day: Optional[int] = Field(None, ge=1, le=6)
+    meals_per_day: Optional[int] = Field(None, ge=1, le=5)
     snacks_per_day: Optional[int] = Field(None, ge=0, le=5)
     preferred_meal_times: Optional[Dict[str, str]] = None
     timezone: Optional[str] = None

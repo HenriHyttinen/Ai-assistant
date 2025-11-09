@@ -139,18 +139,27 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [mealsPerDay, setMealsPerDay] = useState<number>(() => {
     // CRITICAL FIX: Load mealsPerDay from localStorage on mount to persist user's choice
+    // Cap at 5 (max supported by grid)
     try {
       const saved = typeof window !== 'undefined' ? localStorage.getItem('mealsPerDay') : null;
-      return saved ? parseInt(saved, 10) : 4;
+      const value = saved ? parseInt(saved, 10) : 4;
+      return value > 5 ? 5 : value; // Cap at 5
     } catch {
       return 4;
     }
   });
   
   // CRITICAL FIX: Persist mealsPerDay to localStorage whenever it changes
+  // Also cap at 5 to ensure consistency
   useEffect(() => {
     try {
-      localStorage.setItem('mealsPerDay', mealsPerDay.toString());
+      // Cap at 5 (max supported by grid)
+      if (mealsPerDay > 5) {
+        setMealsPerDay(5);
+        localStorage.setItem('mealsPerDay', '5');
+      } else {
+        localStorage.setItem('mealsPerDay', mealsPerDay.toString());
+      }
     } catch (e) {
       console.warn('Failed to save mealsPerDay to localStorage:', e);
     }
@@ -158,6 +167,7 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
   const [preferences, setPreferences] = useState({
     dietaryRestrictions: [] as string[],
     allergies: [] as string[],
+    dislikedIngredients: [] as string[],
     cuisinePreferences: [] as string[],
     calorieTarget: 2000,
     mealsPerDay: 3
@@ -939,16 +949,26 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
 
         if (response.ok) {
           const prefs = await response.json();
+          // CRITICAL FIX: Cap meals_per_day at 5 (max supported by grid)
+          let loadedMealsPerDay = prefs.meals_per_day || 4;
+          if (loadedMealsPerDay > 5) {
+            loadedMealsPerDay = 5;
+            console.warn('⚠️ Capped meals_per_day from', prefs.meals_per_day, 'to 5 (max supported)');
+          }
           setPreferences({
             dietaryRestrictions: prefs.dietary_preferences || [],
             allergies: prefs.allergies || [],
+            dislikedIngredients: prefs.disliked_ingredients || [],
             cuisinePreferences: prefs.cuisine_preferences || [],
             calorieTarget: prefs.daily_calorie_target || prefs.calorie_target || 2000,
-            mealsPerDay: prefs.meals_per_day || 4
+            mealsPerDay: loadedMealsPerDay
           });
+          // CRITICAL FIX: Always sync mealsPerDay state with preferences (force update)
+          setMealsPerDay(loadedMealsPerDay);
+          console.log('🔄 Synced mealsPerDay from preferences:', loadedMealsPerDay);
           console.log('📊 Loaded user preferences:', {
             calorieTarget: prefs.daily_calorie_target || prefs.calorie_target || 2000,
-            mealsPerDay: prefs.meals_per_day || 4
+            mealsPerDay: loadedMealsPerDay
           });
         }
       } catch (error) {
@@ -1341,6 +1361,7 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
             meals_per_day: mealsPerDay,
             dietary_preferences: preferences.dietaryRestrictions,
             allergies: preferences.allergies,
+            disliked_ingredients: preferences.dislikedIngredients || [],
             cuisine_preferences: preferences.cuisinePreferences
           }
         })
@@ -2557,6 +2578,12 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
         ? `http://localhost:8000/nutrition/meal-plans/${mealPlan.id}/custom-meal/${editingMealId}`
         : `http://localhost:8000/nutrition/meal-plans/${mealPlan.id}/custom-meal`;
       
+      // CRITICAL FIX: Add meal_date to custom meal data if not present
+      const mealDataWithDate = {
+        ...customMealData,
+        meal_date: customMealData.meal_date || customMealData.date || selectedDate
+      };
+      
       // Save custom meal to backend (POST for create, PUT for update)
       const response = await fetch(url, {
         method: isEditing ? 'PUT' : 'POST',
@@ -2564,7 +2591,7 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${session.access_token}`
         },
-        body: JSON.stringify(customMealData)
+        body: JSON.stringify(mealDataWithDate)
       });
       
       if (response.ok) {

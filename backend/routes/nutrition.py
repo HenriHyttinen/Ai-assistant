@@ -698,10 +698,20 @@ def add_custom_meal(
             )
         
         # Create new meal entry
-        from datetime import date
+        from datetime import date, datetime
+        # CRITICAL FIX: Allow meal_date to be specified in custom_meal_data
+        meal_date_str = custom_meal_data.get('meal_date') or custom_meal_data.get('date')
+        if meal_date_str:
+            if isinstance(meal_date_str, str):
+                meal_date = datetime.fromisoformat(meal_date_str.replace('Z', '+00:00')).date()
+            else:
+                meal_date = meal_date_str
+        else:
+            meal_date = date.today()  # Fallback to today if not specified
+        
         new_meal = MealPlanMeal(
             meal_plan_id=meal_plan_id,
-            meal_date=date.today(),  # Use current date or allow specification
+            meal_date=meal_date,  # Use specified date or today
             meal_type=custom_meal_data.get('meal_type', 'breakfast'),
             meal_name=custom_meal_data.get('meal_name', 'Custom Meal'),
             calories=custom_meal_data.get('nutrition', {}).get('calories', 0),
@@ -719,10 +729,12 @@ def add_custom_meal(
         return {
             "message": "Custom meal added successfully",
             "meal_id": new_meal.id,
+            "meal_date": new_meal.meal_date.isoformat() if new_meal.meal_date else None,
             "meal": {
                 "id": new_meal.id,
                 "meal_name": new_meal.meal_name,
                 "meal_type": new_meal.meal_type,
+                "meal_date": new_meal.meal_date.isoformat() if new_meal.meal_date else None,
                 "calories": new_meal.calories,
                 "protein": new_meal.protein,
                 "carbs": new_meal.carbs,
@@ -2406,18 +2418,22 @@ async def get_shopping_list_summary(
 @router.put("/shopping-lists/items/{item_id}/quantity")
 async def update_shopping_list_item_quantity(
     item_id: int,
-    new_quantity: float,
+    payload: Dict[str, Any] = Body(...),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Update the quantity of a shopping list item"""
     try:
+        new_quantity = payload.get("new_quantity")
+        if new_quantity is None:
+            raise HTTPException(status_code=400, detail="new_quantity is required")
+        
         if new_quantity <= 0:
             raise HTTPException(status_code=400, detail="Quantity must be greater than 0")
         
         shopping_list_service = ShoppingListService()
         result = shopping_list_service.update_shopping_list_item_quantity(
-            db, current_user.id, item_id, new_quantity
+            db, current_user.id, item_id, float(new_quantity)
         )
         
         return result
@@ -2585,20 +2601,76 @@ def _adjust_daily_total(
                 meal.fats = max(0, new_fats)
                 
                 # Update recipe details nutrition
+                # CRITICAL FIX: Always update all nutrition fields, even if old values were 0
+                # This ensures protein/carbs/fats are updated when portions are adjusted
                 if meal.recipe_details and isinstance(meal.recipe_details, dict):
                     if 'nutrition' not in meal.recipe_details:
                         meal.recipe_details['nutrition'] = {}
                     meal.recipe_details['nutrition']['calories'] = new_cal
                     meal.recipe_details['nutrition']['per_serving_calories'] = new_cal
-                    if old_protein > 0:
+                    # CRITICAL FIX: Always update protein/carbs/fats, even if old values were 0
+                    # If old values were 0, try to recalculate from ingredients if available
+                    if old_protein > 0 or old_carbs > 0 or old_fats > 0:
+                        # Use scaled values if we had original values
                         meal.recipe_details['nutrition']['protein'] = new_protein
                         meal.recipe_details['nutrition']['per_serving_protein'] = new_protein
-                    if old_carbs > 0:
                         meal.recipe_details['nutrition']['carbs'] = new_carbs
                         meal.recipe_details['nutrition']['per_serving_carbs'] = new_carbs
-                    if old_fats > 0:
                         meal.recipe_details['nutrition']['fats'] = new_fats
                         meal.recipe_details['nutrition']['per_serving_fats'] = new_fats
+                    else:
+                        # CRITICAL FIX: If old values were 0, try to recalculate from ingredients
+                        # This handles cases where meals were created with placeholder nutrition
+                        ingredients = meal.recipe_details.get('ingredients', [])
+                        if ingredients and len(ingredients) > 0:
+                            try:
+                                from services.hybrid_meal_generator import HybridMealGenerator
+                                hybrid_gen = HybridMealGenerator()
+                                # Prepare ingredients for calculation
+                                ingredients_for_calc = []
+                                for ing in ingredients:
+                                    if isinstance(ing, dict) and 'name' in ing:
+                                        ingredients_for_calc.append({
+                                            'name': ing.get('name', ''),
+                                            'quantity': ing.get('quantity', 0),
+                                            'unit': ing.get('unit', 'g')
+                                        })
+                                
+                                if ingredients_for_calc:
+                                    # Recalculate nutrition from ingredients with scaled quantities
+                                    recalculated = hybrid_gen.nutrition_ai._calculate_recipe_nutrition(
+                                        ingredients_for_calc, db
+                                    )
+                                    if recalculated and recalculated.get('calories', 0) > 0:
+                                        # Use recalculated values
+                                        meal.recipe_details['nutrition']['protein'] = int(recalculated.get('protein', 0))
+                                        meal.recipe_details['nutrition']['per_serving_protein'] = int(recalculated.get('protein', 0))
+                                        meal.recipe_details['nutrition']['carbs'] = int(recalculated.get('carbs', 0))
+                                        meal.recipe_details['nutrition']['per_serving_carbs'] = int(recalculated.get('carbs', 0))
+                                        meal.recipe_details['nutrition']['fats'] = int(recalculated.get('fats', 0))
+                                        meal.recipe_details['nutrition']['per_serving_fats'] = int(recalculated.get('fats', 0))
+                                        # Also update meal fields
+                                        meal.protein = int(recalculated.get('protein', 0))
+                                        meal.carbs = int(recalculated.get('carbs', 0))
+                                        meal.fats = int(recalculated.get('fats', 0))
+                                        logger.info(f"✅ Recalculated protein/carbs/fats from ingredients for meal {meal.id}")
+                            except Exception as e:
+                                logger.warning(f"⚠️ Failed to recalculate nutrition from ingredients: {e}")
+                                # Fallback: use scaled values even if they're 0
+                                meal.recipe_details['nutrition']['protein'] = new_protein
+                                meal.recipe_details['nutrition']['per_serving_protein'] = new_protein
+                                meal.recipe_details['nutrition']['carbs'] = new_carbs
+                                meal.recipe_details['nutrition']['per_serving_carbs'] = new_carbs
+                                meal.recipe_details['nutrition']['fats'] = new_fats
+                                meal.recipe_details['nutrition']['per_serving_fats'] = new_fats
+                        else:
+                            # No ingredients available, use scaled values (even if 0)
+                            meal.recipe_details['nutrition']['protein'] = new_protein
+                            meal.recipe_details['nutrition']['per_serving_protein'] = new_protein
+                            meal.recipe_details['nutrition']['carbs'] = new_carbs
+                            meal.recipe_details['nutrition']['per_serving_carbs'] = new_carbs
+                            meal.recipe_details['nutrition']['fats'] = new_fats
+                            meal.recipe_details['nutrition']['per_serving_fats'] = new_fats
             
             db.commit()
             

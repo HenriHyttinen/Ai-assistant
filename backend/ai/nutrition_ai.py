@@ -1807,8 +1807,16 @@ Return ONLY minified JSON (no markdown):
                 # Default to "light snack" if context unknown
                 snack_context = "Create a light, healthy snack appropriate for between-meal consumption. "
             
+            # Add explicit avoidance instructions if retrying
+            explicit_avoid = ""
+            if meal_data.get('explicit_avoid_allergens'):
+                explicit_avoid += f"\n\nCRITICAL: Previous attempt included these FORBIDDEN allergens: {', '.join(meal_data['explicit_avoid_allergens'])}\nDO NOT include these allergens in ANY form - use substitutes instead.\n"
+            if meal_data.get('explicit_avoid_ingredients'):
+                explicit_avoid += f"\n\nCRITICAL: Previous attempt included these DISLIKED ingredients: {', '.join(meal_data['explicit_avoid_ingredients'])}\nDO NOT include these ingredients - use substitutes instead.\n"
+            
             # Simplified prompt - focus on recipe quality, let post-processing handle exact calories
             prompt = f"""Generate a single {meal_type} recipe (~{target_calories} calories, {target_cuisine} cuisine).
+{explicit_avoid}
 
 MEAL TYPE: Create a proper {meal_type} ({constraints['description']}).
 - Use: {', '.join(constraints['allowed'][:5])}
@@ -1816,10 +1824,18 @@ MEAL TYPE: Create a proper {meal_type} ({constraints['description']}).
 
 AVOID DUPLICATES: Do not repeat these recent recipes: {', '.join(existing_names[:10]) if existing_names else 'none'}
 
-DIETARY REQUIREMENTS:
-- Preferences: {', '.join(user_preferences.get('dietary_preferences', [])) or 'NONE (include meat/fish/dairy/eggs)'}
-- Allergies (exclude): {', '.join(user_preferences.get('allergies', [])) or 'NONE'}
-- Disliked: {', '.join(user_preferences.get('disliked_ingredients', [])) or 'NONE'}
+DIETARY REQUIREMENTS (CRITICAL - STRICTLY ENFORCE):
+- Dietary Preferences: STRICTLY follow these: {', '.join(user_preferences.get('dietary_preferences', [])) or 'NONE (include meat/fish/dairy/eggs)'}
+  * If vegetarian: NO meat, fish, or poultry
+  * If vegan: NO animal products at all
+  * If gluten-free: NO wheat, barley, rye, or gluten-containing ingredients
+  * If keto: LOW carbs, HIGH fats
+- Allergies: NEVER include these ingredients - ABSOLUTELY FORBIDDEN: {', '.join(user_preferences.get('allergies', [])) or 'NONE'}
+  * If user has gluten allergy: DO NOT use wheat, barley, rye, flour, bread, pasta, or any gluten-containing ingredients
+  * If user has nut allergy: DO NOT use nuts, almonds, peanuts, or any nut-based ingredients
+  * If user has dairy allergy: DO NOT use milk, cheese, butter, yogurt, or any dairy products
+- Disliked Ingredients: STRICTLY avoid these - DO NOT include: {', '.join(user_preferences.get('disliked_ingredients', [])) or 'NONE'}
+  * Check ingredient names carefully - if any disliked ingredient appears in the name, use a substitute
 
 {similar_recipes_text}
 
@@ -1861,6 +1877,49 @@ OUTPUT: Valid minified JSON only (no markdown):
             
             if not result:
                 raise ValueError("Failed to parse AI response")
+            
+            # CRITICAL FIX: Post-generation validation - check for allergies and disliked ingredients
+            allergies = user_preferences.get('allergies', [])
+            disliked_ingredients = user_preferences.get('disliked_ingredients', [])
+            if allergies or disliked_ingredients:
+                recipe = result.get('recipe', {})
+                ingredients = recipe.get('ingredients', [])
+                recipe_text = f"{recipe.get('title', '')} {recipe.get('summary', '')} {', '.join([ing.get('name', '') if isinstance(ing, dict) else str(ing) for ing in ingredients])}".lower()
+                
+                # Check for allergies
+                for allergy in allergies:
+                    allergy_lower = allergy.lower()
+                    # Check if allergy appears in recipe text
+                    if allergy_lower in recipe_text:
+                        logger.warning(f"⚠️ Generated recipe contains allergen '{allergy}' - rejecting and retrying")
+                        # Retry with explicit avoidance
+                        meal_data['explicit_avoid_names'] = meal_data.get('explicit_avoid_names', []) + [result.get('meal_name', '')]
+                        meal_data['explicit_avoid_allergens'] = meal_data.get('explicit_avoid_allergens', []) + [allergy]
+                        # Recursively retry (with limit to prevent infinite loop)
+                        retry_count = meal_data.get('retry_count', 0)
+                        if retry_count < 3:
+                            meal_data['retry_count'] = retry_count + 1
+                            return self._generate_single_meal_with_sequential_rag(meal_data, db)
+                        else:
+                            logger.error(f"❌ Failed to generate recipe without allergen '{allergy}' after 3 retries")
+                            raise ValueError(f"Could not generate recipe without allergen: {allergy}")
+                
+                # Check for disliked ingredients
+                for ingredient in disliked_ingredients:
+                    ingredient_lower = ingredient.lower()
+                    if ingredient_lower in recipe_text:
+                        logger.warning(f"⚠️ Generated recipe contains disliked ingredient '{ingredient}' - rejecting and retrying")
+                        # Retry with explicit avoidance
+                        meal_data['explicit_avoid_names'] = meal_data.get('explicit_avoid_names', []) + [result.get('meal_name', '')]
+                        meal_data['explicit_avoid_ingredients'] = meal_data.get('explicit_avoid_ingredients', []) + [ingredient]
+                        # Recursively retry (with limit to prevent infinite loop)
+                        retry_count = meal_data.get('retry_count', 0)
+                        if retry_count < 3:
+                            meal_data['retry_count'] = retry_count + 1
+                            return self._generate_single_meal_with_sequential_rag(meal_data, db)
+                        else:
+                            logger.warning(f"⚠️ Could not generate recipe without disliked ingredient '{ingredient}' after 3 retries - allowing it")
+                            # Allow it after 3 retries to prevent infinite loop
             
             # Enhance recipe quality if available
             try:
