@@ -1820,7 +1820,8 @@ Return ONLY minified JSON (no markdown):
                 'nuts': 'DO NOT use nuts, almonds, walnuts, cashews, pistachios, hazelnuts, pecans, macadamia nuts, brazil nuts, pine nuts, or ANY nut-based ingredients',
                 'tree_nuts': 'DO NOT use almonds, walnuts, cashews, pistachios, hazelnuts, pecans, macadamia nuts, brazil nuts, pine nuts, or ANY tree nut-based ingredients',
                 'peanuts': 'DO NOT use peanuts, peanut butter, groundnuts, or ANY peanut-based ingredients',
-                'eggs': 'DO NOT use eggs, egg whites, egg yolks, or ANY egg-based ingredients. ABSOLUTELY FORBIDDEN - use substitutes like tofu, chickpea flour, or flax eggs instead.',
+                'eggs': 'DO NOT use eggs, egg whites, egg yolks, scrambled eggs, fried eggs, boiled eggs, or ANY egg-based ingredients. ABSOLUTELY FORBIDDEN - use substitutes like tofu, chickpea flour, or flax eggs instead.',
+                'egg': 'DO NOT use egg, eggs, egg whites, egg yolks, scrambled eggs, fried eggs, boiled eggs, or ANY egg-based ingredients. ABSOLUTELY FORBIDDEN - use substitutes like tofu, chickpea flour, or flax eggs instead.',
                 'dairy': 'DO NOT use milk, cheese, butter, yogurt, cream, whey, casein, or ANY dairy products',
                 'fish': 'DO NOT use fish, salmon, tuna, cod, sardines, anchovies, mackerel, trout, or ANY fish',
                 'shellfish': 'DO NOT use shrimp, crab, lobster, mussels, oysters, scallops, clams, or ANY shellfish',
@@ -1908,6 +1909,10 @@ OUTPUT: Valid minified JSON only (no markdown):
             # This validation checks both recipe text AND individual ingredient names for better detection
             allergies = user_preferences.get('allergies', [])
             disliked_ingredients = user_preferences.get('disliked_ingredients', [])
+            
+            # CRITICAL: Always log allergies to debug
+            logger.info(f"🔍 Allergy validation check: allergies={allergies}, disliked={disliked_ingredients}")
+            
             if allergies or disliked_ingredients:
                 recipe = result.get('recipe', {})
                 ingredients = recipe.get('ingredients', [])
@@ -1942,6 +1947,13 @@ OUTPUT: Valid minified JSON only (no markdown):
                     # Also handle tree_nuts if user has "nuts" (tree_nuts are a subset of nuts)
                     if allergy_lower == 'nuts':
                         expanded_allergies.update([a.lower() for a in allergy_expansions.get('tree_nuts', [])])
+                    # CRITICAL: Handle "egg" vs "eggs" - if user has "egg" allergy, also check for "eggs" and vice versa
+                    if allergy_lower == 'egg':
+                        expanded_allergies.update(['eggs', 'scrambled eggs', 'fried eggs', 'boiled eggs', 'poached eggs', 'egg whites', 'egg yolks'])
+                    elif allergy_lower == 'eggs':
+                        expanded_allergies.update(['egg', 'scrambled eggs', 'fried eggs', 'boiled eggs', 'poached eggs', 'egg whites', 'egg yolks'])
+                
+                logger.info(f"🔍 Expanded allergies for validation: {expanded_allergies}")
                 
                 # ROOT CAUSE FIX: Check recipe text and individual ingredient names
                 # Extract ingredient names properly - handle both dict format and string format
@@ -1953,17 +1965,28 @@ OUTPUT: Valid minified JSON only (no markdown):
                         # Extract name and strip any extra info (e.g., "eggs - 2unit" -> "eggs")
                         name = str(ing.get('name', '')).lower().strip()
                         # Remove quantity/unit info if present (e.g., "eggs - 2unit" -> "eggs")
+                        # Handle multiple formats: "eggs - 2unit", "Egg - 2g", "scrambled eggs - 2g"
                         if ' - ' in name:
                             name = name.split(' - ')[0].strip()
+                        # Also handle format like "Egg - 2g" (capital E, no space before dash)
+                        if ' -' in name:
+                            name = name.split(' -')[0].strip()
+                        if '- ' in name:
+                            name = name.split('- ')[0].strip()
                         ingredient_names.append(name)
                     else:
                         name = str(ing).lower().strip()
-                        # Remove quantity/unit info if present
+                        # Remove quantity/unit info if present - handle multiple formats
                         if ' - ' in name:
                             name = name.split(' - ')[0].strip()
+                        if ' -' in name:
+                            name = name.split(' -')[0].strip()
+                        if '- ' in name:
+                            name = name.split('- ')[0].strip()
                         ingredient_names.append(name)
                 
                 all_text = f"{recipe_text} {' '.join(ingredient_names)}"
+                logger.info(f"🔍 Allergy validation: checking recipe '{recipe.get('title', '')}' with ingredients: {ingredient_names}, allergies: {allergies}")
                 
                 # Check for allergies - check both recipe text and individual ingredients
                 import re
@@ -1980,6 +2003,7 @@ OUTPUT: Valid minified JSON only (no markdown):
                             # Additional check: exclude common false positives
                             false_positives = {
                                 'egg': ['eggplant', 'eggplants', 'eggnog', 'eggshell'],
+                                'eggs': ['eggplant', 'eggplants', 'eggnog', 'eggshell'],
                                 'nut': ['peanut', 'peanuts', 'coconut', 'coconuts'],
                                 'fish': ['shellfish']
                             }
@@ -1996,6 +2020,7 @@ OUTPUT: Valid minified JSON only (no markdown):
                     
                     # ROOT CAUSE FIX: Also check individual ingredient names for better detection
                     # Use word boundary matching for each ingredient name individually
+                    # Also check for partial matches in compound names (e.g., "scrambled eggs" contains "eggs")
                     if not found_allergen:
                         for ing_name in ingredient_names:
                             for expanded_allergy in expanded_list:
@@ -2005,6 +2030,7 @@ OUTPUT: Valid minified JSON only (no markdown):
                                     # Check false positives
                                     false_positives = {
                                         'egg': ['eggplant', 'eggplants', 'eggnog', 'eggshell'],
+                                        'eggs': ['eggplant', 'eggplants', 'eggnog', 'eggshell'],
                                         'nut': ['peanut', 'peanuts', 'coconut', 'coconuts'],
                                         'fish': ['shellfish']
                                     }
@@ -2017,7 +2043,7 @@ OUTPUT: Valid minified JSON only (no markdown):
                                     
                                     if not is_false_positive:
                                         found_allergen = True
-                                        logger.warning(f"⚠️ Found allergen '{expanded_allergy}' in ingredient name: '{ing_name}'")
+                                        logger.warning(f"⚠️ Found allergen '{expanded_allergy}' in ingredient name: '{ing_name}' (allergy: {allergy})")
                                         break
                             
                             if found_allergen:
