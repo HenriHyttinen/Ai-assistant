@@ -965,6 +965,7 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
           });
           // CRITICAL FIX: Always sync mealsPerDay state with preferences (force update)
           setMealsPerDay(loadedMealsPerDay);
+          localStorage.setItem('mealsPerDay', loadedMealsPerDay.toString());
           console.log('🔄 Synced mealsPerDay from preferences:', loadedMealsPerDay);
           console.log('📊 Loaded user preferences:', {
             calorieTarget: prefs.daily_calorie_target || prefs.calorie_target || 2000,
@@ -978,6 +979,15 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
 
     loadUserPreferences();
   }, []);
+  
+  // CRITICAL FIX: When preferences are loaded, they should override localStorage
+  // This ensures preferences take precedence over localStorage when navigating back
+  useEffect(() => {
+    if (preferences.mealsPerDay && preferences.mealsPerDay !== mealsPerDay) {
+      setMealsPerDay(preferences.mealsPerDay);
+      localStorage.setItem('mealsPerDay', preferences.mealsPerDay.toString());
+    }
+  }, [preferences.mealsPerDay]);
 
   const loadMealPlan = useCallback(async () => {
     // CRITICAL: Skip loading if we're currently generating a meal plan
@@ -2323,15 +2333,15 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
           isClosable: true
         });
         
-        // Reload meal plan to reflect changes
+        // CRITICAL FIX: Exit swap mode BEFORE reloading to prevent state conflicts
+        setSwapMode(false);
+        setSwapSourceMeal(null);
+        
+        // Reload meal plan to reflect changes (after swap mode is cleared)
         await loadMealPlan();
         
         // CRITICAL FIX: Notify dashboard to reload
         window.dispatchEvent(new CustomEvent('mealPlanUpdated'));
-        
-        // Exit swap mode
-        setSwapMode(false);
-        setSwapSourceMeal(null);
       } else {
         const errorData = await response.json().catch(() => ({ detail: 'Failed to swap meals' }));
         throw new Error(errorData.detail || 'Swap failed');
@@ -3737,7 +3747,33 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
                 <Select
                   size="sm"
                   value={mealsPerDay}
-                  onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setMealsPerDay(parseInt(e.target.value, 10))}
+                  onChange={async (e: React.ChangeEvent<HTMLSelectElement>) => {
+                    const newMealsPerDay = parseInt(e.target.value, 10);
+                    setMealsPerDay(newMealsPerDay);
+                    // CRITICAL FIX: Also update preferences to persist across navigation
+                    try {
+                      const { supabase } = await import('../../lib/supabase.ts');
+                      const { data: { session } } = await supabase.auth.getSession();
+                      if (session?.access_token) {
+                        // Update preferences with new meals_per_day
+                        const response = await fetch('http://localhost:8000/nutrition/preferences', {
+                          method: 'PUT',
+                          headers: {
+                            'Authorization': `Bearer ${session.access_token}`,
+                            'Content-Type': 'application/json'
+                          },
+                          body: JSON.stringify({
+                            meals_per_day: newMealsPerDay
+                          })
+                        });
+                        if (response.ok) {
+                          console.log('✅ Updated meals_per_day in preferences:', newMealsPerDay);
+                        }
+                      }
+                    } catch (error) {
+                      console.warn('Failed to update meals_per_day in preferences:', error);
+                    }
+                  }}
                 >
                   <option value={3}>3</option>
                   <option value={4}>4</option>

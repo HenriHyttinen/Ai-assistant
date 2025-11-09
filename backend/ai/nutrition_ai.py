@@ -1887,39 +1887,71 @@ OUTPUT: Valid minified JSON only (no markdown):
                 recipe_text = f"{recipe.get('title', '')} {recipe.get('summary', '')} {', '.join([ing.get('name', '') if isinstance(ing, dict) else str(ing) for ing in ingredients])}".lower()
                 
                 # Check for allergies
+                import re
                 for allergy in allergies:
                     allergy_lower = allergy.lower()
-                    # Check if allergy appears in recipe text
-                    if allergy_lower in recipe_text:
-                        logger.warning(f"⚠️ Generated recipe contains allergen '{allergy}' - rejecting and retrying")
-                        # Retry with explicit avoidance
-                        meal_data['explicit_avoid_names'] = meal_data.get('explicit_avoid_names', []) + [result.get('meal_name', '')]
-                        meal_data['explicit_avoid_allergens'] = meal_data.get('explicit_avoid_allergens', []) + [allergy]
-                        # Recursively retry (with limit to prevent infinite loop)
-                        retry_count = meal_data.get('retry_count', 0)
-                        if retry_count < 3:
-                            meal_data['retry_count'] = retry_count + 1
-                            return self._generate_single_meal_with_sequential_rag(meal_data, db)
-                        else:
-                            logger.error(f"❌ Failed to generate recipe without allergen '{allergy}' after 3 retries")
-                            raise ValueError(f"Could not generate recipe without allergen: {allergy}")
+                    # CRITICAL FIX: Use word boundary matching to avoid false positives (e.g., "egg" in "eggplant")
+                    pattern = r'\b' + re.escape(allergy_lower) + r'\b'
+                    if re.search(pattern, recipe_text):
+                        # Additional check: exclude common false positives
+                        false_positives = {
+                            'egg': ['eggplant', 'eggplants', 'eggplant', 'eggnog', 'eggshell'],
+                            'nut': ['peanut', 'peanuts', 'coconut', 'coconuts'],
+                            'fish': ['shellfish']
+                        }
+                        is_false_positive = False
+                        if allergy_lower in false_positives:
+                            for fp in false_positives[allergy_lower]:
+                                if fp in recipe_text:
+                                    is_false_positive = True
+                                    break
+                        
+                        if not is_false_positive:
+                            logger.warning(f"⚠️ Generated recipe contains allergen '{allergy}' - rejecting and retrying")
+                            # Retry with explicit avoidance
+                            meal_data['explicit_avoid_names'] = meal_data.get('explicit_avoid_names', []) + [result.get('meal_name', '')]
+                            meal_data['explicit_avoid_allergens'] = meal_data.get('explicit_avoid_allergens', []) + [allergy]
+                            # Recursively retry (with limit to prevent infinite loop)
+                            retry_count = meal_data.get('retry_count', 0)
+                            if retry_count < 3:
+                                meal_data['retry_count'] = retry_count + 1
+                                return self._generate_single_meal_with_sequential_rag(meal_data, db)
+                            else:
+                                logger.error(f"❌ Failed to generate recipe without allergen '{allergy}' after 3 retries")
+                                raise ValueError(f"Could not generate recipe without allergen: {allergy}")
                 
                 # Check for disliked ingredients
                 for ingredient in disliked_ingredients:
                     ingredient_lower = ingredient.lower()
-                    if ingredient_lower in recipe_text:
-                        logger.warning(f"⚠️ Generated recipe contains disliked ingredient '{ingredient}' - rejecting and retrying")
-                        # Retry with explicit avoidance
-                        meal_data['explicit_avoid_names'] = meal_data.get('explicit_avoid_names', []) + [result.get('meal_name', '')]
-                        meal_data['explicit_avoid_ingredients'] = meal_data.get('explicit_avoid_ingredients', []) + [ingredient]
-                        # Recursively retry (with limit to prevent infinite loop)
-                        retry_count = meal_data.get('retry_count', 0)
-                        if retry_count < 3:
-                            meal_data['retry_count'] = retry_count + 1
-                            return self._generate_single_meal_with_sequential_rag(meal_data, db)
-                        else:
-                            logger.warning(f"⚠️ Could not generate recipe without disliked ingredient '{ingredient}' after 3 retries - allowing it")
-                            # Allow it after 3 retries to prevent infinite loop
+                    # CRITICAL FIX: Use word boundary matching to avoid false positives (e.g., "egg" in "eggplant")
+                    pattern = r'\b' + re.escape(ingredient_lower) + r'\b'
+                    if re.search(pattern, recipe_text):
+                        # Additional check: exclude common false positives
+                        false_positives = {
+                            'egg': ['eggplant', 'eggplants', 'eggplant', 'eggnog', 'eggshell'],
+                            'nut': ['peanut', 'peanuts', 'coconut', 'coconuts'],
+                            'fish': ['shellfish']
+                        }
+                        is_false_positive = False
+                        if ingredient_lower in false_positives:
+                            for fp in false_positives[ingredient_lower]:
+                                if fp in recipe_text:
+                                    is_false_positive = True
+                                    break
+                        
+                        if not is_false_positive:
+                            logger.warning(f"⚠️ Generated recipe contains disliked ingredient '{ingredient}' - rejecting and retrying")
+                            # Retry with explicit avoidance
+                            meal_data['explicit_avoid_names'] = meal_data.get('explicit_avoid_names', []) + [result.get('meal_name', '')]
+                            meal_data['explicit_avoid_ingredients'] = meal_data.get('explicit_avoid_ingredients', []) + [ingredient]
+                            # Recursively retry (with limit to prevent infinite loop)
+                            retry_count = meal_data.get('retry_count', 0)
+                            if retry_count < 3:
+                                meal_data['retry_count'] = retry_count + 1
+                                return self._generate_single_meal_with_sequential_rag(meal_data, db)
+                            else:
+                                logger.warning(f"⚠️ Could not generate recipe without disliked ingredient '{ingredient}' after 3 retries - allowing it")
+                                # Allow it after 3 retries to prevent infinite loop
             
             # Enhance recipe quality if available
             try:

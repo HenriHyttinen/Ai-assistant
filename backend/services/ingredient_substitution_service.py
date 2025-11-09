@@ -311,6 +311,49 @@ class IngredientSubstitutionService:
             
             updated_recipe['ingredients'] = ingredients
             
+            # CRITICAL FIX: Also update instructions to replace ingredient name
+            instructions = updated_recipe.get('instructions', [])
+            if instructions:
+                original_name_lower = original_ingredient_name.lower()
+                substitution_name = substitution.get('name', '')
+                
+                # Update instructions - handle both string and dict formats
+                updated_instructions = []
+                for instruction in instructions:
+                    if isinstance(instruction, dict):
+                        # Instruction is a dict with 'step' and 'description' or similar
+                        description = instruction.get('description', '') or instruction.get('text', '') or str(instruction.get('step', ''))
+                        if description and original_name_lower in description.lower():
+                            # Replace ingredient name in instruction text
+                            import re
+                            # Use word boundary matching to avoid false positives
+                            pattern = r'\b' + re.escape(original_name_lower) + r'\b'
+                            updated_description = re.sub(pattern, substitution_name, description, flags=re.IGNORECASE)
+                            updated_instruction = {**instruction}
+                            if 'description' in instruction:
+                                updated_instruction['description'] = updated_description
+                            elif 'text' in instruction:
+                                updated_instruction['text'] = updated_description
+                            else:
+                                updated_instruction['step'] = updated_description
+                            updated_instructions.append(updated_instruction)
+                        else:
+                            updated_instructions.append(instruction)
+                    elif isinstance(instruction, str):
+                        # Instruction is a plain string
+                        if original_name_lower in instruction.lower():
+                            import re
+                            # Use word boundary matching to avoid false positives
+                            pattern = r'\b' + re.escape(original_name_lower) + r'\b'
+                            updated_instruction = re.sub(pattern, substitution_name, instruction, flags=re.IGNORECASE)
+                            updated_instructions.append(updated_instruction)
+                        else:
+                            updated_instructions.append(instruction)
+                    else:
+                        updated_instructions.append(instruction)
+                
+                updated_recipe['instructions'] = updated_instructions
+            
             # Recalculate nutrition if possible
             # This would typically be done by calling a nutrition recalculation service
             # For now, we'll add a flag indicating nutrition needs recalculation

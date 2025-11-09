@@ -2065,8 +2065,10 @@ def apply_meal_ingredient_substitution(
             substitution=substitution
         )
         
-        # Update recipe_details with updated ingredients
+        # CRITICAL FIX: Update recipe_details with updated ingredients AND instructions
         recipe_details["ingredients"] = updated_recipe.get("ingredients", [])
+        if updated_recipe.get("instructions"):
+            recipe_details["instructions"] = updated_recipe.get("instructions", [])
         recipe_details["nutrition_needs_recalculation"] = True
         
         # Recalculate nutrition if possible

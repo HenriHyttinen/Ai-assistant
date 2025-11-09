@@ -194,19 +194,54 @@ class HybridMealGenerator:
                             if allergen_tag in recipe_tags or allergy in recipe_tags:
                                 skip_recipe = True
                                 break
-                            # Also check recipe text for allergen mentions
-                            if allergy.lower() in recipe_text:
-                                skip_recipe = True
-                                break
+                            # CRITICAL FIX: Use word boundary matching to avoid false positives (e.g., "egg" in "eggplant")
+                            allergy_lower = allergy.lower()
+                            # Create word boundary pattern - match whole words only
+                            import re
+                            # Match allergy as a whole word (not as substring)
+                            pattern = r'\b' + re.escape(allergy_lower) + r'\b'
+                            if re.search(pattern, recipe_text):
+                                # Additional check: exclude common false positives
+                                false_positives = {
+                                    'egg': ['eggplant', 'eggplants', 'eggplant', 'eggnog', 'eggshell'],
+                                    'nut': ['peanut', 'peanuts', 'coconut', 'coconuts'],
+                                    'fish': ['shellfish']
+                                }
+                                is_false_positive = False
+                                if allergy_lower in false_positives:
+                                    for fp in false_positives[allergy_lower]:
+                                        if fp in recipe_text:
+                                            is_false_positive = True
+                                            break
+                                if not is_false_positive:
+                                    skip_recipe = True
+                                    break
                         if skip_recipe:
                             continue
                     
                     # CRITICAL FIX: Filter out recipes with disliked ingredients
                     if disliked_ingredients:
                         recipe_text = f"{recipe.title} {recipe.summary or ''}".lower()
+                        import re
                         for ingredient in disliked_ingredients:
-                            if ingredient.lower() in recipe_text:
-                                continue  # Skip this recipe
+                            ingredient_lower = ingredient.lower()
+                            # Use word boundary matching to avoid false positives
+                            pattern = r'\b' + re.escape(ingredient_lower) + r'\b'
+                            if re.search(pattern, recipe_text):
+                                # Additional check: exclude common false positives
+                                false_positives = {
+                                    'egg': ['eggplant', 'eggplants', 'eggplant', 'eggnog', 'eggshell'],
+                                    'nut': ['peanut', 'peanuts', 'coconut', 'coconuts'],
+                                    'fish': ['shellfish']
+                                }
+                                is_false_positive = False
+                                if ingredient_lower in false_positives:
+                                    for fp in false_positives[ingredient_lower]:
+                                        if fp in recipe_text:
+                                            is_false_positive = True
+                                            break
+                                if not is_false_positive:
+                                    continue  # Skip this recipe
                     
                     # CRITICAL FIX: Filter by dietary preferences
                     if dietary_prefs:

@@ -897,15 +897,25 @@ const NutritionPreferences: React.FC<NutritionPreferencesProps> = ({
               <Text fontWeight="semibold">{t('preferredMealTimes', 'en')}</Text>
               
               <VStack spacing={3} align="stretch">
-                {Object.entries(formData.preferred_meal_times).map(([meal, time]) => (
-                  <HStack key={meal} spacing={3}>
+                {Object.entries(formData.preferred_meal_times).map(([meal, time], index) => (
+                  <HStack key={`meal-${index}-${meal}`} spacing={3}>
                     <FormControl flex={1}>
                       <FormLabel>Meal Name</FormLabel>
                       <Input
-                        value={meal}
+                        defaultValue={meal}
+                        key={`meal-name-${index}-${meal}`}
                         onChange={(e) => {
+                          // Don't update state while typing - only update on blur
+                          // This prevents re-rendering and focus loss
+                        }}
+                        onBlur={(e) => {
+                          // On blur, update the meal name if it changed
                           const newName = e.target.value.trim();
-                          if (newName && newName !== meal) {
+                          if (!newName) {
+                            // If empty, revert to original
+                            e.target.value = meal;
+                          } else if (newName !== meal) {
+                            // Update if changed
                             const newTimes = { ...formData.preferred_meal_times };
                             newTimes[newName] = newTimes[meal];
                             delete newTimes[meal];
