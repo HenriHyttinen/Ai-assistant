@@ -52,54 +52,7 @@ This platform helps users track their health metrics, plan meals, and manage the
 
 **For detailed setup instructions, see [SETUP_FOR_REVIEWERS.md](./SETUP_FOR_REVIEWERS.md)**
 
-### Docker Setup (Recommended)
-
-If you have Docker and Docker Compose installed, this is the easiest way to get started:
-
-**Note:** If you get a "Permission denied" error, you need to add your user to the docker group:
-```bash
-sudo usermod -aG docker $USER
-# Then log out and log back in, or run: newgrp docker
-```
-
-For detailed Docker setup instructions, see [DOCKER_SETUP.md](./DOCKER_SETUP.md)
-
-```bash
-# Clone the repository
-git clone <repository-url>
-cd numbers-dont-lie
-
-# Build and start all services
-docker-compose up --build
-
-# Or run in detached mode
-docker-compose up -d --build
-```
-
-This will start:
-- PostgreSQL database on port 5433
-- Redis cache on port 6379
-- Backend API on port 8000
-- Frontend on port 80 (via nginx)
-
-The application will be available at:
-- Frontend: http://localhost
-- Backend API: http://localhost:8000
-- API Documentation: http://localhost:8000/docs
-
-To stop the services:
-```bash
-docker-compose down
-```
-
-To seed recipes and ingredients (optional, takes a few minutes):
-```bash
-docker-compose exec app bash -c "cd /app/backend && SEED_RECIPES=true python scripts/comprehensive_seeder.py"
-```
-
-Or set `SEED_RECIPES=true` in docker-compose.yml environment section to seed automatically on startup.
-
-### Manual Setup
+### Manual Setup (Required)
 
 #### 1. Backend Setup
 

@@ -60,7 +60,7 @@ class ShoppingListService:
             db.flush()
             
             # Extract and aggregate ingredients from all meals
-            aggregated_ingredients = self._extract_ingredients_from_meals(meals)
+            aggregated_ingredients = self._extract_ingredients_from_meals(meals, db)
             
             # Create shopping list items
             for ingredient_data in aggregated_ingredients:
@@ -125,7 +125,7 @@ class ShoppingListService:
             db.flush()
             
             # Extract ingredients from the single meal
-            aggregated_ingredients = self._extract_ingredients_from_meals([meal])
+            aggregated_ingredients = self._extract_ingredients_from_meals([meal], db)
             
             # Create shopping list items
             for ingredient_data in aggregated_ingredients:
@@ -193,7 +193,7 @@ class ShoppingListService:
             db.flush()
             
             # Extract and aggregate ingredients from filtered meals
-            aggregated_ingredients = self._extract_ingredients_from_meals(meals)
+            aggregated_ingredients = self._extract_ingredients_from_meals(meals, db)
             
             # Create shopping list items
             for ingredient_data in aggregated_ingredients:
@@ -218,9 +218,10 @@ class ShoppingListService:
             logger.error(f"Error generating shopping list from meal types: {str(e)}")
             raise
     
-    def _extract_ingredients_from_meals(self, meals: List[MealPlanMeal]) -> List[Dict[str, Any]]:
+    def _extract_ingredients_from_meals(self, meals: List[MealPlanMeal], db: Session) -> List[Dict[str, Any]]:
         """
         Extract and aggregate ingredients from a list of meals
+        CRITICAL FIX: Look up actual ingredient IDs from database or create missing ingredients
         """
         ingredient_aggregator = defaultdict(lambda: {
             'total_quantity': 0,
@@ -238,25 +239,34 @@ class ShoppingListService:
                 
                 for ingredient in ingredients:
                     if isinstance(ingredient, dict) and 'name' in ingredient:
-                        ingredient_name = ingredient['name'].lower().strip()
+                        ingredient_name = ingredient['name'].strip()
                         quantity = float(ingredient.get('quantity', 0))
                         unit = ingredient.get('unit', 'g')
                         
-                        # Use ingredient name as ID for now (in a real system, you'd have proper ingredient IDs)
-                        ingredient_id = f"ing_{ingredient_name.replace(' ', '_')}"
+                        # CRITICAL FIX: Look up ingredient in database by name
+                        ingredient_id = self._get_or_create_ingredient_id(db, ingredient_name, unit)
                         
+                        if not ingredient_id:
+                            # Skip if we can't find or create the ingredient
+                            logger.warning(f"Skipping ingredient '{ingredient_name}' - not found in database and couldn't create")
+                            continue
+                        
+                        # Use ingredient_id as the key for aggregation
                         if ingredient_id in ingredient_aggregator:
                             # Aggregate quantities
                             ingredient_aggregator[ingredient_id]['total_quantity'] += quantity
                             ingredient_aggregator[ingredient_id]['meals_used_in'].append(meal.meal_name)
                         else:
-                            # First occurrence
+                            # First occurrence - get category from database if available
+                            db_ingredient = db.query(Ingredient).filter(Ingredient.id == ingredient_id).first()
+                            category = db_ingredient.category if db_ingredient else self._categorize_ingredient(ingredient_name)
+                            
                             ingredient_aggregator[ingredient_id] = {
                                 'ingredient_id': ingredient_id,
-                                'ingredient_name': ingredient['name'],
+                                'ingredient_name': ingredient_name,
                                 'total_quantity': quantity,
                                 'unit': unit,
-                                'category': self._categorize_ingredient(ingredient['name']),
+                                'category': category,
                                 'meals_used_in': [meal.meal_name]
                             }
         
@@ -270,6 +280,95 @@ class ShoppingListService:
                 result.append(ingredient_data)
         
         return result
+    
+    def _get_or_create_ingredient_id(self, db: Session, ingredient_name: str, unit: str) -> Optional[str]:
+        """
+        Get ingredient ID from database by name, or create a new ingredient if not found
+        Returns the ingredient ID or None if creation fails
+        """
+        try:
+            # First, try to find by exact name match (case-insensitive)
+            ingredient = db.query(Ingredient).filter(
+                Ingredient.name.ilike(ingredient_name.strip())
+            ).first()
+            
+            if ingredient:
+                return ingredient.id
+            
+            # Try to find by partial match (in case of variations like "pork" vs "pork shoulder")
+            cleaned_name = ingredient_name.lower().strip()
+            # Try matching the main word(s) - split by common separators
+            name_parts = cleaned_name.replace('(', ' ').replace(')', ' ').replace(',', ' ').split()
+            if name_parts:
+                # Try matching with the first significant word (skip common words like "the", "a", "of")
+                significant_words = [w for w in name_parts if len(w) > 2 and w not in ['the', 'and', 'or', 'of', 'for']]
+                if significant_words:
+                    main_word = significant_words[0]
+                    ingredient = db.query(Ingredient).filter(
+                        Ingredient.name.ilike(f"%{main_word}%")
+                    ).first()
+                    
+                    if ingredient:
+                        logger.info(f"Matched '{ingredient_name}' to existing ingredient '{ingredient.name}' (ID: {ingredient.id})")
+                        return ingredient.id
+            
+            # If not found, create a new ingredient with proper ID format (ing_{number})
+            # Get the highest existing ingredient ID number
+            # Query all ingredients with ing_ prefix and find max number
+            all_ingredients = db.query(Ingredient).filter(Ingredient.id.like('ing_%')).all()
+            max_id = 0
+            for ing in all_ingredients:
+                try:
+                    # Extract number from ID like "ing_123"
+                    num_str = ing.id.split('_')[1] if '_' in ing.id else None
+                    if num_str and num_str.isdigit():
+                        num = int(num_str)
+                        if num > max_id:
+                            max_id = num
+                except:
+                    continue
+            
+            # Generate new ID
+            new_id = max_id + 1
+            ingredient_id = f"ing_{new_id}"
+            
+            # Double-check ID doesn't exist (race condition protection)
+            existing = db.query(Ingredient).filter(Ingredient.id == ingredient_id).first()
+            if existing:
+                # If it exists, find the next available ID
+                while existing:
+                    new_id += 1
+                    ingredient_id = f"ing_{new_id}"
+                    existing = db.query(Ingredient).filter(Ingredient.id == ingredient_id).first()
+            
+            # Create new ingredient
+            category = self._categorize_ingredient(ingredient_name)
+            new_ingredient = Ingredient(
+                id=ingredient_id,
+                name=ingredient_name,
+                category=category,
+                unit=unit if unit else 'g',
+                default_quantity=100.0,
+                calories=0.0,
+                protein=0.0,
+                carbs=0.0,
+                fats=0.0,
+                fiber=0.0,
+                sugar=0.0,
+                sodium=0.0
+            )
+            
+            db.add(new_ingredient)
+            db.flush()  # Flush to get the ID without committing
+            
+            logger.info(f"Created new ingredient '{ingredient_name}' with ID '{ingredient_id}'")
+            return ingredient_id
+            
+        except Exception as e:
+            logger.error(f"Error getting/creating ingredient '{ingredient_name}': {str(e)}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return None
     
     def _categorize_ingredient(self, ingredient_name: str) -> str:
         """
