@@ -74,6 +74,12 @@ These are used for data maintenance and fixes:
 - `fix_recipe_parsing.py` - Fix recipe parsing issues
 - `recalculate_recipe_nutrition.py` - Recalculate nutrition from ingredients
 - `add_per_serving_nutrition.py` - Add per-serving nutrition
+- `improve_recipe_data.py` ⭐ - **Improve generic recipe names and instructions using AI**
+  - **Purpose**: Replaces generic names like "Recipe 101" with descriptive names and generic instructions with actual cooking instructions
+  - **When to use**: If you notice recipes with generic names or placeholder instructions
+  - **Usage**: `python scripts/improve_recipe_data.py [--limit N] [--dry-run]`
+  - **Time**: ~10-30 minutes (depends on recipe count and API rate limits)
+  - **Note**: Uses OpenAI API to generate better recipe names and instructions based on ingredients, cuisine, and meal type
 
 ### Ingredient Fixes
 - `populate_ingredient_micronutrients.py` - Add micronutrient data

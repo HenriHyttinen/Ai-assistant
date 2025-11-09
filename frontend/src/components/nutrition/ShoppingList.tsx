@@ -81,7 +81,7 @@ const ShoppingListItem: React.FC<ShoppingListItemProps> = ({
           onChange={() => onTogglePurchased(item.id)}
         />
         <VStack align="start" spacing={0} flex={1}>
-          <Text fontWeight="medium">{item.name || toHumanName(item.ingredient_id)}</Text>
+          <Text fontWeight="medium">{item.ingredient_name || item.name || toHumanName(item.ingredient_id)}</Text>
           <HStack spacing={2}>
             <Badge size="sm" colorScheme="blue">{item.category}</Badge>
             {item.notes && (
@@ -741,7 +741,7 @@ const ShoppingList: React.FC<ShoppingListProps> = ({
                               onChange={() => handleTogglePurchased(list.id, item.id)}
                             />
                             <Text fontSize="sm">
-                              {toHumanName(item.ingredient_id)} ({item.quantity} {item.unit})
+                              {item.ingredient_name || item.name || toHumanName(item.ingredient_id)} ({item.quantity} {item.unit})
                             </Text>
                             <Badge size="sm" colorScheme="blue">{item.category}</Badge>
                           </HStack>
