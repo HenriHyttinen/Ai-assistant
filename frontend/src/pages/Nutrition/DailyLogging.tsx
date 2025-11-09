@@ -70,6 +70,7 @@ const DailyLogging: React.FC = () => {
   const [entries, setEntries] = useState<FoodEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [editingEntry, setEditingEntry] = useState<FoodEntry | null>(null);
+  const [loggedDates, setLoggedDates] = useState<Set<string>>(new Set());
   const [newEntry, setNewEntry] = useState<Partial<FoodEntry>>({
     food_name: '',
     quantity: 1,
@@ -136,6 +137,54 @@ const DailyLogging: React.FC = () => {
   useEffect(() => {
     loadDailyLog();
   }, [loadDailyLog]);
+
+  // Load logged dates to show which days have been logged
+  const loadLoggedDates = useCallback(async () => {
+    try {
+      const { supabase } = await import('../../lib/supabase.ts');
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session?.access_token) {
+        return;
+      }
+      
+      // Fetch recent logs (last 60 days) to get all logged dates
+      const response = await fetch(
+        `http://localhost:8000/daily-logging/recent-logs?days=60`,
+        {
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+      
+      if (response.ok) {
+        const logs = await response.json();
+        // Extract unique dates from logs
+        const dates = new Set<string>();
+        logs.forEach((log: any) => {
+          if (log.log_date) {
+            dates.add(log.log_date);
+          }
+        });
+        setLoggedDates(dates);
+      }
+    } catch (error) {
+      console.error('Error loading logged dates:', error);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadLoggedDates();
+  }, [loadLoggedDates]);
+
+  // Reload logged dates when entries are saved
+  useEffect(() => {
+    if (entries.length > 0) {
+      loadLoggedDates();
+    }
+  }, [entries.length, loadLoggedDates]);
   
   // Listen for daily log updates from meal planning
   useEffect(() => {
@@ -205,6 +254,8 @@ const DailyLogging: React.FC = () => {
           isClosable: true,
         });
         loadDailyLog();
+        // CRITICAL FIX: Update logged dates after saving
+        setLoggedDates(prev => new Set([...prev, selectedDate]));
       } else {
         throw new Error('Failed to save daily log');
       }
@@ -394,24 +445,64 @@ const DailyLogging: React.FC = () => {
       {/* Date Selection */}
       <Card bg={cardBg} borderColor={borderColor} mb={6}>
         <CardBody>
-          <HStack spacing={4}>
-            <FormControl>
-              <FormLabel>Select Date</FormLabel>
-              <Input
-                type="date"
-                value={selectedDate}
-                onChange={(e) => setSelectedDate(e.target.value)}
-              />
-            </FormControl>
-            <Button
-              colorScheme="blue"
-              onClick={saveDailyLog}
-              isLoading={loading}
-              isDisabled={entries.length === 0}
-            >
-              Save Log
-            </Button>
-          </HStack>
+          <VStack spacing={4} align="stretch">
+            <HStack spacing={4}>
+              <FormControl>
+                <FormLabel>Select Date</FormLabel>
+                <Input
+                  type="date"
+                  value={selectedDate}
+                  onChange={(e) => setSelectedDate(e.target.value)}
+                />
+              </FormControl>
+              <Button
+                colorScheme="blue"
+                onClick={saveDailyLog}
+                isLoading={loading}
+                isDisabled={entries.length === 0}
+              >
+                Save Log
+              </Button>
+            </HStack>
+            
+            {/* CRITICAL FIX: Show which days are logged */}
+            {loggedDates.size > 0 && (
+              <Box>
+                <Text fontSize="sm" color="gray.600" mb={2}>
+                  Logged Days (last 60 days):
+                </Text>
+                <HStack spacing={2} wrap="wrap">
+                  {Array.from(loggedDates)
+                    .sort()
+                    .reverse()
+                    .slice(0, 30)
+                    .map((date) => (
+                      <Badge
+                        key={date}
+                        colorScheme={date === selectedDate ? 'blue' : 'green'}
+                        variant={date === selectedDate ? 'solid' : 'subtle'}
+                        cursor="pointer"
+                        onClick={() => setSelectedDate(date)}
+                        _hover={{ opacity: 0.8 }}
+                        px={2}
+                        py={1}
+                        borderRadius="md"
+                      >
+                        {new Date(date).toLocaleDateString('en-US', { 
+                          month: 'short', 
+                          day: 'numeric' 
+                        })}
+                      </Badge>
+                    ))}
+                  {loggedDates.size > 30 && (
+                    <Badge colorScheme="gray" variant="subtle" px={2} py={1}>
+                      +{loggedDates.size - 30} more
+                    </Badge>
+                  )}
+                </HStack>
+              </Box>
+            )}
+          </VStack>
         </CardBody>
       </Card>
       

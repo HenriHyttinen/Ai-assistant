@@ -59,6 +59,7 @@ const NutritionPreferences: React.FC<NutritionPreferencesProps> = ({
     },
     timezone: 'UTC'
   });
+  const [dislikedIngredientsInput, setDislikedIngredientsInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const toast = useToast();
@@ -120,6 +121,8 @@ const NutritionPreferences: React.FC<NutritionPreferencesProps> = ({
         preferred_meal_times: convertedMealTimes,
         timezone: preferences.timezone || 'UTC'
       });
+      // Clear the input field when preferences are loaded
+      setDislikedIngredientsInput('');
     }
   }, [preferences]);
 
@@ -499,19 +502,92 @@ const NutritionPreferences: React.FC<NutritionPreferencesProps> = ({
             <FormControl>
               <FormLabel>Disliked Ingredients:</FormLabel>
               <Input
-                placeholder="Enter ingredients you dislike (comma or space-separated)"
-                value={formData.disliked_ingredients.join(', ')}
+                placeholder="Enter ingredients you dislike (comma or space-separated, press Enter to add)"
+                value={dislikedIngredientsInput}
                 onChange={(e) => {
-                  // Split by comma first, then by space for each part
-                  const value = e.target.value;
-                  const ingredients = value
-                    .split(',')
-                    .flatMap(part => part.split(/\s+/))
-                    .map(i => i.trim())
-                    .filter(i => i.length > 0);
-                  handleArrayChange('disliked_ingredients', ingredients);
+                  setDislikedIngredientsInput(e.target.value);
+                }}
+                onKeyDown={(e) => {
+                  // Allow Enter key or comma to add current input as new ingredient(s)
+                  if (e.key === 'Enter' || e.key === ',') {
+                    e.preventDefault();
+                    const value = dislikedIngredientsInput.trim();
+                    if (value) {
+                      // Split by comma first, then by space for each part
+                      const newIngredients = value
+                        .split(',')
+                        .flatMap(part => part.split(/\s+/))
+                        .map(i => i.trim())
+                        .filter(i => i.length > 0 && !formData.disliked_ingredients.includes(i.toLowerCase()));
+                      
+                      if (newIngredients.length > 0) {
+                        handleArrayChange('disliked_ingredients', [
+                          ...formData.disliked_ingredients,
+                          ...newIngredients.map(i => i.toLowerCase())
+                        ]);
+                        setDislikedIngredientsInput('');
+                      }
+                    }
+                  }
+                }}
+                onBlur={() => {
+                  // Also add ingredients when user leaves the field
+                  const value = dislikedIngredientsInput.trim();
+                  if (value) {
+                    const newIngredients = value
+                      .split(',')
+                      .flatMap(part => part.split(/\s+/))
+                      .map(i => i.trim())
+                      .filter(i => i.length > 0 && !formData.disliked_ingredients.includes(i.toLowerCase()));
+                    
+                    if (newIngredients.length > 0) {
+                      handleArrayChange('disliked_ingredients', [
+                        ...formData.disliked_ingredients,
+                        ...newIngredients.map(i => i.toLowerCase())
+                      ]);
+                      setDislikedIngredientsInput('');
+                    }
+                  }
                 }}
               />
+              {formData.disliked_ingredients.length > 0 && (
+                <Box mt={3}>
+                  <Text fontSize="sm" color="gray.600" mb={2}>
+                    Your disliked ingredients:
+                  </Text>
+                  <HStack spacing={2} wrap="wrap">
+                    {formData.disliked_ingredients.map((ingredient, index) => (
+                      <Badge
+                        key={index}
+                        colorScheme="red"
+                        variant="subtle"
+                        fontSize="sm"
+                        px={3}
+                        py={1}
+                        borderRadius="full"
+                        display="flex"
+                        alignItems="center"
+                        gap={2}
+                      >
+                        {ingredient}
+                        <Button
+                          size="xs"
+                          variant="ghost"
+                          colorScheme="red"
+                          onClick={() => {
+                            const updated = formData.disliked_ingredients.filter((_, i) => i !== index);
+                            handleArrayChange('disliked_ingredients', updated);
+                          }}
+                          aria-label={`Remove ${ingredient}`}
+                          _hover={{ bg: 'red.100' }}
+                        >
+                          ×
+                        </Button>
+                      </Badge>
+                    ))}
+                  </HStack>
+                </Box>
+              )}
             </FormControl>
           </CardBody>
         </Card>

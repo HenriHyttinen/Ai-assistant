@@ -385,14 +385,35 @@ const ShoppingList: React.FC<ShoppingListProps> = ({
 
       if (response.ok) {
         // Update local state
-        setLists(prev => prev.map(list => ({
-          ...list,
-          items: list.items?.map((item: any) => 
+        setLists(prev => prev.map(list => {
+          const updatedItems = list.items?.map((item: any) => 
             item.id === itemId 
-              ? { ...item, purchased: !item.purchased }
+              ? { ...item, purchased: !item.purchased, is_purchased: !(item.purchased || item.is_purchased) }
               : item
-          )
-        })));
+          ) || [];
+          return {
+            ...list,
+            items: updatedItems,
+            purchased_items: updatedItems.filter((item: any) => item.is_purchased || item.purchased).length
+          };
+        }));
+        
+        // CRITICAL FIX: Also update selectedList if it's open
+        if (selectedList) {
+          setSelectedList(prev => {
+            if (!prev) return prev;
+            const updatedItems = (prev.items || []).map((item: any) => 
+              item.id === itemId 
+                ? { ...item, purchased: !item.purchased, is_purchased: !(item.purchased || item.is_purchased) }
+                : item
+            );
+            return {
+              ...prev,
+              items: updatedItems,
+              purchased_items: updatedItems.filter((item: any) => item.is_purchased || item.purchased).length
+            };
+          });
+        }
         
         toast({
           title: 'Item status updated!',
@@ -431,10 +452,25 @@ const ShoppingList: React.FC<ShoppingListProps> = ({
         setLists(prev => {
           const updated = prev.map(list => ({
             ...list,
-            items: (list.items || []).filter((item: any) => String(item.id) !== String(itemId))
+            items: (list.items || []).filter((item: any) => String(item.id) !== String(itemId)),
+            total_items: (list.total_items || 0) - 1
           }));
           return updated;
         });
+        
+        // CRITICAL FIX: Also update selectedList if it's the same list
+        if (selectedList) {
+          setSelectedList(prev => {
+            if (!prev) return prev;
+            const updatedItems = (prev.items || []).filter((item: any) => String(item.id) !== String(itemId));
+            return {
+              ...prev,
+              items: updatedItems,
+              total_items: updatedItems.length,
+              purchased_items: updatedItems.filter((item: any) => item.is_purchased || item.purchased).length
+            };
+          });
+        }
         
         // Also trigger parent update if available
         if (onUpdate) {
@@ -486,6 +522,21 @@ const ShoppingList: React.FC<ShoppingListProps> = ({
           )
         })));
         
+        // CRITICAL FIX: Also update selectedList if it's the same list
+        if (selectedList) {
+          setSelectedList(prev => {
+            if (!prev) return prev;
+            return {
+              ...prev,
+              items: (prev.items || []).map((item: any) => 
+                item.id === itemId 
+                  ? { ...item, quantity: newQuantity }
+                  : item
+              )
+            };
+          });
+        }
+        
         toast({
           title: 'Quantity updated!',
           status: 'success',
@@ -528,10 +579,30 @@ const ShoppingList: React.FC<ShoppingListProps> = ({
                   item.id === itemId 
                     ? { ...item, is_purchased: !item.is_purchased }
                     : item
-                ) || []
+                ) || [],
+                purchased_items: list.items?.filter((item: any) => 
+                  item.id === itemId ? !item.is_purchased : (item.is_purchased || item.purchased)
+                ).length || 0
               }
             : list
         ));
+        
+        // CRITICAL FIX: Also update selectedList if it's the same list
+        if (selectedList && selectedList.id === listId) {
+          setSelectedList(prev => {
+            if (!prev) return prev;
+            const updatedItems = (prev.items || []).map((item: any) => 
+              item.id === itemId 
+                ? { ...item, is_purchased: !item.is_purchased }
+                : item
+            );
+            return {
+              ...prev,
+              items: updatedItems,
+              purchased_items: updatedItems.filter((item: any) => item.is_purchased || item.purchased).length
+            };
+          });
+        }
       }
     } catch (error) {
       console.error('Error toggling purchased status:', error);

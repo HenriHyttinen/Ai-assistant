@@ -102,6 +102,7 @@ const MacronutrientVisualization: React.FC<MacronutrientVisualizationProps> = ({
   const [selectedMacro, setSelectedMacro] = useState<'all' | 'protein' | 'carbs' | 'fats'>('all');
   const [isContainerReady, setIsContainerReady] = useState(false);
   const containerRef = React.useRef<HTMLDivElement>(null);
+  const chartCardRef = React.useRef<HTMLDivElement>(null);
   
   // Ensure container is ready before rendering charts
   React.useEffect(() => {
@@ -331,21 +332,39 @@ const MacronutrientVisualization: React.FC<MacronutrientVisualizationProps> = ({
               <ButtonGroup size="sm" isAttached variant="outline">
                 <Button
                   leftIcon={<FiPieChart />}
-                  onClick={() => setChartType('pie')}
+                  onClick={() => {
+                    setChartType('pie');
+                    // CRITICAL FIX: Scroll to graph when chart type changes
+                    setTimeout(() => {
+                      chartCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }, 100);
+                  }}
                   colorScheme={chartType === 'pie' ? 'blue' : undefined}
                 >
                   Pie
                 </Button>
                 <Button
                   leftIcon={<FiBarChart />}
-                  onClick={() => setChartType('bar')}
+                  onClick={() => {
+                    setChartType('bar');
+                    // CRITICAL FIX: Scroll to graph when chart type changes
+                    setTimeout(() => {
+                      chartCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }, 100);
+                  }}
                   colorScheme={chartType === 'bar' ? 'blue' : undefined}
                 >
                   Bar
                 </Button>
                 <Button
                   leftIcon={<FiTrendingUp />}
-                  onClick={() => setChartType('trend')}
+                  onClick={() => {
+                    setChartType('trend');
+                    // CRITICAL FIX: Scroll to graph when chart type changes
+                    setTimeout(() => {
+                      chartCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }, 100);
+                  }}
                   colorScheme={chartType === 'trend' ? 'blue' : undefined}
                   isDisabled={dailyBreakdown.length === 0}
                 >
@@ -358,7 +377,13 @@ const MacronutrientVisualization: React.FC<MacronutrientVisualizationProps> = ({
                 <Select
                   size="sm"
                   value={period}
-                  onChange={(e) => onPeriodChange(e.target.value as any)}
+                  onChange={(e) => {
+                    onPeriodChange(e.target.value as any);
+                    // CRITICAL FIX: Scroll to graph when period changes
+                    setTimeout(() => {
+                      chartCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }, 100);
+                  }}
                   width="120px"
                 >
                   <option value="daily">Daily</option>
@@ -372,7 +397,7 @@ const MacronutrientVisualization: React.FC<MacronutrientVisualizationProps> = ({
       </Card>
 
       {/* Main visualization */}
-      <Card bg={cardBg} borderColor={borderColor}>
+      <Card bg={cardBg} borderColor={borderColor} ref={chartCardRef}>
         <CardBody>
           <Box height="400px" minHeight="300px" minWidth="300px" width="100%">
             {isContainerReady && chartType === 'pie' && pieChartData.length > 0 && (
