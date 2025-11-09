@@ -1674,10 +1674,16 @@ Return ONLY minified JSON (no markdown):
         
         try:
             # Add timeout to prevent hanging
+            # Build system message based on dietary restrictions
+            dietary_prefs = prompt.split('🚫🚫🚫')[1].split('🚫🚫🚫')[0] if '🚫🚫🚫' in prompt else ""
+            system_message = "Output ONLY valid minified JSON matching the requested schema. No markdown, no extra text."
+            if dietary_prefs:
+                system_message += f"\n\nCRITICAL: {dietary_prefs[:200]}"
+            
             response = self.openai_client.chat.completions.create(
                 model="gpt-3.5-turbo",
                 messages=[
-                    {"role": "system", "content": "Output ONLY valid minified JSON matching the requested schema. No markdown, no extra text."},
+                    {"role": "system", "content": system_message},
                     {"role": "user", "content": prompt}
                 ],
                 temperature=temperature,
@@ -1810,7 +1816,23 @@ Return ONLY minified JSON (no markdown):
             # Add explicit avoidance instructions if retrying
             explicit_avoid = ""
             if meal_data.get('explicit_avoid_allergens'):
-                explicit_avoid += f"\n\nCRITICAL: Previous attempt included these FORBIDDEN allergens: {', '.join(meal_data['explicit_avoid_allergens'])}\nDO NOT include these allergens in ANY form - use substitutes instead.\n"
+                avoid_allergens = meal_data['explicit_avoid_allergens']
+                # CRITICAL FIX: Map violation types to specific forbidden ingredients
+                violation_mappings = {
+                    'vegan_violation': 'meat, fish, eggs, dairy, honey - NO animal products at all. Use plant-based substitutes like tofu, tempeh, legumes, nuts, seeds, plant-based milk, etc.',
+                    'vegetarian_violation': 'meat, fish, poultry - NO meat or fish. Eggs and dairy are OK, but NO chicken, beef, pork, lamb, turkey, fish, seafood, etc.',
+                    'pescatarian_violation': 'meat, poultry - NO meat or poultry. Fish and seafood are OK, but NO chicken, beef, pork, lamb, turkey, etc.'
+                }
+                
+                avoid_instructions = []
+                for allergen in avoid_allergens:
+                    if allergen in violation_mappings:
+                        avoid_instructions.append(f"FORBIDDEN: {violation_mappings[allergen]}")
+                    else:
+                        avoid_instructions.append(f"FORBIDDEN: {allergen} - DO NOT include in ANY form")
+                
+                explicit_avoid += f"\n\nCRITICAL: Previous attempt violated dietary requirements. ABSOLUTELY FORBIDDEN:\n" + "\n".join(f"  - {inst}" for inst in avoid_instructions) + "\nUse substitutes instead.\n"
+            
             if meal_data.get('explicit_avoid_ingredients'):
                 explicit_avoid += f"\n\nCRITICAL: Previous attempt included these DISLIKED ingredients: {', '.join(meal_data['explicit_avoid_ingredients'])}\nDO NOT include these ingredients - use substitutes instead.\n"
             
@@ -1844,9 +1866,62 @@ Return ONLY minified JSON (no markdown):
                     else:
                         allergy_instructions += f"    - DO NOT use {allergy_lower} or ANY {allergy_lower}-based ingredients\n"
             
-            # Simplified prompt - focus on recipe quality, let post-processing handle exact calories
-            prompt = f"""Generate a single {meal_type} recipe (~{target_calories} calories, {target_cuisine} cuisine).
+            # CRITICAL: Build dietary restrictions section FIRST and make it the most prominent
+            dietary_restrictions_section = ""
+            dietary_prefs = user_preferences.get('dietary_preferences', [])
+            dietary_prefs_lower = [p.lower() for p in dietary_prefs]
+            
+            if 'vegan' in dietary_prefs_lower:
+                dietary_restrictions_section = """
+🚫🚫🚫 CRITICAL DIETARY RESTRICTION: USER IS VEGAN 🚫🚫🚫
+YOU MUST CREATE A 100% PLANT-BASED RECIPE. ABSOLUTELY NO ANIMAL PRODUCTS ALLOWED.
+
+FORBIDDEN INGREDIENTS (DO NOT USE IN ANY FORM):
+- NO MEAT: chicken, beef, pork, lamb, turkey, bacon, ham, sausage, chorizo, mince, meat, poultry, duck, goose, venison, bison, steak, burger, patty
+- NO FISH: fish, salmon, tuna, cod, sardines, anchovies, mackerel, trout, shrimp, prawn, crab, lobster, mussels, oysters, scallops, clams, shellfish, seafood
+- NO EGGS: egg, eggs, scrambled eggs, fried eggs, boiled eggs, poached eggs, egg whites, egg yolks
+- NO DAIRY: milk, cheese, butter, yogurt, cream, whey, casein, mozzarella, cheddar, feta, parmesan, gouda, brie, ricotta
+- NO HONEY: honey, bee pollen, royal jelly
+
+ALLOWED INGREDIENTS (USE THESE INSTEAD):
+- Vegetables, fruits, grains, legumes, nuts, seeds, tofu, tempeh, plant-based milk, plant-based cheese, plant-based butter
+
+IF YOU INCLUDE ANY FORBIDDEN INGREDIENT, THE RECIPE WILL BE REJECTED AND YOU WILL HAVE TO START OVER.
+"""
+            elif 'vegetarian' in dietary_prefs_lower:
+                dietary_restrictions_section = """
+🚫🚫🚫 CRITICAL DIETARY RESTRICTION: USER IS VEGETARIAN 🚫🚫🚫
+YOU MUST CREATE A RECIPE WITHOUT MEAT OR FISH. EGGS AND DAIRY ARE ALLOWED.
+
+FORBIDDEN INGREDIENTS (DO NOT USE IN ANY FORM):
+- NO MEAT: chicken, beef, pork, lamb, turkey, bacon, ham, sausage, chorizo, mince, meat, poultry, duck, goose, venison, bison, steak, burger, patty
+- NO FISH: fish, salmon, tuna, cod, sardines, anchovies, mackerel, trout, shrimp, prawn, crab, lobster, mussels, oysters, scallops, clams, shellfish, seafood
+
+ALLOWED INGREDIENTS:
+- Eggs, dairy (milk, cheese, butter, yogurt), vegetables, fruits, grains, legumes, nuts, seeds, tofu, tempeh
+
+IF YOU INCLUDE ANY FORBIDDEN INGREDIENT, THE RECIPE WILL BE REJECTED AND YOU WILL HAVE TO START OVER.
+"""
+            
+            # Determine dietary tags example based on user preferences
+            if 'vegan' in dietary_prefs_lower:
+                dietary_tags_example = 'CRITICAL: For dietary_tags, use ONLY plant-based tags like ["dairy-free", "gluten-free", "vegan"] - DO NOT use "contains-meat", "contains-fish", "contains-egg", or "contains-dairy"'
+                dietary_tags_example_list = '["dairy-free", "vegan"]'
+            elif 'vegetarian' in dietary_prefs_lower:
+                dietary_tags_example = 'CRITICAL: For dietary_tags, use tags like ["vegetarian", "dairy-free"] - DO NOT use "contains-meat" or "contains-fish"'
+                dietary_tags_example_list = '["vegetarian"]'
+            else:
+                dietary_tags_example = 'For dietary_tags, use tags based on actual ingredients like ["contains-meat"], ["contains-fish"], ["dairy-free"], etc.'
+                dietary_tags_example_list = '["contains-meat"]'
+            
+            # CRITICAL: Make dietary restrictions even more prominent and explicit
+            # Put them at the very top and repeat them multiple times
+            prompt = f"""{dietary_restrictions_section}
 {explicit_avoid}
+
+Generate a single {meal_type} recipe (~{target_calories} calories, {target_cuisine} cuisine).
+
+⚠️ CRITICAL REMINDER: {dietary_restrictions_section}
 
 MEAL TYPE: Create a proper {meal_type} ({constraints['description']}).
 - Use: {', '.join(constraints['allowed'][:5])}
@@ -1854,15 +1929,16 @@ MEAL TYPE: Create a proper {meal_type} ({constraints['description']}).
 
 AVOID DUPLICATES: Do not repeat these recent recipes: {', '.join(existing_names[:10]) if existing_names else 'none'}
 
-DIETARY REQUIREMENTS (CRITICAL - STRICTLY ENFORCE):
-- Dietary Preferences: STRICTLY follow these: {', '.join(user_preferences.get('dietary_preferences', [])) or 'NONE (include meat/fish/dairy/eggs)'}
-  * If vegetarian: NO meat, fish, or poultry
-  * If vegan: NO animal products at all
+DIETARY REQUIREMENTS (CRITICAL - STRICTLY ENFORCE - VIOLATIONS WILL CAUSE REJECTION):
+- Dietary Preferences: {', '.join(user_preferences.get('dietary_preferences', [])) or 'NONE (include meat/fish/dairy/eggs)'}
+  * REMEMBER: The dietary restrictions above are MANDATORY. You MUST follow them.
   * If gluten-free: NO wheat, barley, rye, or gluten-containing ingredients
   * If keto: LOW carbs, HIGH fats
+  * CRITICAL: Do NOT add dietary_tags like "CONTAINS-MEAT", "contains-meat", "meat", "fish", "dairy", or "egg" if the user prefers vegan/vegetarian - these tags will cause rejection
 - Allergies: {', '.join(allergies) if allergies else 'NONE'}{allergy_instructions}
 - Disliked Ingredients: STRICTLY avoid these - DO NOT include: {', '.join(user_preferences.get('disliked_ingredients', [])) or 'NONE'}
   * Check ingredient names carefully - if any disliked ingredient appears in the name, use a substitute
+  * Check instructions carefully - do NOT mention disliked ingredients in cooking steps
 
 {similar_recipes_text}
 
@@ -1896,23 +1972,649 @@ Create a {target_cuisine} recipe with:
 - Nutrition: Estimate calories ~{target_calories}, protein ~{int(target_calories * 0.25 / 4)}g, carbs ~{int(target_calories * 0.45 / 4)}g, fats ~{int(target_calories * 0.30 / 9)}g
 
 OUTPUT: Valid minified JSON only (no markdown):
-{{"meal_name":"Authentic Recipe Name","recipe":{{"title":"Authentic Recipe Name","cuisine":"{target_cuisine}","prep_time":15,"cook_time":25,"servings":1,"difficulty":"easy","summary":"Description","ingredients":[{{"name":"protein","quantity":150,"unit":"g"}},{{"name":"vegetable","quantity":100,"unit":"g"}},{{"name":"onion","quantity":50,"unit":"g"}},{{"name":"garlic","quantity":5,"unit":"g"}},{{"name":"herb","quantity":10,"unit":"g"}},{{"name":"oil","quantity":15,"unit":"ml"}}],"instructions":["Step 1: Description","Step 2: Description"],"dietary_tags":["contains-meat"],"nutrition":{{"calories":{target_calories},"protein":25,"carbs":30,"fats":18}},"ai_generated":true}}}}"
+{dietary_tags_example}
+{{"meal_name":"Authentic Recipe Name","recipe":{{"title":"Authentic Recipe Name","cuisine":"{target_cuisine}","prep_time":15,"cook_time":25,"servings":1,"difficulty":"easy","summary":"Description","ingredients":[{{"name":"protein","quantity":150,"unit":"g"}},{{"name":"vegetable","quantity":100,"unit":"g"}},{{"name":"onion","quantity":50,"unit":"g"}},{{"name":"garlic","quantity":5,"unit":"g"}},{{"name":"herb","quantity":10,"unit":"g"}},{{"name":"oil","quantity":15,"unit":"ml"}}],"instructions":["Step 1: Description","Step 2: Description"],"dietary_tags":{dietary_tags_example_list},"nutrition":{{"calories":{target_calories},"protein":25,"carbs":30,"fats":18}},"ai_generated":true}}}}"
 """
 
-            response = self._call_openai_fast(prompt, 0.6)
+            # CRITICAL: Lower temperature for dietary restrictions to ensure compliance
+            # Use 0.3 instead of 0.6 to make it more deterministic and follow restrictions better
+            # GPT-3.5 struggles with complex constraints, so lower temperature helps
+            response = self._call_openai_fast(prompt, 0.3)
             result = self._parse_json_response(response, "meal")
             
             if not result:
                 raise ValueError("Failed to parse AI response")
             
-            # ROOT CAUSE FIX: Post-generation validation - check for allergies and disliked ingredients
+            # ROOT CAUSE FIX: Post-generation validation - check for dietary preferences, allergies, and disliked ingredients
             # This validation checks both recipe text AND individual ingredient names for better detection
+            dietary_preferences = user_preferences.get('dietary_preferences', [])
             allergies = user_preferences.get('allergies', [])
             disliked_ingredients = user_preferences.get('disliked_ingredients', [])
             
-            # CRITICAL: Always log allergies to debug
-            logger.info(f"🔍 Allergy validation check: allergies={allergies}, disliked={disliked_ingredients}")
+            # CRITICAL: Always log preferences to debug
+            logger.info(f"🔍 Validation check: dietary_preferences={dietary_preferences}, allergies={allergies}, disliked={disliked_ingredients}")
             
+            # CRITICAL FIX: Check dietary preferences FIRST (violations are critical)
+            if dietary_preferences:
+                recipe = result.get('recipe', {})
+                ingredients = recipe.get('ingredients', [])
+                # CRITICAL: Check recipe title, summary, meal_name, AND instructions for violations
+                recipe_title = recipe.get('title', '') or result.get('meal_name', '')
+                recipe_summary = recipe.get('summary', '')
+                recipe_instructions = recipe.get('instructions', [])
+                # Combine all instructions into a single string
+                instructions_text = ' '.join([str(inst) for inst in recipe_instructions]) if recipe_instructions else ''
+                recipe_text = f"{recipe_title} {recipe_summary} {instructions_text}".lower()
+                
+                # CRITICAL FIX: Also check dietary_tags for violations
+                # The AI might add tags like "CONTAINS-MEAT" or "contains-meat" which we must check
+                dietary_tags = recipe.get('dietary_tags', []) or result.get('dietary_tags', [])
+                dietary_tags_text = ' '.join([str(tag).lower() for tag in dietary_tags if tag])
+                
+                # Extract ingredient names - CRITICAL FIX: Better extraction to catch all cases
+                ingredient_names = []
+                for ing in ingredients:
+                    if isinstance(ing, dict):
+                        name = str(ing.get('name', '')).lower().strip()
+                        # Remove quantity/unit info (e.g., "eggs - 2unit" -> "eggs")
+                        if ' - ' in name:
+                            name = name.split(' - ')[0].strip()
+                        if ' -' in name:
+                            name = name.split(' -')[0].strip()
+                        if '- ' in name:
+                            name = name.split('- ')[0].strip()
+                        # Remove trailing numbers/units (e.g., "eggs 2" -> "eggs")
+                        import re
+                        name = re.sub(r'\s+\d+.*$', '', name).strip()
+                        if name:
+                            ingredient_names.append(name)
+                    else:
+                        name = str(ing).lower().strip()
+                        # Remove quantity/unit info
+                        if ' - ' in name:
+                            name = name.split(' - ')[0].strip()
+                        if ' -' in name:
+                            name = name.split(' -')[0].strip()
+                        if '- ' in name:
+                            name = name.split('- ')[0].strip()
+                        # Remove trailing numbers/units
+                        import re
+                        name = re.sub(r'\s+\d+.*$', '', name).strip()
+                        if name:
+                            ingredient_names.append(name)
+                
+                # CRITICAL FIX: Include dietary_tags in the text we check for violations
+                all_text = f"{recipe_text} {' '.join(ingredient_names)} {dietary_tags_text}"
+                dietary_prefs_lower = [p.lower() for p in dietary_preferences]
+                import re
+                
+                # CRITICAL FIX: Check dietary_tags FIRST for explicit violations
+                # The AI might add tags like "CONTAINS-MEAT" or "contains-meat" which we must check
+                # BUT we must NOT flag negative tags like "dairy-free", "meat-free" which are actually GOOD
+                tag_violation_found = False
+                tag_violation_type = None
+                if dietary_tags:
+                    for tag in dietary_tags:
+                        tag_lower = str(tag).lower().strip()
+                        # CRITICAL: Only check for POSITIVE tags (contains-X), NOT negative tags (X-free)
+                        # Negative tags like "dairy-free", "meat-free" are GOOD for vegan/vegetarian
+                        # Positive tags like "contains-meat", "contains-dairy" are BAD
+                        
+                        # Check for positive violation tags (contains-X, CONTAINS-X, etc.)
+                        if 'contains-meat' in tag_lower or 'contains_meat' in tag_lower:
+                            if 'vegan' in dietary_prefs_lower or 'vegetarian' in dietary_prefs_lower:
+                                logger.warning(f"⚠️ Generated recipe has MEAT tag '{tag}' but user prefers {'VEGAN' if 'vegan' in dietary_prefs_lower else 'VEGETARIAN'}")
+                                tag_violation_found = True
+                                tag_violation_type = 'meat'
+                                break
+                        # Also check for just "meat" but NOT "meat-free" or "free-meat"
+                        elif 'meat' in tag_lower and 'free' not in tag_lower and 'contains' in tag_lower:
+                            if 'vegan' in dietary_prefs_lower or 'vegetarian' in dietary_prefs_lower:
+                                logger.warning(f"⚠️ Generated recipe has MEAT tag '{tag}' but user prefers {'VEGAN' if 'vegan' in dietary_prefs_lower else 'VEGETARIAN'}")
+                                tag_violation_found = True
+                                tag_violation_type = 'meat'
+                                break
+                        
+                        if 'contains-fish' in tag_lower or 'contains_fish' in tag_lower:
+                            if 'vegan' in dietary_prefs_lower or 'vegetarian' in dietary_prefs_lower:
+                                logger.warning(f"⚠️ Generated recipe has FISH tag '{tag}' but user prefers {'VEGAN' if 'vegan' in dietary_prefs_lower else 'VEGETARIAN'}")
+                                tag_violation_found = True
+                                tag_violation_type = 'fish'
+                                break
+                        # Also check for just "fish" but NOT "fish-free" or "free-fish"
+                        elif 'fish' in tag_lower and 'free' not in tag_lower and 'contains' in tag_lower:
+                            if 'vegan' in dietary_prefs_lower or 'vegetarian' in dietary_prefs_lower:
+                                logger.warning(f"⚠️ Generated recipe has FISH tag '{tag}' but user prefers {'VEGAN' if 'vegan' in dietary_prefs_lower else 'VEGETARIAN'}")
+                                tag_violation_found = True
+                                tag_violation_type = 'fish'
+                                break
+                        
+                        if 'contains-dairy' in tag_lower or 'contains_dairy' in tag_lower:
+                            if 'vegan' in dietary_prefs_lower:
+                                logger.warning(f"⚠️ Generated recipe has DAIRY tag '{tag}' but user prefers VEGAN")
+                                tag_violation_found = True
+                                tag_violation_type = 'dairy'
+                                break
+                        # Also check for just "dairy" but NOT "dairy-free" or "free-dairy"
+                        elif 'dairy' in tag_lower and 'free' not in tag_lower and 'contains' in tag_lower:
+                            if 'vegan' in dietary_prefs_lower:
+                                logger.warning(f"⚠️ Generated recipe has DAIRY tag '{tag}' but user prefers VEGAN")
+                                tag_violation_found = True
+                                tag_violation_type = 'dairy'
+                                break
+                        
+                        if 'contains-egg' in tag_lower or 'contains_egg' in tag_lower or 'contains-eggs' in tag_lower or 'contains_eggs' in tag_lower:
+                            if 'vegan' in dietary_prefs_lower:
+                                logger.warning(f"⚠️ Generated recipe has EGG tag '{tag}' but user prefers VEGAN")
+                                tag_violation_found = True
+                                tag_violation_type = 'eggs'
+                                break
+                        # Also check for just "egg" but NOT "egg-free" or "free-egg"
+                        elif ('egg' in tag_lower or 'eggs' in tag_lower) and 'free' not in tag_lower and 'contains' in tag_lower:
+                            if 'vegan' in dietary_prefs_lower:
+                                logger.warning(f"⚠️ Generated recipe has EGG tag '{tag}' but user prefers VEGAN")
+                                tag_violation_found = True
+                                tag_violation_type = 'eggs'
+                                break
+                
+                # CRITICAL FIX: If tag violation found, skip text-based check and retry immediately
+                if tag_violation_found:
+                    logger.error(f"❌ Generated recipe violates dietary preference via tag (contains {tag_violation_type}) - rejecting and retrying")
+                    meal_data['explicit_avoid_names'] = meal_data.get('explicit_avoid_names', []) + [result.get('meal_name', '')]
+                    if 'vegan' in dietary_prefs_lower:
+                        meal_data['explicit_avoid_allergens'] = meal_data.get('explicit_avoid_allergens', []) + ['vegan_violation']
+                    elif 'vegetarian' in dietary_prefs_lower:
+                        meal_data['explicit_avoid_allergens'] = meal_data.get('explicit_avoid_allergens', []) + ['vegetarian_violation']
+                    retry_count = meal_data.get('retry_count', 0)
+                    if retry_count < 3:
+                        meal_data['retry_count'] = retry_count + 1
+                        return self._generate_single_meal_with_sequential_rag(meal_data, db)
+                    else:
+                        logger.error(f"❌ Failed to generate recipe without {tag_violation_type} after 3 retries")
+                        if 'vegan' in dietary_prefs_lower:
+                            raise ValueError(f"Could not generate recipe without animal products (vegan violation: {tag_violation_type} found in dietary tags)")
+                        elif 'vegetarian' in dietary_prefs_lower:
+                            raise ValueError(f"Could not generate recipe without meat/fish (vegetarian violation: {tag_violation_type} found in dietary tags)")
+                
+                # Check for vegan violations (most restrictive - must be first)
+                if 'vegan' in dietary_prefs_lower:
+                    # Vegan: NO animal products at all (no meat, fish, eggs, dairy, honey, etc.)
+                    vegan_violations = {
+                        'meat': ['chicken', 'beef', 'pork', 'lamb', 'turkey', 'bacon', 'ham', 'sausage', 'chorizo', 'mince', 'meat', 'poultry', 'duck', 'goose', 'venison', 'bison', 'steak', 'burger', 'patty'],
+                        'fish': ['fish', 'salmon', 'tuna', 'cod', 'sardines', 'anchovies', 'mackerel', 'trout', 'shrimp', 'prawn', 'crab', 'lobster', 'mussels', 'oysters', 'scallops', 'clams', 'shellfish', 'seafood'],
+                        'eggs': ['egg', 'eggs', 'scrambled eggs', 'fried eggs', 'boiled eggs', 'poached eggs', 'egg whites', 'egg yolks'],
+                        'dairy': ['milk', 'cheese', 'butter', 'yogurt', 'yoghurt', 'cream', 'dairy', 'whey', 'casein', 'mozzarella', 'cheddar', 'feta', 'parmesan', 'gouda', 'brie', 'ricotta'],
+                        'honey': ['honey', 'bee pollen', 'royal jelly']
+                    }
+                    
+                    found_violation = False
+                    violation_type = None
+                    import re
+                    for violation_category, violation_terms in vegan_violations.items():
+                        for term in violation_terms:
+                            pattern = r'\b' + re.escape(term) + r'\b'
+                            if re.search(pattern, all_text):
+                                found_violation = True
+                                violation_type = violation_category
+                                logger.warning(f"⚠️ Generated recipe violates VEGAN preference: found {violation_category} '{term}' in recipe '{recipe.get('title', '')}'")
+                                break
+                        if found_violation:
+                            break
+                    
+                    if found_violation:
+                        logger.error(f"❌ Generated recipe violates VEGAN preference (contains {violation_type}) - rejecting and retrying")
+                        meal_data['explicit_avoid_names'] = meal_data.get('explicit_avoid_names', []) + [result.get('meal_name', '')]
+                        meal_data['explicit_avoid_allergens'] = meal_data.get('explicit_avoid_allergens', []) + ['vegan_violation']
+                        retry_count = meal_data.get('retry_count', 0)
+                        if retry_count < 3:
+                            meal_data['retry_count'] = retry_count + 1
+                            return self._generate_single_meal_with_sequential_rag(meal_data, db)
+                        else:
+                            logger.error(f"❌ Failed to generate VEGAN recipe after 3 retries")
+                            raise ValueError(f"Could not generate recipe without animal products (vegan violation: {violation_type})")
+                
+                # Check for vegetarian violations (less restrictive than vegan)
+                elif 'vegetarian' in [p.lower() for p in dietary_preferences]:
+                    # Vegetarian: NO meat, fish, or poultry (but eggs and dairy are OK)
+                    vegetarian_violations = {
+                        'meat': ['chicken', 'beef', 'pork', 'lamb', 'turkey', 'bacon', 'ham', 'sausage', 'chorizo', 'mince', 'meat', 'poultry', 'duck', 'goose', 'venison', 'bison', 'steak', 'burger', 'patty'],
+                        'fish': ['fish', 'salmon', 'tuna', 'cod', 'sardines', 'anchovies', 'mackerel', 'trout', 'shrimp', 'prawn', 'crab', 'lobster', 'mussels', 'oysters', 'scallops', 'clams', 'shellfish', 'seafood']
+                    }
+                    
+                    found_violation = False
+                    violation_type = None
+                    import re
+                    for violation_category, violation_terms in vegetarian_violations.items():
+                        for term in violation_terms:
+                            pattern = r'\b' + re.escape(term) + r'\b'
+                            if re.search(pattern, all_text):
+                                found_violation = True
+                                violation_type = violation_category
+                                logger.warning(f"⚠️ Generated recipe violates VEGETARIAN preference: found {violation_category} '{term}' in recipe '{recipe.get('title', '')}'")
+                                break
+                        if found_violation:
+                            break
+                    
+                    if found_violation:
+                        logger.error(f"❌ Generated recipe violates VEGETARIAN preference (contains {violation_type}) - rejecting and retrying")
+                        meal_data['explicit_avoid_names'] = meal_data.get('explicit_avoid_names', []) + [result.get('meal_name', '')]
+                        meal_data['explicit_avoid_allergens'] = meal_data.get('explicit_avoid_allergens', []) + ['vegetarian_violation']
+                        retry_count = meal_data.get('retry_count', 0)
+                        if retry_count < 3:
+                            meal_data['retry_count'] = retry_count + 1
+                            return self._generate_single_meal_with_sequential_rag(meal_data, db)
+                        else:
+                            logger.error(f"❌ Failed to generate VEGETARIAN recipe after 3 retries")
+                            raise ValueError(f"Could not generate recipe without meat/fish (vegetarian violation: {violation_type})")
+                
+                # Check for pescatarian violations (no meat or poultry, but fish is OK)
+                if 'pescatarian' in dietary_prefs_lower:
+                    pescatarian_violations = {
+                        'meat': ['chicken', 'beef', 'pork', 'lamb', 'turkey', 'bacon', 'ham', 'sausage', 'chorizo', 'mince', 'meat', 'poultry', 'duck', 'goose', 'venison', 'bison', 'steak', 'burger', 'patty']
+                    }
+                    
+                    found_violation = False
+                    violation_type = None
+                    for violation_category, violation_terms in pescatarian_violations.items():
+                        for term in violation_terms:
+                            pattern = r'\b' + re.escape(term) + r'\b'
+                            if re.search(pattern, all_text):
+                                found_violation = True
+                                violation_type = violation_category
+                                logger.warning(f"⚠️ Generated recipe violates PESCATARIAN preference: found {violation_category} '{term}' in recipe '{recipe.get('title', '')}'")
+                                break
+                        if found_violation:
+                            break
+                    
+                    if found_violation:
+                        logger.error(f"❌ Generated recipe violates PESCATARIAN preference (contains {violation_type}) - rejecting and retrying")
+                        meal_data['explicit_avoid_names'] = meal_data.get('explicit_avoid_names', []) + [result.get('meal_name', '')]
+                        meal_data['explicit_avoid_allergens'] = meal_data.get('explicit_avoid_allergens', []) + ['pescatarian_violation']
+                        retry_count = meal_data.get('retry_count', 0)
+                        if retry_count < 3:
+                            meal_data['retry_count'] = retry_count + 1
+                            return self._generate_single_meal_with_sequential_rag(meal_data, db)
+                        else:
+                            logger.error(f"❌ Failed to generate PESCATARIAN recipe after 3 retries")
+                            raise ValueError(f"Could not generate recipe without meat/poultry (pescatarian violation: {violation_type})")
+                
+                # Check for gluten-free violations
+                if 'gluten-free' in dietary_prefs_lower:
+                    gluten_violations = {
+                        'gluten': ['wheat', 'barley', 'rye', 'flour', 'bread', 'pasta', 'noodles', 'gluten', 'semolina', 'couscous', 'bulgur', 'farro', 'spelt', 'kamut', 'triticale', 'malt', 'brewer', 'beer']
+                    }
+                    
+                    found_violation = False
+                    violation_type = None
+                    for violation_category, violation_terms in gluten_violations.items():
+                        for term in violation_terms:
+                            pattern = r'\b' + re.escape(term) + r'\b'
+                            if re.search(pattern, all_text):
+                                found_violation = True
+                                violation_type = violation_category
+                                logger.warning(f"⚠️ Generated recipe violates GLUTEN-FREE preference: found {violation_category} '{term}' in recipe '{recipe.get('title', '')}'")
+                                break
+                        if found_violation:
+                            break
+                    
+                    if found_violation:
+                        logger.error(f"❌ Generated recipe violates GLUTEN-FREE preference (contains {violation_type}) - rejecting and retrying")
+                        meal_data['explicit_avoid_names'] = meal_data.get('explicit_avoid_names', []) + [result.get('meal_name', '')]
+                        meal_data['explicit_avoid_allergens'] = meal_data.get('explicit_avoid_allergens', []) + ['gluten_free_violation']
+                        retry_count = meal_data.get('retry_count', 0)
+                        if retry_count < 3:
+                            meal_data['retry_count'] = retry_count + 1
+                            return self._generate_single_meal_with_sequential_rag(meal_data, db)
+                        else:
+                            logger.error(f"❌ Failed to generate GLUTEN-FREE recipe after 3 retries")
+                            raise ValueError(f"Could not generate recipe without gluten (gluten-free violation: {violation_type})")
+                
+                # Check for dairy-free violations
+                if 'dairy-free' in dietary_prefs_lower:
+                    dairy_violations = {
+                        'dairy': ['milk', 'cheese', 'butter', 'yogurt', 'yoghurt', 'cream', 'dairy', 'whey', 'casein', 'mozzarella', 'cheddar', 'feta', 'parmesan', 'gouda', 'brie', 'ricotta', 'cottage cheese', 'sour cream', 'buttermilk', 'lactose']
+                    }
+                    
+                    found_violation = False
+                    violation_type = None
+                    for violation_category, violation_terms in dairy_violations.items():
+                        for term in violation_terms:
+                            pattern = r'\b' + re.escape(term) + r'\b'
+                            if re.search(pattern, all_text):
+                                found_violation = True
+                                violation_type = violation_category
+                                logger.warning(f"⚠️ Generated recipe violates DAIRY-FREE preference: found {violation_category} '{term}' in recipe '{recipe.get('title', '')}'")
+                                break
+                        if found_violation:
+                            break
+                    
+                    if found_violation:
+                        logger.error(f"❌ Generated recipe violates DAIRY-FREE preference (contains {violation_type}) - rejecting and retrying")
+                        meal_data['explicit_avoid_names'] = meal_data.get('explicit_avoid_names', []) + [result.get('meal_name', '')]
+                        meal_data['explicit_avoid_allergens'] = meal_data.get('explicit_avoid_allergens', []) + ['dairy_free_violation']
+                        retry_count = meal_data.get('retry_count', 0)
+                        if retry_count < 3:
+                            meal_data['retry_count'] = retry_count + 1
+                            return self._generate_single_meal_with_sequential_rag(meal_data, db)
+                        else:
+                            logger.error(f"❌ Failed to generate DAIRY-FREE recipe after 3 retries")
+                            raise ValueError(f"Could not generate recipe without dairy (dairy-free violation: {violation_type})")
+                
+                # Check for paleo violations (no grains, legumes, dairy, processed foods)
+                if 'paleo' in dietary_prefs_lower:
+                    paleo_violations = {
+                        'grains': ['wheat', 'barley', 'rye', 'rice', 'oats', 'quinoa', 'corn', 'flour', 'bread', 'pasta', 'noodles', 'cereal', 'grain'],
+                        'legumes': ['beans', 'lentils', 'chickpeas', 'peas', 'peanuts', 'soy', 'soya', 'tofu', 'tempeh', 'edamame', 'soybeans', 'legume'],
+                        'dairy': ['milk', 'cheese', 'butter', 'yogurt', 'yoghurt', 'cream', 'dairy', 'whey', 'casein', 'mozzarella', 'cheddar', 'feta', 'parmesan'],
+                        'processed': ['sugar', 'syrup', 'honey', 'artificial', 'preservative', 'processed']
+                    }
+                    
+                    found_violation = False
+                    violation_type = None
+                    for violation_category, violation_terms in paleo_violations.items():
+                        for term in violation_terms:
+                            pattern = r'\b' + re.escape(term) + r'\b'
+                            if re.search(pattern, all_text):
+                                found_violation = True
+                                violation_type = violation_category
+                                logger.warning(f"⚠️ Generated recipe violates PALEO preference: found {violation_category} '{term}' in recipe '{recipe.get('title', '')}'")
+                                break
+                        if found_violation:
+                            break
+                    
+                    if found_violation:
+                        logger.error(f"❌ Generated recipe violates PALEO preference (contains {violation_type}) - rejecting and retrying")
+                        meal_data['explicit_avoid_names'] = meal_data.get('explicit_avoid_names', []) + [result.get('meal_name', '')]
+                        meal_data['explicit_avoid_allergens'] = meal_data.get('explicit_avoid_allergens', []) + ['paleo_violation']
+                        retry_count = meal_data.get('retry_count', 0)
+                        if retry_count < 3:
+                            meal_data['retry_count'] = retry_count + 1
+                            return self._generate_single_meal_with_sequential_rag(meal_data, db)
+                        else:
+                            logger.error(f"❌ Failed to generate PALEO recipe after 3 retries")
+                            raise ValueError(f"Could not generate recipe without grains/legumes/dairy (paleo violation: {violation_type})")
+                
+                # Check for halal violations (no pork, alcohol, certain animal products)
+                if 'halal' in dietary_prefs_lower:
+                    halal_violations = {
+                        'pork': ['pork', 'bacon', 'ham', 'sausage', 'chorizo', 'lard', 'gelatin', 'gelatine'],
+                        'alcohol': ['alcohol', 'wine', 'beer', 'spirits', 'liquor', 'rum', 'whiskey', 'vodka', 'brandy', 'cognac', 'sherry', 'vermouth'],
+                        'non_halal_meat': ['pork', 'bacon', 'ham', 'sausage', 'chorizo']
+                    }
+                    
+                    found_violation = False
+                    violation_type = None
+                    for violation_category, violation_terms in halal_violations.items():
+                        for term in violation_terms:
+                            pattern = r'\b' + re.escape(term) + r'\b'
+                            if re.search(pattern, all_text):
+                                found_violation = True
+                                violation_type = violation_category
+                                logger.warning(f"⚠️ Generated recipe violates HALAL preference: found {violation_category} '{term}' in recipe '{recipe.get('title', '')}'")
+                                break
+                        if found_violation:
+                            break
+                    
+                    if found_violation:
+                        logger.error(f"❌ Generated recipe violates HALAL preference (contains {violation_type}) - rejecting and retrying")
+                        meal_data['explicit_avoid_names'] = meal_data.get('explicit_avoid_names', []) + [result.get('meal_name', '')]
+                        meal_data['explicit_avoid_allergens'] = meal_data.get('explicit_avoid_allergens', []) + ['halal_violation']
+                        retry_count = meal_data.get('retry_count', 0)
+                        if retry_count < 3:
+                            meal_data['retry_count'] = retry_count + 1
+                            return self._generate_single_meal_with_sequential_rag(meal_data, db)
+                        else:
+                            logger.error(f"❌ Failed to generate HALAL recipe after 3 retries")
+                            raise ValueError(f"Could not generate recipe without pork/alcohol (halal violation: {violation_type})")
+                
+                # Check for kosher violations (no pork, shellfish, mixing meat and dairy)
+                if 'kosher' in dietary_prefs_lower:
+                    kosher_violations = {
+                        'pork': ['pork', 'bacon', 'ham', 'sausage', 'chorizo', 'lard', 'gelatin', 'gelatine'],
+                        'shellfish': ['shrimp', 'prawn', 'crab', 'lobster', 'mussels', 'oysters', 'scallops', 'clams', 'shellfish', 'seafood'],
+                        'mixing_meat_dairy': ['meat', 'chicken', 'beef', 'lamb', 'turkey']  # Check if both meat and dairy are present
+                    }
+                    
+                    found_violation = False
+                    violation_type = None
+                    has_meat = False
+                    has_dairy = False
+                    
+                    # Check for pork and shellfish first
+                    for violation_category, violation_terms in kosher_violations.items():
+                        if violation_category == 'mixing_meat_dairy':
+                            continue  # Handle separately
+                        for term in violation_terms:
+                            pattern = r'\b' + re.escape(term) + r'\b'
+                            if re.search(pattern, all_text):
+                                found_violation = True
+                                violation_type = violation_category
+                                logger.warning(f"⚠️ Generated recipe violates KOSHER preference: found {violation_category} '{term}' in recipe '{recipe.get('title', '')}'")
+                                break
+                        if found_violation:
+                            break
+                    
+                    # Check for mixing meat and dairy (kosher violation)
+                    if not found_violation:
+                        meat_terms = ['meat', 'chicken', 'beef', 'lamb', 'turkey', 'poultry', 'steak', 'burger', 'patty']
+                        dairy_terms = ['milk', 'cheese', 'butter', 'yogurt', 'yoghurt', 'cream', 'dairy', 'whey', 'casein', 'mozzarella', 'cheddar', 'feta', 'parmesan']
+                        
+                        for term in meat_terms:
+                            pattern = r'\b' + re.escape(term) + r'\b'
+                            if re.search(pattern, all_text):
+                                has_meat = True
+                                break
+                        
+                        for term in dairy_terms:
+                            pattern = r'\b' + re.escape(term) + r'\b'
+                            if re.search(pattern, all_text):
+                                has_dairy = True
+                                break
+                        
+                        if has_meat and has_dairy:
+                            found_violation = True
+                            violation_type = 'mixing_meat_dairy'
+                            logger.warning(f"⚠️ Generated recipe violates KOSHER preference: mixing meat and dairy in recipe '{recipe.get('title', '')}'")
+                    
+                    if found_violation:
+                        logger.error(f"❌ Generated recipe violates KOSHER preference (contains {violation_type}) - rejecting and retrying")
+                        meal_data['explicit_avoid_names'] = meal_data.get('explicit_avoid_names', []) + [result.get('meal_name', '')]
+                        meal_data['explicit_avoid_allergens'] = meal_data.get('explicit_avoid_allergens', []) + ['kosher_violation']
+                        retry_count = meal_data.get('retry_count', 0)
+                        if retry_count < 3:
+                            meal_data['retry_count'] = retry_count + 1
+                            return self._generate_single_meal_with_sequential_rag(meal_data, db)
+                        else:
+                            logger.error(f"❌ Failed to generate KOSHER recipe after 3 retries")
+                            raise ValueError(f"Could not generate recipe without pork/shellfish/meat-dairy mixing (kosher violation: {violation_type})")
+                
+                # Check for keto violations (low carbs - check for high-carb ingredients)
+                if 'keto' in dietary_prefs_lower:
+                    keto_violations = {
+                        'high_carb': ['sugar', 'flour', 'rice', 'pasta', 'bread', 'noodles', 'potato', 'potatoes', 'corn', 'quinoa', 'oats', 'cereal', 'grain', 'wheat', 'barley', 'rye', 'honey', 'syrup', 'maple syrup', 'molasses', 'brown sugar', 'white sugar', 'cane sugar']
+                    }
+                    
+                    found_violation = False
+                    violation_type = None
+                    for violation_category, violation_terms in keto_violations.items():
+                        for term in violation_terms:
+                            pattern = r'\b' + re.escape(term) + r'\b'
+                            if re.search(pattern, all_text):
+                                found_violation = True
+                                violation_type = violation_category
+                                logger.warning(f"⚠️ Generated recipe violates KETO preference: found high-carb ingredient '{term}' in recipe '{recipe.get('title', '')}'")
+                                break
+                        if found_violation:
+                            break
+                    
+                    if found_violation:
+                        logger.error(f"❌ Generated recipe violates KETO preference (contains high-carb ingredient) - rejecting and retrying")
+                        meal_data['explicit_avoid_names'] = meal_data.get('explicit_avoid_names', []) + [result.get('meal_name', '')]
+                        meal_data['explicit_avoid_allergens'] = meal_data.get('explicit_avoid_allergens', []) + ['keto_violation']
+                        retry_count = meal_data.get('retry_count', 0)
+                        if retry_count < 3:
+                            meal_data['retry_count'] = retry_count + 1
+                            return self._generate_single_meal_with_sequential_rag(meal_data, db)
+                        else:
+                            logger.error(f"❌ Failed to generate KETO recipe after 3 retries")
+                            raise ValueError(f"Could not generate recipe without high-carb ingredients (keto violation: {violation_type})")
+                
+                # Check for low-carb violations (check for high-carb ingredients)
+                if 'low-carb' in dietary_prefs_lower:
+                    low_carb_violations = {
+                        'high_carb': ['sugar', 'flour', 'rice', 'pasta', 'bread', 'noodles', 'potato', 'potatoes', 'corn', 'quinoa', 'oats', 'cereal', 'grain', 'wheat', 'barley', 'rye', 'honey', 'syrup', 'maple syrup', 'molasses', 'brown sugar', 'white sugar', 'cane sugar']
+                    }
+                    
+                    found_violation = False
+                    violation_type = None
+                    for violation_category, violation_terms in low_carb_violations.items():
+                        for term in violation_terms:
+                            pattern = r'\b' + re.escape(term) + r'\b'
+                            if re.search(pattern, all_text):
+                                found_violation = True
+                                violation_type = violation_category
+                                logger.warning(f"⚠️ Generated recipe violates LOW-CARB preference: found high-carb ingredient '{term}' in recipe '{recipe.get('title', '')}'")
+                                break
+                        if found_violation:
+                            break
+                    
+                    if found_violation:
+                        logger.error(f"❌ Generated recipe violates LOW-CARB preference (contains high-carb ingredient) - rejecting and retrying")
+                        meal_data['explicit_avoid_names'] = meal_data.get('explicit_avoid_names', []) + [result.get('meal_name', '')]
+                        meal_data['explicit_avoid_allergens'] = meal_data.get('explicit_avoid_allergens', []) + ['low_carb_violation']
+                        retry_count = meal_data.get('retry_count', 0)
+                        if retry_count < 3:
+                            meal_data['retry_count'] = retry_count + 1
+                            return self._generate_single_meal_with_sequential_rag(meal_data, db)
+                        else:
+                            logger.error(f"❌ Failed to generate LOW-CARB recipe after 3 retries")
+                            raise ValueError(f"Could not generate recipe without high-carb ingredients (low-carb violation: {violation_type})")
+                
+                # Check for low-fat violations (check for high-fat ingredients)
+                if 'low-fat' in dietary_prefs_lower:
+                    low_fat_violations = {
+                        'high_fat': ['butter', 'lard', 'oil', 'olive oil', 'coconut oil', 'avocado oil', 'nuts', 'almonds', 'walnuts', 'cashews', 'pistachios', 'hazelnuts', 'pecans', 'macadamia', 'brazil nuts', 'pine nuts', 'seeds', 'chia seeds', 'flax seeds', 'sunflower seeds', 'pumpkin seeds', 'avocado', 'cheese', 'cream', 'sour cream', 'mayonnaise', 'margarine']
+                    }
+                    
+                    found_violation = False
+                    violation_type = None
+                    for violation_category, violation_terms in low_fat_violations.items():
+                        for term in violation_terms:
+                            pattern = r'\b' + re.escape(term) + r'\b'
+                            if re.search(pattern, all_text):
+                                found_violation = True
+                                violation_type = violation_category
+                                logger.warning(f"⚠️ Generated recipe violates LOW-FAT preference: found high-fat ingredient '{term}' in recipe '{recipe.get('title', '')}'")
+                                break
+                        if found_violation:
+                            break
+                    
+                    if found_violation:
+                        logger.error(f"❌ Generated recipe violates LOW-FAT preference (contains high-fat ingredient) - rejecting and retrying")
+                        meal_data['explicit_avoid_names'] = meal_data.get('explicit_avoid_names', []) + [result.get('meal_name', '')]
+                        meal_data['explicit_avoid_allergens'] = meal_data.get('explicit_avoid_allergens', []) + ['low_fat_violation']
+                        retry_count = meal_data.get('retry_count', 0)
+                        if retry_count < 3:
+                            meal_data['retry_count'] = retry_count + 1
+                            return self._generate_single_meal_with_sequential_rag(meal_data, db)
+                        else:
+                            logger.error(f"❌ Failed to generate LOW-FAT recipe after 3 retries")
+                            raise ValueError(f"Could not generate recipe without high-fat ingredients (low-fat violation: {violation_type})")
+                
+                # Check for anti-inflammatory violations (avoid processed foods, refined sugars)
+                if 'anti-inflammatory' in dietary_prefs_lower:
+                    anti_inflammatory_violations = {
+                        'processed': ['processed', 'artificial', 'preservative', 'additive', 'refined', 'white sugar', 'brown sugar', 'cane sugar', 'high fructose', 'corn syrup', 'hydrogenated', 'trans fat', 'margarine', 'shortening']
+                    }
+                    
+                    found_violation = False
+                    violation_type = None
+                    for violation_category, violation_terms in anti_inflammatory_violations.items():
+                        for term in violation_terms:
+                            pattern = r'\b' + re.escape(term) + r'\b'
+                            if re.search(pattern, all_text):
+                                found_violation = True
+                                violation_type = violation_category
+                                logger.warning(f"⚠️ Generated recipe violates ANTI-INFLAMMATORY preference: found processed/refined ingredient '{term}' in recipe '{recipe.get('title', '')}'")
+                                break
+                        if found_violation:
+                            break
+                    
+                    if found_violation:
+                        logger.error(f"❌ Generated recipe violates ANTI-INFLAMMATORY preference (contains processed/refined ingredient) - rejecting and retrying")
+                        meal_data['explicit_avoid_names'] = meal_data.get('explicit_avoid_names', []) + [result.get('meal_name', '')]
+                        meal_data['explicit_avoid_allergens'] = meal_data.get('explicit_avoid_allergens', []) + ['anti_inflammatory_violation']
+                        retry_count = meal_data.get('retry_count', 0)
+                        if retry_count < 3:
+                            meal_data['retry_count'] = retry_count + 1
+                            return self._generate_single_meal_with_sequential_rag(meal_data, db)
+                        else:
+                            logger.error(f"❌ Failed to generate ANTI-INFLAMMATORY recipe after 3 retries")
+                            raise ValueError(f"Could not generate recipe without processed/refined ingredients (anti-inflammatory violation: {violation_type})")
+                
+                # Check for diabetic-friendly violations (low sugar, low refined carbs)
+                if 'diabetic-friendly' in dietary_prefs_lower:
+                    diabetic_violations = {
+                        'high_sugar': ['sugar', 'honey', 'syrup', 'maple syrup', 'molasses', 'brown sugar', 'white sugar', 'cane sugar', 'high fructose', 'corn syrup', 'agave', 'coconut sugar', 'date sugar', 'refined sugar']
+                    }
+                    
+                    found_violation = False
+                    violation_type = None
+                    for violation_category, violation_terms in diabetic_violations.items():
+                        for term in violation_terms:
+                            pattern = r'\b' + re.escape(term) + r'\b'
+                            if re.search(pattern, all_text):
+                                found_violation = True
+                                violation_type = violation_category
+                                logger.warning(f"⚠️ Generated recipe violates DIABETIC-FRIENDLY preference: found high-sugar ingredient '{term}' in recipe '{recipe.get('title', '')}'")
+                                break
+                        if found_violation:
+                            break
+                    
+                    if found_violation:
+                        logger.error(f"❌ Generated recipe violates DIABETIC-FRIENDLY preference (contains high-sugar ingredient) - rejecting and retrying")
+                        meal_data['explicit_avoid_names'] = meal_data.get('explicit_avoid_names', []) + [result.get('meal_name', '')]
+                        meal_data['explicit_avoid_allergens'] = meal_data.get('explicit_avoid_allergens', []) + ['diabetic_friendly_violation']
+                        retry_count = meal_data.get('retry_count', 0)
+                        if retry_count < 3:
+                            meal_data['retry_count'] = retry_count + 1
+                            return self._generate_single_meal_with_sequential_rag(meal_data, db)
+                        else:
+                            logger.error(f"❌ Failed to generate DIABETIC-FRIENDLY recipe after 3 retries")
+                            raise ValueError(f"Could not generate recipe without high-sugar ingredients (diabetic-friendly violation: {violation_type})")
+                
+                # Check for heart-healthy violations (low saturated fat, low sodium - check for high-sodium ingredients)
+                if 'heart-healthy' in dietary_prefs_lower:
+                    heart_healthy_violations = {
+                        'high_sodium': ['salt', 'sodium', 'soy sauce', 'fish sauce', 'oyster sauce', 'worcestershire', 'anchovy', 'anchovies', 'capers', 'olives', 'pickles', 'sauerkraut', 'processed', 'cured', 'smoked', 'bacon', 'ham', 'sausage', 'chorizo', 'salami', 'pepperoni']
+                    }
+                    
+                    found_violation = False
+                    violation_type = None
+                    for violation_category, violation_terms in heart_healthy_violations.items():
+                        for term in violation_terms:
+                            pattern = r'\b' + re.escape(term) + r'\b'
+                            if re.search(pattern, all_text):
+                                found_violation = True
+                                violation_type = violation_category
+                                logger.warning(f"⚠️ Generated recipe violates HEART-HEALTHY preference: found high-sodium ingredient '{term}' in recipe '{recipe.get('title', '')}'")
+                                break
+                        if found_violation:
+                            break
+                    
+                    if found_violation:
+                        logger.error(f"❌ Generated recipe violates HEART-HEALTHY preference (contains high-sodium ingredient) - rejecting and retrying")
+                        meal_data['explicit_avoid_names'] = meal_data.get('explicit_avoid_names', []) + [result.get('meal_name', '')]
+                        meal_data['explicit_avoid_allergens'] = meal_data.get('explicit_avoid_allergens', []) + ['heart_healthy_violation']
+                        retry_count = meal_data.get('retry_count', 0)
+                        if retry_count < 3:
+                            meal_data['retry_count'] = retry_count + 1
+                            return self._generate_single_meal_with_sequential_rag(meal_data, db)
+                        else:
+                            logger.error(f"❌ Failed to generate HEART-HEALTHY recipe after 3 retries")
+                            raise ValueError(f"Could not generate recipe without high-sodium ingredients (heart-healthy violation: {violation_type})")
+            
+            # Check for allergies and disliked ingredients
             if allergies or disliked_ingredients:
                 recipe = result.get('recipe', {})
                 ingredients = recipe.get('ingredients', [])
@@ -1922,8 +2624,8 @@ OUTPUT: Valid minified JSON only (no markdown):
                 # e.g., "tree_nuts" -> ["almonds", "walnuts", "cashews", "pistachios", "hazelnuts", "pecans", "macadamia nuts"]
                 # e.g., "eggs" -> ["egg", "eggs"]
                 allergy_expansions = {
-                    'nuts': ['almonds', 'walnuts', 'cashews', 'pistachios', 'hazelnuts', 'pecans', 'macadamia nuts', 'brazil nuts', 'pine nuts', 'nuts', 'nut'],
-                    'tree_nuts': ['almonds', 'walnuts', 'cashews', 'pistachios', 'hazelnuts', 'pecans', 'macadamia nuts', 'brazil nuts', 'pine nuts'],
+                    'nuts': ['almonds', 'almond', 'walnuts', 'walnut', 'cashews', 'cashew', 'pistachios', 'pistachio', 'hazelnuts', 'hazelnut', 'pecans', 'pecan', 'macadamia nuts', 'macadamia', 'brazil nuts', 'brazil nut', 'pine nuts', 'pine nut', 'nuts', 'nut'],
+                    'tree_nuts': ['almonds', 'almond', 'walnuts', 'walnut', 'cashews', 'cashew', 'pistachios', 'pistachio', 'hazelnuts', 'hazelnut', 'pecans', 'pecan', 'macadamia nuts', 'macadamia', 'brazil nuts', 'brazil nut', 'pine nuts', 'pine nut'],
                     'peanuts': ['peanuts', 'peanut', 'groundnuts'],
                     'eggs': ['egg', 'eggs', 'scrambled eggs', 'fried eggs', 'boiled eggs', 'poached eggs', 'egg whites', 'egg yolks'],
                     'egg': ['egg', 'eggs', 'scrambled eggs', 'fried eggs', 'boiled eggs', 'poached eggs', 'egg whites', 'egg yolks'],

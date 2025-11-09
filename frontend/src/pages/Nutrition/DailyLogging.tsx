@@ -446,24 +446,24 @@ const DailyLogging: React.FC = () => {
       <Card bg={cardBg} borderColor={borderColor} mb={6}>
         <CardBody>
           <VStack spacing={4} align="stretch">
-            <HStack spacing={4}>
-              <FormControl>
-                <FormLabel>Select Date</FormLabel>
-                <Input
-                  type="date"
-                  value={selectedDate}
-                  onChange={(e) => setSelectedDate(e.target.value)}
-                />
-              </FormControl>
-              <Button
-                colorScheme="blue"
-                onClick={saveDailyLog}
-                isLoading={loading}
-                isDisabled={entries.length === 0}
-              >
-                Save Log
-              </Button>
-            </HStack>
+          <HStack spacing={4}>
+            <FormControl>
+              <FormLabel>Select Date</FormLabel>
+              <Input
+                type="date"
+                value={selectedDate}
+                onChange={(e) => setSelectedDate(e.target.value)}
+              />
+            </FormControl>
+            <Button
+              colorScheme="blue"
+              onClick={saveDailyLog}
+              isLoading={loading}
+              isDisabled={entries.length === 0}
+            >
+              Save Log
+            </Button>
+          </HStack>
             
             {/* CRITICAL FIX: Show which days are logged */}
             {loggedDates.size > 0 && (

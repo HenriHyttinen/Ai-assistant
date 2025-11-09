@@ -263,7 +263,7 @@ class HybridMealGenerator:
                     score = (target_calories - calories) * 2 if calories < target_calories else (calories - target_calories)
                     if best_score is None or score < best_score:
                         best_score = score
-                        best_recipe = recipe
+                    best_recipe = recipe
                 
                 # If no exact match, try the broader category
                 if not best_recipe:

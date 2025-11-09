@@ -127,7 +127,7 @@ if [ -n "$DATABASE_URL" ]; then
         DB_HOST=$(echo $DATABASE_URL | sed -n 's/.*@\([^:]*\):.*/\1/p')
         DB_PORT=$(echo $DATABASE_URL | sed -n 's/.*:\([0-9]*\)\/.*/\1/p')
         if [ -n "$DB_HOST" ] && [ "$DB_HOST" != "localhost" ]; then
-            wait_for_db
+    wait_for_db
         fi
     fi
 fi
@@ -137,7 +137,7 @@ run_migrations
 
 # Seed data (optional - can be skipped if already seeded)
 if [ "${SEED_DATABASE:-true}" = "true" ]; then
-    seed_data
+seed_data
 fi
 
 # Start services

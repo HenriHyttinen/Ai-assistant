@@ -206,7 +206,10 @@ const NutritionDashboard: React.FC<NutritionDashboardProps> = ({ user = null }) 
       }
     }
     
-    // CRITICAL FIX: Add daily log entries to totals
+    // ROOT CAUSE FIX: Daily log entries are the source of truth
+    // If there are daily log entries, use ONLY those (they may include meals from meal plan)
+    // If there are no daily log entries, use meal plan meals
+    // This prevents double-counting when meals are logged from meal plan to daily log
     const logMeals = dailyLogEntries.map((entry: any) => ({
       calories: entry.calories || 0,
       protein: entry.protein || 0,
@@ -214,8 +217,9 @@ const NutritionDashboard: React.FC<NutritionDashboardProps> = ({ user = null }) 
       fats: entry.fats || 0,
     }));
     
-    // Combine meal plan meals and daily log entries
-    const allMeals = [...meals, ...logMeals];
+    // ROOT CAUSE FIX: Use daily log entries as source of truth if they exist
+    // Otherwise, use meal plan meals
+    const allMeals = logMeals.length > 0 ? logMeals : meals;
     
     if (!allMeals.length) {
       // Fallback to nutritional analysis data if available
@@ -700,7 +704,7 @@ const NutritionDashboard: React.FC<NutritionDashboardProps> = ({ user = null }) 
                     });
                   }
                   
-                  // CRITICAL FIX: Include daily log entries in the meals list
+                  // ROOT CAUSE FIX: Use daily log entries as source of truth if they exist
                   // Convert daily log entries to meal format for display
                   const logMeals = dailyLogEntries.map((entry: any) => ({
                     id: entry.id || `log_${entry.food_name}_${entry.meal_type}`,
@@ -715,8 +719,9 @@ const NutritionDashboard: React.FC<NutritionDashboardProps> = ({ user = null }) 
                     is_daily_log: true // Flag to identify daily log entries
                   }));
                   
-                  // Combine meal plan meals and daily log entries
-                  const allMeals = [...meals, ...logMeals];
+                  // ROOT CAUSE FIX: Use daily log entries as source of truth if they exist
+                  // Otherwise, use meal plan meals (prevents double-counting)
+                  const allMeals = logMeals.length > 0 ? logMeals : meals;
                   
                   const visible = showAllMeals ? allMeals : allMeals.slice(0, 6);
                   return (

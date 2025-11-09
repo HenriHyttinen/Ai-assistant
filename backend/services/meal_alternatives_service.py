@@ -70,7 +70,7 @@ class MealAlternativesService:
                             )
                             alternative['availability_score'] = availability_score
                             alternative['uses_available_ingredients'] = availability_score > 0.5
-                        alternatives.append(alternative)
+                    alternatives.append(alternative)
                 except Exception as e:
                     logger.warning(f"Failed to generate alternative {i+1}: {str(e)}")
                     continue
@@ -380,7 +380,7 @@ class MealAlternativesService:
         except Exception as e:
             logger.error(f"Error getting alternatives from database: {str(e)}")
             return []
-    
+
     def _get_available_ingredients_from_shopping_lists(self, db: Session, user_id: int) -> List[Dict[str, Any]]:
         """
         Get available ingredients from user's shopping lists (purchased items)

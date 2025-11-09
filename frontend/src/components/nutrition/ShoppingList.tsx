@@ -451,7 +451,7 @@ const ShoppingList: React.FC<ShoppingListProps> = ({
         // Update local state - ensure we create a new array reference for React to detect the change
         setLists(prev => {
           const updated = prev.map(list => ({
-            ...list,
+          ...list,
             items: (list.items || []).filter((item: any) => String(item.id) !== String(itemId)),
             total_items: (list.total_items || 0) - 1
           }));

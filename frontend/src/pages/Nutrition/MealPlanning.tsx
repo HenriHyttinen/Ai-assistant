@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import {
   Box,
   Grid,
+  SimpleGrid,
   Card,
   CardHeader,
   CardBody,
@@ -158,7 +159,7 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
         setMealsPerDay(5);
         localStorage.setItem('mealsPerDay', '5');
       } else {
-        localStorage.setItem('mealsPerDay', mealsPerDay.toString());
+      localStorage.setItem('mealsPerDay', mealsPerDay.toString());
       }
     } catch (e) {
       console.warn('Failed to save mealsPerDay to localStorage:', e);
@@ -218,23 +219,36 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
 
   // Simple swap state - first click selects meal, second click swaps
   const [swapMode, setSwapMode] = useState(false);
-  const [swapSourceMeal, setSwapSourceMeal] = useState<{id: string, date: string, mealType: string} | null>(null);
+  const [swapSourceMeal, setSwapSourceMeal] = useState<{id: string, date: string, mealType: string, isUserRecipe?: boolean} | null>(null);
 
-  // Track recently added meal to display in box below grid
-  // Load from localStorage on mount to persist across page switches
-  const [recentlyAddedMeal, setRecentlyAddedMeal] = useState<Meal | null>(() => {
+  // Track recently added meals to display in box below grid
+  // Load from localStorage on mount to persist across page switches, week changes, and grid resets
+  // This is a persistent list of user-created meals that should not disappear
+  const [recentlyAddedMeals, setRecentlyAddedMeals] = useState<Meal[]>(() => {
     try {
       if (typeof window !== 'undefined') {
-        const saved = localStorage.getItem('recentlyAddedMeal');
+        const saved = localStorage.getItem('recentlyAddedMeals');
         if (saved) {
-          return JSON.parse(saved);
+          const parsed = JSON.parse(saved);
+          return Array.isArray(parsed) ? parsed : [];
         }
       }
     } catch (e) {
-      console.warn('Failed to load recently added meal from localStorage:', e);
+      console.warn('Failed to load recently added meals from localStorage:', e);
     }
-    return null;
+    return [];
   });
+  
+  // CRITICAL FIX: Persist recentlyAddedMeals to localStorage whenever it changes
+  useEffect(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('recentlyAddedMeals', JSON.stringify(recentlyAddedMeals));
+      }
+    } catch (e) {
+      console.warn('Failed to save recently added meals to localStorage:', e);
+    }
+  }, [recentlyAddedMeals]);
 
   const cardBg = useColorModeValue('white', 'gray.800');
   const borderColor = useColorModeValue('gray.200', 'gray.600');
@@ -538,13 +552,24 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
                   recipe: mealData.recipe || recipe,
                   dietary_tags: mealData.recipe?.dietary_tags || recipe.dietary_tags || recipe.dietaryTags || []
                 };
-                setRecentlyAddedMeal(addedMeal);
-                // Save to localStorage to persist across page switches
-                try {
-                  localStorage.setItem('recentlyAddedMeal', JSON.stringify(addedMeal));
-                } catch (e) {
-                  console.warn('Failed to save recently added meal to localStorage:', e);
+                // CRITICAL FIX: Add the meal to the persistent list of recently added meals
+                setRecentlyAddedMeals(prev => {
+                  const existingIndex = prev.findIndex(m => {
+                    const mId = m.id || (m as any).meal_id || (m as any).mealId;
+                    const mName = m.meal_name || m.name || (m as any).mealName;
+                    return String(mId) === String(addedMeal.id) || mName === addedMeal.meal_name;
+                  });
+                  
+                  if (existingIndex >= 0) {
+                    // Update existing meal
+                    const updated = [...prev];
+                    updated[existingIndex] = addedMeal;
+                    return updated;
+                  } else {
+                    // Add new meal to the list
+                    return [...prev, addedMeal];
                 }
+                });
                 
                 setRecipeSelectorOpen(false);
                 setSelectedSlot(null);
@@ -620,18 +645,16 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
     
     all.forEach(m => {
       const t = (m.meal_type || m.type) as string;
-      // CRITICAL: Also check recipe_details for preserved meal_type (morning snack/afternoon snack)
-      const preservedType = m.recipe?.meal_type || m.recipe_details?.meal_type;
-      // ROOT CAUSE FIX: After swapping, a meal might have meal_type='snack' but preservedType='lunch'
-      // or vice versa. We need to check BOTH to determine if it's a snack.
-      // A meal is a snack if EITHER its current meal_type OR its preserved type indicates it's a snack
-      // BUT: After swapping, the preservedType is what the meal WAS, not what it IS
-      // So we should prioritize the current meal_type for categorization
-      // CRITICAL: If meal_type is a non-snack (breakfast/lunch/dinner), it's NOT a snack, even if preservedType is a snack
-      // This handles the case where a snack was swapped TO a lunch slot (it becomes lunch, not a snack)
-      const isSnack = (t === 'snack' || t === 'morning snack' || t === 'afternoon snack' || t === 'evening snack') ||
-                     (preservedType && (preservedType === 'snack' || preservedType === 'morning snack' || preservedType === 'afternoon snack' || preservedType === 'evening snack') && 
-                      (t !== 'breakfast' && t !== 'lunch' && t !== 'dinner' && t !== 'snack' && t !== 'morning snack' && t !== 'afternoon snack' && t !== 'evening snack'));
+      // ROOT CAUSE FIX: Categorize meals based ONLY on their current meal_type (as set by backend swap)
+      // After a swap, the backend updates meal_type to reflect the new slot (e.g., dinner -> snack, snack -> dinner)
+      // We should trust the backend's meal_type, not try to infer from preservedType
+      // A meal is a snack ONLY if its current meal_type is explicitly a snack type
+      // This prevents meals with meal_type='dinner' from being incorrectly categorized as snacks
+      // CRITICAL: After swapping, a snack might have meal_type='dinner', so it should NOT be in snacksByDate
+      const isSnack = t === 'snack' || 
+                      t === 'morning snack' || 
+                      t === 'afternoon snack' || 
+                      t === 'evening snack';
       
       if (isSnack) {
         const d = m.meal_date || m.date;
@@ -647,31 +670,17 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
           });
           
           if (!isDuplicate) {
-            // ROOT CAUSE DEBUG: Log what preserved meal_type we're using
-            // CRITICAL: After swapping, if meal_type is a snack type, use that
-            // Otherwise, use preservedType if it's a snack type
-            // This ensures swapped snacks are correctly identified
-            let finalMealType = t;
-            if (t === 'snack' || t === 'morning snack' || t === 'afternoon snack' || t === 'evening snack') {
-              // Current meal_type is a snack type, use it
-              finalMealType = t;
-            } else if (preservedType && (preservedType === 'snack' || preservedType === 'morning snack' || preservedType === 'afternoon snack' || preservedType === 'evening snack')) {
-              // Current meal_type is not a snack, but preservedType is - use preservedType
-              finalMealType = preservedType;
-            } else {
-              // Fallback to generic 'snack'
-              finalMealType = 'snack';
-            }
-            console.log(`🔍 Adding snack to snacksByDate: id=${mealId}, name='${m.meal_name || m.mealName}', preservedType='${preservedType}', t='${t}', finalMealType='${finalMealType}'`);
+            // ROOT CAUSE FIX: Since we're in the isSnack block, we know t is already a snack type
+            // Use the current meal_type directly (it's what the backend set after the swap)
+            // The preservedType in recipe_details is only used later for specific slot assignment (morning vs afternoon)
+            console.log(`🔍 Adding snack to snacksByDate: id=${mealId}, name='${m.meal_name || m.mealName}', meal_type='${t}'`);
             
-            // Store with preserved meal_type if available (for correct slot assignment)
+            // Store with current meal_type (backend's authoritative value after swap)
             snacksByDate[d].push({
               ...m,
-              // ROOT CAUSE FIX: Use preserved meal_type if available, otherwise use 'snack'
-              // This ensures afternoon snack meals are stored with 'afternoon snack' type
-              meal_type: finalMealType,
-              type: finalMealType,
-              // Also preserve the recipe and recipe_details so we can access them later
+              meal_type: t,
+              type: t,
+              // Preserve recipe and recipe_details for later slot assignment logic
               recipe: m.recipe || {},
               recipe_details: m.recipe_details || {}
             });
@@ -682,56 +691,56 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
       }
     });
     
-    // ROOT CAUSE FIX: First pass - honor explicit dates and try to match by meal type + position (non-snacks first)
-    // CRITICAL: After swapping, meals might have swapped meal_types, so we need to match by the CURRENT meal_type
-    // (which is what the backend swapped to), not the preserved type
+    // ROOT CAUSE FIX: Simplified non-snack meal assignment - allow any meal to be assigned to any slot
+    // After swapping, meals can have any meal_type, so we should allow flexible assignment
+    // CRITICAL: After swapping, a snack might have meal_type='dinner', so it should be assigned to a dinner slot
+    // First, try to match by meal_type, but if that fails, assign to any available slot (including snack slots)
     nonSnackMeals.forEach(m => {
       const d = m.meal_date || m.date;
       const t = (m.meal_type || m.type) as string;
       if (!d || !result[d] || !t) return;
       
-      // ROOT CAUSE FIX: Check if this meal type matches any slot in the grid
-      // After swapping, a meal might have a different meal_type than its original slot
+      let assigned = false;
+      
+      // First, try to match by meal_type (preferred)
       if (mealTypes.includes(t)) {
-        // Find the first available slot with matching meal type
         for (let idx = 0; idx < mealTypes.length; idx++) {
+          // CRITICAL FIX: After swapping, allow meals to be assigned to ANY slot, including snack slots
+          // This allows snacks swapped with dinners to be assigned to dinner slots, and vice versa
+          // Try to match by meal_type first (preferred)
           if (mealTypes[idx] === t && !result[d][idx]) {
             result[d][idx] = m;
+            assigned = true;
             break;
           }
         }
-      } else {
-        // ROOT CAUSE FIX: If meal_type doesn't match any slot, it might be a swapped meal
-        // Try to find an empty slot for this meal (fallback assignment)
-        // This handles cases where a snack was swapped with a lunch, etc.
+      }
+      
+      // If not assigned yet, assign to first available slot (flexible assignment - ANY slot, including snacks)
+      if (!assigned) {
         for (let idx = 0; idx < mealTypes.length; idx++) {
-          // Skip snack slots - they're handled separately
-          if (mealTypes[idx] === 'morning snack' || mealTypes[idx] === 'afternoon snack' || mealTypes[idx] === 'evening snack' || mealTypes[idx] === 'snack') {
-            continue;
-          }
-          // Assign to first available non-snack slot
+          // CRITICAL FIX: Allow assignment to ANY slot, including snack slots
+          // This allows swapped meals to be assigned anywhere
           if (!result[d][idx]) {
             result[d][idx] = m;
+            assigned = true;
             break;
           }
         }
       }
     });
     
-    // CRITICAL FIX: Assign snacks to their specific slots based on preserved meal_type
-    // First, create a map of snack slot types to indices
-    const snackSlotMap: Record<string, number> = {};
+    // ROOT CAUSE FIX: Simplified snack assignment - assign snacks to slots by order
+    // Find all snack slot indices in order (morning snack, afternoon snack, etc.)
+    const snackSlotIndices: number[] = [];
     mealTypes.forEach((mt, idx) => {
       if (mt === 'morning snack' || mt === 'afternoon snack' || mt === 'evening snack' || mt === 'snack') {
-        snackSlotMap[mt] = idx;
+        snackSlotIndices.push(idx);
       }
     });
     
-    // ROOT CAUSE DEBUG: Log snack slot map to verify it's correct
-    console.log(`🔍 Snack slot map (mealTypes=${mealTypes.join(', ')})`, snackSlotMap);
-    
-    // Find snack slot indices in order (for fallback assignment)
-    const snackSlotIndices: number[] = Object.values(snackSlotMap).sort((a, b) => a - b);
+    // Sort to ensure correct order
+    snackSlotIndices.sort((a, b) => a - b);
     
     // ROOT CAUSE DEBUG: Log snacks by date to see what we're processing
     console.log(`🔍 Snacks by date:`, Object.keys(snacksByDate).map(date => ({
@@ -746,154 +755,85 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
       }))
     })));
     
-    // Assign snacks by date, prioritizing preserved meal_type
-    // CRITICAL FIX: Track assigned meals globally across ALL dates to prevent duplicates across dates
+    // ROOT CAUSE FIX: Simplified snack assignment - assign snacks to slots by order
+    // Track assigned meals globally to prevent duplicates
     const globalAssignedMealIds = new Set<string | number>();
+    
+    // CRITICAL FIX: First, try to preserve original slot positions for snacks
+    // This handles snack-to-snack swaps by preserving their original positions
+    // Build a map of meal ID to its original slot position (before swap)
+    const mealIdToOriginalSlot: Record<string | number, number> = {};
+    all.forEach(m => {
+      const mealId = m.id || m.meal_id || m.mealId;
+      if (!mealId) return;
+      
+      // Try to find which slot this meal was originally in
+      // Check if it's already in the grid from a previous assignment
+      const mealDate = m.meal_date || m.date;
+      if (mealDate && result[mealDate]) {
+        // Check if this meal is already assigned to a slot
+        for (let idx = 0; idx < mealTypes.length; idx++) {
+          if (result[mealDate][idx] && 
+              (result[mealDate][idx].id === mealId || 
+               result[mealDate][idx].meal_id === mealId || 
+               result[mealDate][idx].mealId === mealId)) {
+            mealIdToOriginalSlot[mealId] = idx;
+            break;
+          }
+        }
+      }
+    });
     
     Object.keys(snacksByDate).forEach(date => {
       const daySnacks = snacksByDate[date];
       if (!result[date] || snackSlotIndices.length === 0) return;
       
-      // CRITICAL FIX: Track assigned meals for this date to prevent duplicates within the same date
+      // Track assigned meals for this date
       const dateAssignedMealIds = new Set<string | number>();
       
-      // First pass: Assign snacks with preserved meal_type to matching slots
-      const unassignedSnacks: any[] = [];
+      // CRITICAL FIX: First, try to assign snacks to their original slot positions (if available)
+      // This preserves snack-to-snack swaps
       daySnacks.forEach((snack) => {
-        // CRITICAL: Skip if this meal is already assigned globally (prevent duplicates across dates)
         const snackId = snack.id || snack.meal_id || snack.mealId;
-        if (snackId && globalAssignedMealIds.has(snackId)) {
-          console.warn(`⚠️ Skipping meal ${snackId} '${snack.meal_name || snack.mealName}' - already assigned to another date/slot`);
-          return; // Skip duplicates across dates
-        }
-        
-        // CRITICAL: Also skip if already assigned on this date (prevent duplicates within same date)
-        if (snackId && dateAssignedMealIds.has(snackId)) {
-          console.warn(`⚠️ Skipping meal ${snackId} '${snack.meal_name || snack.mealName}' - already assigned to another slot on ${date}`);
-          return; // Skip duplicates within same date
-        }
-        
-        // Verify meal belongs to this date
         const snackDate = snack.meal_date || snack.date;
+        
+        // Skip if already assigned or date mismatch
+        if (snackId && (globalAssignedMealIds.has(snackId) || dateAssignedMealIds.has(snackId))) {
+          return;
+        }
         if (snackDate !== date) {
-          console.warn(`⚠️ Skipping meal ${snackId} '${snack.meal_name || snack.mealName}' - date mismatch: meal date=${snackDate}, target date=${date}`);
-          return; // Skip if date doesn't match
+          return;
         }
         
-        // ROOT CAUSE FIX: Check preserved meal_type from recipe_details (backend stores it there)
-        // Try multiple locations to find the preserved meal_type
-        // CRITICAL: After swapping, preservedType is what the meal WAS (before swap)
-        // The current meal_type is what the meal IS (after swap)
-        // For snacks, we need to use the preservedType to match to the correct snack slot
-        let preservedType = snack.recipe?.meal_type || snack.recipe_details?.meal_type || snack.meal_type || snack.type;
-        const currentMealType = snack.meal_type || snack.type;
-        
-        // ROOT CAUSE FIX: After swapping, a snack might have meal_type='lunch' but preservedType='morning snack'
-        // This means the snack was swapped TO a lunch slot, but we want to match it to the snack slot
-        // So we should use the preservedType (what it was) to match it to the correct snack slot
-        // BUT: If the current meal_type is a snack type, use that instead (it's already in the right slot)
-        if (currentMealType && (currentMealType === 'morning snack' || currentMealType === 'afternoon snack' || currentMealType === 'evening snack')) {
-          // Use current meal_type if it's a specific snack type (meal is already in correct slot)
-          preservedType = currentMealType;
-        } else if (preservedType && (preservedType === 'morning snack' || preservedType === 'afternoon snack' || preservedType === 'evening snack')) {
-          // Use preserved type if it's a specific snack type (meal was swapped, use original type)
-          // This handles snacks that were swapped (they keep their original snack type in recipe_details)
-        } else if (preservedType === 'snack' || !preservedType) {
-          // CRITICAL FIX: If we still have generic 'snack', try to infer from meal order or assign to first available slot
-          // Check if we already have a morning snack assigned for this date
-          const morningSnackSlot = snackSlotMap['morning snack'];
-          const afternoonSnackSlot = snackSlotMap['afternoon snack'];
-          const hasMorningSnack = morningSnackSlot !== undefined && result[date]?.[morningSnackSlot];
-          const hasAfternoonSnack = afternoonSnackSlot !== undefined && result[date]?.[afternoonSnackSlot];
-          
-          // Assign to first available slot
-          if (!hasMorningSnack && morningSnackSlot !== undefined) {
-            preservedType = 'morning snack';
-          } else if (!hasAfternoonSnack && afternoonSnackSlot !== undefined) {
-            preservedType = 'afternoon snack';
-          } else {
-            // Both slots filled or no slots available - keep as generic 'snack' for fallback assignment
-            preservedType = 'snack';
-          }
-        }
-        
-        // ROOT CAUSE FIX: Use preserved meal_type directly, don't fall back to 'snack'
-        // This ensures we match the exact slot (morning snack vs afternoon snack)
-        const snackType = preservedType;
-        
-        // ROOT CAUSE DEBUG: Log what we're checking for slot assignment
-        console.log(`🔍 Snack assignment check: snackId=${snackId}, name='${snack.meal_name || snack.mealName}', preservedType='${preservedType}', snackType='${snackType}', snackSlotMap=`, snackSlotMap);
-        
-        const targetSlotIdx = snackSlotMap[snackType];
-        console.log(`🔍 targetSlotIdx=${targetSlotIdx}, slot already filled=${result[date]?.[targetSlotIdx] ? 'YES' : 'NO'}`);
-        
-        if (targetSlotIdx !== undefined && !result[date][targetSlotIdx]) {
-          // Assign to specific slot based on preserved meal_type
-          result[date][targetSlotIdx] = snack;
+        // CRITICAL FIX: Try to preserve original slot position first (for snack-to-snack swaps)
+        let assigned = false;
+        if (snackId && mealIdToOriginalSlot[snackId] !== undefined) {
+          const originalSlot = mealIdToOriginalSlot[snackId];
+          // Check if original slot is a snack slot and is available
+          if (snackSlotIndices.includes(originalSlot) && !result[date][originalSlot]) {
+            result[date][originalSlot] = snack;
           if (snackId) {
             dateAssignedMealIds.add(snackId);
             globalAssignedMealIds.add(snackId);
           }
-          console.log(`✅ Assigned snack ${snackId} '${snack.meal_name || snack.mealName}' to ${date} ${snackType} (slot ${targetSlotIdx})`);
-        } else {
-          // No matching slot or slot already filled - add to unassigned list
-          if (targetSlotIdx === undefined) {
-            console.warn(`⚠️ No matching slot found for snackType '${snackType}'. Available slots:`, Object.keys(snackSlotMap));
-          } else if (result[date][targetSlotIdx]) {
-            console.warn(`⚠️ Slot ${targetSlotIdx} (${snackType}) already filled for ${date}`);
-          }
-          unassignedSnacks.push(snack);
+            console.log(`✅ Assigned snack ${snackId} '${snack.meal_name || snack.mealName}' to ${date} original slot ${originalSlot}`);
+            assigned = true;
         }
-      });
+        }
       
-      // Second pass: Assign remaining snacks in order to available slots (only if not already assigned)
-      // ROOT CAUSE FIX: Only assign each snack ONCE to the FIRST available slot
-      unassignedSnacks.forEach((snack, snackOrder) => {
-        // CRITICAL: Skip if this meal is already assigned globally or on this date
-        const snackId = snack.id || snack.meal_id || snack.mealId;
-        if (snackId && (globalAssignedMealIds.has(snackId) || dateAssignedMealIds.has(snackId))) {
-          console.warn(`⚠️ Skipping unassigned snack ${snackId} '${snack.meal_name || snack.mealName}' - already assigned`);
-          return; // Skip duplicates
-        }
-        
-        // Verify meal belongs to this date
-        const snackDate = snack.meal_date || snack.date;
-        if (snackDate !== date) {
-          console.warn(`⚠️ Skipping unassigned snack ${snackId} '${snack.meal_name || snack.mealName}' - date mismatch: meal date=${snackDate}, target date=${date}`);
-          return; // Skip if date doesn't match
-        }
-        
-        // ROOT CAUSE FIX: Find the FIRST available slot for this snack and assign it ONCE, then break
-        // Double-check: Ensure snack is not already assigned before proceeding
-        let isAlreadyAssigned = false;
-        for (let checkIdx = 0; checkIdx < mealTypes.length; checkIdx++) {
-          if (result[date] && result[date][checkIdx] && 
-              (result[date][checkIdx].id === snackId || 
-               result[date][checkIdx].meal_id === snackId || 
-               result[date][checkIdx].mealId === snackId)) {
-            isAlreadyAssigned = true;
-            console.warn(`⚠️ Snack ${snackId} '${snack.meal_name || snack.mealName}' already assigned to ${date} slot ${checkIdx} - skipping`);
-            break;
-          }
-        }
-        
-        if (isAlreadyAssigned) {
-          return; // Already assigned, skip
-        }
-        
-        if (snackOrder < snackSlotIndices.length) {
-          // Find the first available slot
+        // If not assigned to original slot, assign to first available snack slot (by order)
+        if (!assigned) {
           for (let i = 0; i < snackSlotIndices.length; i++) {
-            const targetSlot = snackSlotIndices[i];
-            if (!result[date][targetSlot]) {
-              // Found available slot - assign snack and STOP
-              result[date][targetSlot] = snack;
+            const slotIdx = snackSlotIndices[i];
+            if (!result[date][slotIdx]) {
+              // Found available slot - assign snack
+              result[date][slotIdx] = snack;
               if (snackId) {
                 dateAssignedMealIds.add(snackId);
                 globalAssignedMealIds.add(snackId);
               }
-              console.log(`✅ Assigned unassigned snack ${snackId} '${snack.meal_name || snack.mealName}' to ${date} slot ${targetSlot} (snackOrder=${snackOrder}, foundSlot=${i})`);
-              break; // CRITICAL: Stop after assigning to first available slot
+              console.log(`✅ Assigned snack ${snackId} '${snack.meal_name || snack.mealName}' to ${date} slot ${slotIdx}`);
+              break; // Stop after assigning to first available slot
             }
           }
         }
@@ -1813,7 +1753,7 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
     );
     
     // Check recipe_details from the original meal object (what's in the database)
-    const recipeDetailsFromDB = mealFromPlan?.recipe_details || mealFromPlan?.recipe?.recipe_details;
+    const recipeDetailsFromDB = (mealFromPlan as any)?.recipe_details || (mealFromPlan?.recipe as any)?.recipe_details;
     
     // Check if recipe_details exists in database and has ingredients
     const hasRecipeDetailsWithIngredients = recipeDetailsFromDB && 
@@ -2013,7 +1953,7 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
             protein: updatedRecipeDetails.per_serving_protein || updatedRecipeDetails.protein || selectedRecipe.protein,
             carbs: updatedRecipeDetails.per_serving_carbs || updatedRecipeDetails.carbs || selectedRecipe.carbs,
             fats: updatedRecipeDetails.per_serving_fats || updatedRecipeDetails.fats || selectedRecipe.fats,
-            nutrition: updatedRecipeDetails.nutrition || selectedRecipe.nutrition
+            nutrition: updatedRecipeDetails.nutrition || (selectedRecipe as any).nutrition
           };
           
           // CRITICAL: Update selectedRecipe immediately using functional update
@@ -2021,7 +1961,8 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
           setSelectedRecipe(prev => {
             // If prev exists and has the same ID, update it with new data
             // Otherwise, just use the updated data
-            if (prev && ((prev as any).id === updatedSelectedRecipe.id || (prev as any).meal_id === updatedSelectedRecipe.meal_id)) {
+            const prevAny = prev as any;
+            if (prev && (prevAny.id === updatedSelectedRecipe.id || prevAny.meal_id === (updatedSelectedRecipe as any).meal_id)) {
               return updatedSelectedRecipe;
             }
             return updatedSelectedRecipe;
@@ -2033,7 +1974,8 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
           // CRITICAL: After loadMealPlan completes, ensure selectedRecipe still has the updated data
           // Use functional update to preserve the updated data even if mealPlan state changed
           setSelectedRecipe(prev => {
-            if (prev && ((prev as any).id === updatedSelectedRecipe.id || (prev as any).meal_id === updatedSelectedRecipe.meal_id)) {
+            const prevAny = prev as any;
+            if (prev && (prevAny.id === updatedSelectedRecipe.id || prevAny.meal_id === (updatedSelectedRecipe as any).meal_id)) {
               // Keep the updated data we set above
               return updatedSelectedRecipe;
             }
@@ -2132,11 +2074,12 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
     setPreviewServings(newServings);
     
     // Always allow preview - no need to check for meal ID
-    const currentServings = selectedRecipe.servings || selectedRecipe.recipe?.servings || 1;
+    const selectedRecipeAny = selectedRecipe as any;
+    const currentServings = selectedRecipeAny.servings || selectedRecipe.recipe?.servings || 1;
     const multiplier = newServings / currentServings;
     
     // Preview the adjusted nutrition
-    const previewCalories = Math.round((selectedRecipe.calories || selectedRecipe.per_serving_calories || 0) * multiplier);
+    const previewCalories = Math.round((selectedRecipe.calories || selectedRecipeAny.per_serving_calories || 0) * multiplier);
     const previewProtein = Math.round((selectedRecipe.protein || 0) * multiplier);
     const previewCarbs = Math.round((selectedRecipe.carbs || 0) * multiplier);
     const previewFats = Math.round((selectedRecipe.fats || 0) * multiplier);
@@ -2322,10 +2265,14 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
 
   // Simple two-click swap function
   const handleSimpleSwap = async (mealId: string, date: string, mealType: string) => {
-    if (!mealPlan?.id || !mealId) return;
+    if (!mealPlan?.id) return;
     
     // First click: enter swap mode and select source meal
     if (!swapMode || !swapSourceMeal) {
+      // CRITICAL FIX: Allow empty mealId for user recipe replacement mode
+      if (!mealId && !swapSourceMeal?.isUserRecipe) {
+        return; // Don't allow empty mealId for normal swap mode
+      }
       setSwapMode(true);
       setSwapSourceMeal({ id: mealId, date, mealType });
       toast({
@@ -2353,7 +2300,312 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
       return;
     }
     
-    // Perform swap via API
+    // CRITICAL FIX: Handle user recipe replacement (replace, not swap)
+    // When user recipe is being replaced, delete the AI recipe in the grid slot and move user recipe there
+    if (swapSourceMeal.isUserRecipe) {
+      try {
+        const { supabase } = await import('../../lib/supabase.ts');
+        const { data: { session } } = await supabase.auth.getSession();
+        
+        if (!session?.access_token) {
+          toast({ title: 'Please log in', status: 'error', duration: 2000, isClosable: true });
+          setSwapMode(false);
+          setSwapSourceMeal(null);
+          return;
+        }
+        
+        // CRITICAL FIX: Validate user recipe ID
+        if (!swapSourceMeal.id || swapSourceMeal.id === '') {
+          throw new Error('User recipe ID is missing. Please try again.');
+        }
+        
+        // CRITICAL FIX: Validate date and mealType
+        if (!date || !mealType) {
+          throw new Error('Target date and meal type are required.');
+        }
+        
+        // CRITICAL FIX: Fetch meal plan directly from API to ensure we have the latest data
+        // This ensures the custom meal is in the meal plan before trying to move it
+        // Don't rely on state which might be stale
+        // Note: supabase and session are already declared above, so we reuse them
+        
+        // Fetch meal plan directly from API
+        const mealPlanResponse = await fetch(`http://localhost:8000/nutrition/meal-plans/${mealPlan.id}`, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+          },
+        });
+        
+        if (!mealPlanResponse.ok) {
+          throw new Error('Failed to fetch meal plan');
+        }
+        
+        const freshMealPlan = await mealPlanResponse.json();
+        
+        // CRITICAL FIX: Verify meal exists in meal plan before trying to move it
+        // The meal ID from recentlyAddedMeal might be stale, so check the actual meal plan
+        let actualMealId = swapSourceMeal.id;
+        
+        // CRITICAL FIX: First, check if this meal was removed from grid (needs recreation)
+        // This check must happen BEFORE we try to find it in the meal plan
+        const foundRecentlyAddedMeal = recentlyAddedMeals.find(m => {
+          const mId = m.id || (m as any).meal_id || (m as any).mealId;
+          return String(mId) === String(swapSourceMeal.id);
+        });
+        
+        const mealNotInGrid = foundRecentlyAddedMeal && (foundRecentlyAddedMeal as any)._notInGrid;
+        const customMealData = (foundRecentlyAddedMeal as any)?._customMealData;
+        
+        console.log(`🔍 Looking for meal: swapSourceMeal.id=${swapSourceMeal.id}, recentlyAddedMeal=${foundRecentlyAddedMeal ? JSON.stringify({ id: foundRecentlyAddedMeal.id, name: foundRecentlyAddedMeal.meal_name || foundRecentlyAddedMeal.name }) : 'null'}, mealNotInGrid=${mealNotInGrid}`);
+        
+        // CRITICAL FIX: Only try to find meal in meal plan if it wasn't removed from grid
+        // If it was removed, we'll recreate it later
+        if (!mealNotInGrid && freshMealPlan && freshMealPlan.meals) {
+          console.log(`📋 Meal plan has ${freshMealPlan.meals.length} meals`);
+          
+          // Try to find by ID first
+          const mealInPlan = freshMealPlan.meals.find((m: any) => {
+            const mId = m.id || m.meal_id || m.mealId;
+            const match = String(mId) === String(swapSourceMeal.id);
+            if (match) {
+              console.log(`✅ Found meal by ID: ${mId} === ${swapSourceMeal.id}`);
+            }
+            return match;
+          });
+          
+          if (mealInPlan) {
+            // Use the ID from the meal plan (more reliable)
+            const mealInPlanAny = mealInPlan as any;
+            actualMealId = String(mealInPlanAny.id || mealInPlanAny.meal_id || mealInPlanAny.mealId);
+            console.log(`✅ Found meal in plan: ${actualMealId}`);
+          } else {
+            // Meal not found by ID - try to find by name (fallback)
+            console.log(`⚠️ Meal not found by ID, trying to find by name...`);
+            
+            // Try with foundRecentlyAddedMeal if available
+            if (foundRecentlyAddedMeal) {
+              const targetName = foundRecentlyAddedMeal.meal_name || foundRecentlyAddedMeal.name;
+              console.log(`🔍 Looking for meal by name: "${targetName}"`);
+              
+              const mealByName = freshMealPlan.meals.find((m: any) => {
+                const mealName = m.meal_name || m.name || (m as any).mealName;
+                const match = mealName === targetName;
+                if (match) {
+                  console.log(`✅ Found meal by name: "${mealName}" === "${targetName}"`);
+                }
+                return match;
+              });
+              
+              if (mealByName) {
+                const mealByNameAny = mealByName as any;
+                actualMealId = String(mealByNameAny.id || mealByNameAny.meal_id || mealByNameAny.mealId);
+                console.log(`✅ Found meal by name: ${actualMealId}`);
+              } else {
+                // Try case-insensitive match
+                const mealByCaseInsensitiveName = freshMealPlan.meals.find((m: any) => {
+                  const mealName = (m.meal_name || m.name || (m as any).mealName || '').toLowerCase();
+                  const targetNameLower = (targetName || '').toLowerCase();
+                  return mealName === targetNameLower;
+                });
+                
+                if (mealByCaseInsensitiveName) {
+                  const mealByNameAny = mealByCaseInsensitiveName as any;
+                  actualMealId = String(mealByNameAny.id || mealByNameAny.meal_id || mealByNameAny.mealId);
+                  console.log(`✅ Found meal by case-insensitive name: ${actualMealId}`);
+                } else {
+                  // Meal not found - but if it was removed from grid, that's OK
+                  if (!mealNotInGrid) {
+                    // Only throw error if meal wasn't removed from grid
+                    console.error(`❌ Meal not found in meal plan. Looking for:`, {
+                      id: swapSourceMeal.id,
+                      name: targetName
+                    });
+                    const availableMeals = freshMealPlan.meals.map((m: any) => ({
+                      id: m.id || m.meal_id || m.mealId,
+                      name: m.meal_name || m.name || (m as any).mealName
+                    }));
+                    console.error(`❌ Available meals (${availableMeals.length}):`, availableMeals);
+                    console.error(`❌ Available meal IDs:`, availableMeals.map((m: any) => m.id));
+                    console.error(`❌ Looking for ID: "${swapSourceMeal.id}" (type: ${typeof swapSourceMeal.id})`);
+                    throw new Error(`Meal not found in meal plan. Please try adding the meal again.`);
+                  } else {
+                    console.log(`ℹ️ Meal was removed from grid, will recreate it: id=${swapSourceMeal.id}`);
+                  }
+                }
+              }
+            } else {
+              // No recentlyAddedMeal to search by name
+              // CRITICAL FIX: If meal not found but we have swapSourceMeal.id, use it anyway
+              // The meal was created successfully, so we can trust the ID
+              // This handles the case where the meal was just created and might not be in the meal plan yet
+              console.warn(`⚠️ Meal not found in meal plan, but using provided ID: ${swapSourceMeal.id}`);
+              console.warn(`⚠️ This might be a timing issue - the meal will be in the meal plan soon`);
+              actualMealId = swapSourceMeal.id;
+              console.log(`✅ Using swapSourceMeal.id: ${actualMealId}`);
+            }
+          }
+        } else {
+          // CRITICAL FIX: If meal plan has no meals but we have swapSourceMeal.id, use it anyway
+          if (swapSourceMeal.id) {
+            console.warn(`⚠️ Meal plan has no meals, but using provided ID: ${swapSourceMeal.id}`);
+            actualMealId = swapSourceMeal.id;
+            console.log(`✅ Using swapSourceMeal.id: ${actualMealId}`);
+          } else {
+            throw new Error('Meal plan has no meals. Please try adding the meal again.');
+          }
+        }
+        
+        // CRITICAL FIX: Ensure meal ID is a valid integer
+        const mealIdInt = parseInt(actualMealId, 10);
+        if (isNaN(mealIdInt)) {
+          throw new Error(`Invalid meal ID: ${actualMealId}. Please try adding the meal again.`);
+        }
+        actualMealId = String(mealIdInt);
+        
+        console.log(`🔄 Replacing meal: userRecipeId=${actualMealId}, targetDate=${date}, targetMealType=${mealType}, existingMealId=${mealId || 'none'}`);
+        
+        // Step 1: Delete the AI recipe in the grid slot (if it exists)
+        if (mealId && mealId !== '') {
+          const deleteResponse = await fetch(`http://localhost:8000/nutrition/meal-plans/${mealPlan.id}/meals/${mealId}`, {
+            method: 'DELETE',
+            headers: {
+              'Authorization': `Bearer ${session.access_token}`,
+              'Content-Type': 'application/json',
+            },
+          });
+          
+          if (!deleteResponse.ok && deleteResponse.status !== 404) {
+            const errorData = await deleteResponse.json().catch(() => ({ detail: 'Failed to delete meal' }));
+            throw new Error(errorData.detail || 'Failed to delete meal');
+          }
+        }
+        
+        // CRITICAL FIX: Check if meal was removed from grid (not in meal plan)
+        // If so, we need to recreate it first before moving it
+        // Note: We already checked mealNotInGrid and customMealData above, so we can use those values
+        if (mealNotInGrid && customMealData) {
+          // CRITICAL FIX: Meal was removed from grid, recreate it first
+          console.log(`🔄 Meal was removed from grid, recreating it first: id=${actualMealId}`);
+          
+          // Recreate the meal in the meal plan
+          const recreateUrl = `http://localhost:8000/nutrition/meal-plans/${mealPlan.id}/custom-meal`;
+          const recreateData = {
+            ...customMealData,
+            meal_date: date, // Use target date
+            meal_type: mealType // Use target meal type
+          };
+          
+          const recreateResponse = await fetch(recreateUrl, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${session.access_token}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(recreateData),
+          });
+          
+          if (!recreateResponse.ok) {
+            const errorData = await recreateResponse.json().catch(() => ({ detail: 'Failed to recreate meal' }));
+            throw new Error(errorData.detail || 'Failed to recreate meal');
+          }
+          
+          const recreateResult = await recreateResponse.json();
+          const newMealId = recreateResult.meal_id || recreateResult.meal?.id || recreateResult.id;
+          
+          if (!newMealId) {
+            throw new Error('Failed to get meal ID after recreation');
+          }
+          
+          console.log(`✅ Meal recreated: newId=${newMealId}`);
+          
+          // Update the meal ID in the recently added meals list
+          setRecentlyAddedMeals(prev => prev.map(m => {
+            const mId = m.id || (m as any).meal_id || (m as any).mealId;
+            if (String(mId) === String(actualMealId)) {
+              return {
+                ...m,
+                id: String(newMealId),
+                _notInGrid: false // Mark as in grid now
+              };
+            }
+            return m;
+          }));
+          
+          // Use the new meal ID for the move operation
+          actualMealId = String(newMealId);
+        }
+        
+        // Step 2: Move user recipe to the grid slot
+        const moveUrl = `http://localhost:8000/nutrition/meal-plans/${mealPlan.id}/meals/${actualMealId}/move?target_date=${date}&target_meal_type=${mealType}`;
+        console.log(`🔄 Moving meal to: ${moveUrl}`);
+        
+        const moveResponse = await fetch(moveUrl, {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+          },
+        });
+        
+        if (moveResponse.ok) {
+          await moveResponse.json(); // Response not needed, just check if successful
+          toast({
+            title: 'Meal replaced successfully',
+            description: `Your custom recipe has replaced the meal in ${mealType}`,
+            status: 'success',
+            duration: 3000,
+            isClosable: true
+          });
+          
+          // CRITICAL FIX: Keep the recently added meal in the list - don't clear it
+          // The user wants to see it in "recently added meals" even after swapping to grid
+          // Only clear it when explicitly dismissed or deleted
+          
+          // CRITICAL FIX: Exit swap mode BEFORE reloading to prevent state conflicts
+          setSwapMode(false);
+          setSwapSourceMeal(null);
+          
+          // Reload meal plan to reflect changes (after swap mode is cleared)
+          await loadMealPlan();
+          
+          // CRITICAL FIX: Notify dashboard to reload
+          window.dispatchEvent(new CustomEvent('mealPlanUpdated'));
+        } else {
+          const errorData = await moveResponse.json().catch(() => ({ detail: 'Failed to move meal' }));
+          const errorMessage = errorData.detail || errorData.message || 'Failed to move meal';
+          console.error(`❌ Move failed: ${errorMessage}`, errorData);
+          throw new Error(errorMessage);
+        }
+      } catch (error) {
+        console.error('Error replacing meal:', error);
+        toast({
+          title: 'Failed to replace meal',
+          description: (error as Error).message,
+          status: 'error',
+          duration: 3000,
+          isClosable: true
+        });
+        setSwapMode(false);
+        setSwapSourceMeal(null);
+      }
+      return;
+    }
+    
+    // Normal swap: perform swap via API
+    // CRITICAL FIX: Require mealId for normal swap (not user recipe replacement)
+    if (!mealId) {
+      toast({ 
+        title: 'Cannot swap', 
+        description: 'Please select a meal to swap with', 
+        status: 'warning', 
+        duration: 2000, 
+        isClosable: true 
+      });
+      return;
+    }
+    
     try {
       const { supabase } = await import('../../lib/supabase.ts');
       const { data: { session } } = await supabase.auth.getSession();
@@ -2661,15 +2913,94 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
       if (response.ok) {
         const result = await response.json();
         
+        // CRITICAL FIX: Get the actual meal ID from the backend response FIRST
+        // Backend returns: { "meal_id": ..., "meal": { "id": ... } }
+        const backendMealId = result.meal_id || result.meal?.id || result.id;
+        if (!backendMealId) {
+          throw new Error('Failed to get meal ID from backend response');
+        }
+        
+        console.log(`✅ Custom meal created: backendMealId=${backendMealId}, name='${customMealData.meal_name}'`);
+        
+        // CRITICAL FIX: Fetch meal plan directly from API to ensure we have the latest data
+        // Don't rely on state which might be stale
+        const mealPlanResponse = await fetch(`http://localhost:8000/nutrition/meal-plans/${mealPlan.id}`, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+          },
+        });
+        
+        if (!mealPlanResponse.ok) {
+          throw new Error('Failed to fetch meal plan after creating custom meal');
+        }
+        
+        const freshMealPlan = await mealPlanResponse.json();
+        console.log(`📋 Fetched fresh meal plan with ${freshMealPlan.meals?.length || 0} meals`);
+        
+        // CRITICAL FIX: Find the meal in the fresh meal plan to ensure we have the correct ID
+        // The meal might have been assigned to a different slot by the backend
+        let actualMeal: any = null;
+        if (freshMealPlan && freshMealPlan.meals) {
+          actualMeal = freshMealPlan.meals.find((m: any) => {
+            const mId = m.id || m.meal_id || m.mealId;
+            return String(mId) === String(backendMealId);
+          });
+          
+          if (actualMeal) {
+            console.log(`✅ Found meal in fresh meal plan: id=${actualMeal.id || actualMeal.meal_id || actualMeal.mealId}`);
+          } else {
+            console.warn(`⚠️ Meal not found by ID in fresh meal plan, trying by name...`);
+          }
+        }
+        
+        // If meal not found by ID, try to find by name (fallback)
+        if (!actualMeal && freshMealPlan && freshMealPlan.meals) {
+          actualMeal = freshMealPlan.meals.find((m: any) => {
+            const mealName = m.meal_name || m.name || (m as any).mealName;
+            return mealName === customMealData.meal_name;
+          });
+          
+          if (actualMeal) {
+            console.log(`✅ Found meal by name in fresh meal plan: id=${actualMeal.id || actualMeal.meal_id || actualMeal.mealId}`);
+          }
+        }
+        
+        // CRITICAL FIX: If meal not found in meal plan, use backend response
+        // The meal was created successfully, so we can trust the backend response
+        // The meal will be in the meal plan, it might just not be in the response yet
+        let mealId: string | number;
+        let mealDate: string;
+        let mealType: string;
+        
+        if (actualMeal) {
+          // Use the actual meal from the meal plan (most reliable)
+          mealId = actualMeal.id || actualMeal.meal_id || actualMeal.mealId;
+          mealDate = actualMeal.meal_date || actualMeal.date || (result.meal_date || result.meal?.meal_date || selectedDate);
+          mealType = actualMeal.meal_type || actualMeal.type || (result.meal_type || result.meal?.meal_type || customMealData.meal_type);
+          console.log(`✅ Using meal from meal plan: id=${mealId}`);
+        } else {
+          // CRITICAL FIX: If meal not found, use backend response
+          // The backend created the meal successfully, so we can trust the response
+          console.warn(`⚠️ Meal not found in meal plan immediately, using backend response ID: ${backendMealId}`);
+          mealId = backendMealId;
+          mealDate = result.meal_date || result.meal?.meal_date || selectedDate;
+          mealType = result.meal_type || result.meal?.meal_type || customMealData.meal_type;
+          console.log(`✅ Using backend response: id=${mealId}, date=${mealDate}, type=${mealType}`);
+        }
+        
+        // CRITICAL FIX: Reload meal plan state to update UI
+        await loadMealPlan();
+        
         // Create a new meal object from the custom meal data
-        // Use existing meal ID if editing, otherwise use the result ID
-        const mealId = isEditing ? editingMealId : (result.meal_id || result.id);
-        const newMeal: Meal = {
-          id: mealId,
+        // CRITICAL: Use the actual meal ID from the meal plan (not backend response)
+        const newMeal: Meal & { meal_date?: string; date?: string } = {
+          id: String(mealId), // CRITICAL: Use ID from actual meal in meal plan
           meal_name: customMealData.meal_name,
-          meal_type: customMealData.meal_type,
-          meal_date: result.meal_date || selectedDate, // CRITICAL: Ensure meal has a date
-          date: result.meal_date || selectedDate, // CRITICAL: Ensure meal has a date
+          meal_type: mealType as 'breakfast' | 'lunch' | 'dinner' | 'snack',
+          meal_date: mealDate, // CRITICAL: Use actual date from meal plan
+          date: mealDate, // CRITICAL: Use actual date from meal plan
           calories: customMealData.nutrition.calories,
           protein: customMealData.nutrition.protein,
           carbs: customMealData.nutrition.carbs,
@@ -2696,18 +3027,64 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
           }
         };
         
-        // CRITICAL FIX: Reload meal plan from backend to ensure custom meal appears in grid
-        // The backend should have added the meal with proper date/type assignment
-        await loadMealPlan();
+        console.log(`✅ Custom meal created: id=${newMeal.id}, name='${newMeal.meal_name}', date=${newMeal.meal_date}, type=${newMeal.meal_type}`);
         
-        // Store the added meal to display in the box below grid
-        setRecentlyAddedMeal(newMeal);
-        // Save to localStorage to persist across page switches
+        // CRITICAL FIX: Remove the meal from the grid immediately after creation
+        // The backend automatically adds it to the meal plan, but we want it only in "My Custom Meals"
+        // We'll delete it from the meal plan but keep all the meal data for later use
+        let mealRemovedFromGrid = false;
         try {
-          localStorage.setItem('recentlyAddedMeal', JSON.stringify(newMeal));
-        } catch (e) {
-          console.warn('Failed to save recently added meal to localStorage:', e);
+          const deleteResponse = await fetch(`http://localhost:8000/nutrition/meal-plans/${mealPlan.id}/meals/${mealId}`, {
+            method: 'DELETE',
+            headers: {
+              'Authorization': `Bearer ${session.access_token}`,
+              'Content-Type': 'application/json',
+            },
+          });
+          
+          if (deleteResponse.ok || deleteResponse.status === 404) {
+            mealRemovedFromGrid = true;
+            console.log(`✅ Removed meal from grid (keeping in My Custom Meals): id=${mealId}`);
+          } else {
+            console.warn(`⚠️ Failed to remove meal from grid: ${deleteResponse.status}`);
+            // Continue anyway - the meal will be in the grid but also in My Custom Meals
+          }
+        } catch (deleteErr) {
+          console.warn('⚠️ Error removing meal from grid:', deleteErr);
+          // Continue anyway - the meal will be in the grid but also in My Custom Meals
         }
+        
+        // CRITICAL FIX: Store the full meal data (not just ID) in case we need to recreate it
+        // Add a flag to indicate this meal is not in the grid yet
+        const mealForStorage: Meal & { meal_date?: string; date?: string; _customMealData?: any; _notInGrid?: boolean } = {
+          ...newMeal,
+          _customMealData: customMealData, // Store full custom meal data for recreation
+          _notInGrid: mealRemovedFromGrid // Flag to indicate if meal was removed from grid
+        };
+        
+        // CRITICAL FIX: Add the meal to the persistent list of recently added meals
+        // Check if meal already exists (by ID or name) to avoid duplicates
+        setRecentlyAddedMeals(prev => {
+          const existingIndex = prev.findIndex(m => {
+            const mId = m.id || (m as any).meal_id || (m as any).mealId;
+            const mName = m.meal_name || m.name || (m as any).mealName;
+            return String(mId) === String(mealId) || mName === customMealData.meal_name;
+          });
+          
+          if (existingIndex >= 0) {
+            // Update existing meal
+            const updated = [...prev];
+            updated[existingIndex] = mealForStorage;
+            return updated;
+          } else {
+            // Add new meal to the list
+            return [...prev, mealForStorage];
+          }
+        });
+        
+        // CRITICAL FIX: Reload meal plan AFTER removing the meal from grid
+        // This ensures the grid doesn't show the meal
+        await loadMealPlan();
         
         // Clear editing state
         const wasEditing = editingMealId !== null;
@@ -4252,6 +4629,7 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
                                       >
                                         {cellMeal.meal_name || cellMeal.name}
                                       </Text>
+                                      <HStack spacing={1} align="center">
                                       {generatingMeals.has(`${d}-${slotIdx}-${slot}`) ? (
                                         <Badge size={mealsPerDay > 4 ? "xs" : "sm"} colorScheme="orange" variant="subtle">
                                           <HStack spacing={0.5}>
@@ -4269,6 +4647,79 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
                                           <Badge size={mealsPerDay > 4 ? "xs" : "sm"} colorScheme="green" variant="subtle" fontSize={mealsPerDay > 4 ? "9px" : "11px"}>Recipe</Badge>
                                         )
                                       )}
+                                        <Button
+                                          size={mealsPerDay > 4 ? "2xs" : "xs"}
+                                          variant="ghost"
+                                          colorScheme="red"
+                                          onClick={async (e: React.MouseEvent) => {
+                                            e.stopPropagation();
+                                            const mealId = cellMeal?.id || cellMeal?.meal_id || cellMeal?.mealId;
+                                            if (!mealId || !mealPlan) return;
+                                            
+                                            if (!window.confirm(`Are you sure you want to delete "${cellMeal.meal_name || cellMeal.name}"?`)) {
+                                              return;
+                                            }
+                                            
+                                            try {
+                                              setLoading(true);
+                                              const { supabase } = await import('../../lib/supabase.ts');
+                                              const { data: { session } } = await supabase.auth.getSession();
+                                              
+                                              if (!session?.access_token) {
+                                                toast({ title: 'Please log in', status: 'warning', duration: 2500, isClosable: true });
+                                                return;
+                                              }
+                                              
+                                              const response = await fetch(`http://localhost:8000/nutrition/meal-plans/${mealPlan.id}/meals/${mealId}`, {
+                                                method: 'DELETE',
+                                                headers: {
+                                                  'Authorization': `Bearer ${session.access_token}`,
+                                                  'Content-Type': 'application/json',
+                                                },
+                                              });
+                                              
+                                              if (response.ok || response.status === 404) {
+                                                toast({
+                                                  title: 'Meal deleted',
+                                                  description: 'The meal has been removed from the grid',
+                                                  status: 'success',
+                                                  duration: 2000,
+                                                  isClosable: true,
+                                                });
+                                                
+                                                // Reload meal plan to reflect changes
+                                                await loadMealPlan();
+                                                
+                                                // Notify dashboard to reload
+                                                window.dispatchEvent(new CustomEvent('mealPlanUpdated'));
+                                              } else {
+                                                const errorData = await response.json().catch(() => ({ detail: 'Failed to delete meal' }));
+                                                throw new Error(errorData.detail || 'Failed to delete meal');
+                                              }
+                                            } catch (err: any) {
+                                              console.error('Error deleting meal:', err);
+                                              toast({
+                                                title: 'Failed to delete meal',
+                                                description: err.message || 'Please try again',
+                                                status: 'error',
+                                                duration: 3000,
+                                                isClosable: true,
+                                              });
+                                            } finally {
+                                              setLoading(false);
+                                            }
+                                          }}
+                                          aria-label="Delete meal"
+                                          title="Delete this meal from the grid"
+                                          p={mealsPerDay > 4 ? 0.5 : 1}
+                                          minW="auto"
+                                          h="auto"
+                                          fontSize={mealsPerDay > 4 ? "12px" : "14px"}
+                                          _hover={{ bg: "red.50", color: "red.600" }}
+                                        >
+                                          ×
+                                        </Button>
+                                      </HStack>
                                     </HStack>
                                     
                                     {/* CRITICAL: Add nutrition information prominently */}
@@ -4482,6 +4933,21 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
                                 </VStack>
                               ) : (
                                 <VStack spacing={mealsPerDay > 4 ? 1.5 : 2} align="stretch">
+                                  {/* CRITICAL FIX: Allow user recipe replacement in empty slots */}
+                                  {swapMode && swapSourceMeal?.isUserRecipe ? (
+                                    <Button 
+                                      size={mealsPerDay > 4 ? "2xs" : "xs"} 
+                                      variant="solid" 
+                                      colorScheme="orange"
+                                      onClick={() => handleSimpleSwap('', d, slot)}
+                                      width="100%"
+                                      fontSize={mealsPerDay > 4 ? "10px" : "12px"}
+                                      py={mealsPerDay > 4 ? 2 : 3}
+                                    >
+                                      {mealsPerDay > 4 ? 'Place Here' : 'Place Recipe Here'}
+                                    </Button>
+                                  ) : (
+                                    <>
                                   <Button 
                                     size={mealsPerDay > 4 ? "2xs" : "xs"} 
                                     variant="outline" 
@@ -4506,6 +4972,8 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
                                   >
                                     {mealsPerDay > 4 ? 'Pick Recipe' : 'Pick from Database'}
                                   </Button>
+                                    </>
+                                  )}
                                 </VStack>
                               )}
                             </Box>
@@ -4587,193 +5055,175 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
           </ModalContent>
         </Modal>
 
-        {/* Recently Added Meal Display Box */}
-        {recentlyAddedMeal && (
+        {/* Recently Added Meals Display Box */}
+        {recentlyAddedMeals.length > 0 && (
           <Card bg={cardBg} borderColor="green.300" borderWidth={2} mt={4}>
             <CardBody>
-              <VStack align="stretch" spacing={3}>
+              <VStack align="stretch" spacing={4}>
+                <HStack justify="space-between" align="center">
+                  <Heading size="md" color="green.600">
+                    ✓ My Custom Meals ({recentlyAddedMeals.length})
+                  </Heading>
+                  <Text fontSize="sm" color="gray.500">
+                    These meals persist across week changes and grid resets
+                  </Text>
+                </HStack>
+                
+                <SimpleGrid columns={{ base: 1, md: 2, lg: 3 }} spacing={4}>
+                  {recentlyAddedMeals.map((meal, index) => {
+                    const mealId = meal.id || (meal as any).meal_id || (meal as any).mealId;
+                    const mealName = meal.meal_name || meal.name || (meal as any).mealName || 'Custom Meal';
+                    const mealType = meal.meal_type || meal.type || 'meal';
+                    const mealCalories = meal.calories ?? (meal.recipe as any)?.per_serving_calories ?? meal.recipe?.nutrition?.calories ?? (meal.recipe as any)?.calories ?? 0;
+                    
+                    return (
+                      <Card key={mealId || index} bg={cardBg} borderWidth={1} borderColor="green.200">
+                        <CardBody>
+                          <VStack align="stretch" spacing={2}>
                 <HStack justify="space-between" align="start">
                   <VStack align="start" spacing={1} flex={1}>
                     <HStack spacing={2}>
-                      <Heading size="sm" color="green.600">
-                        ✓ Recently Added Meal
-                      </Heading>
-                      <Badge colorScheme="green" variant="subtle" size="sm">
-                        {recentlyAddedMeal.meal_type || recentlyAddedMeal.type || 'meal'}
+                                  <Text fontSize="sm" fontWeight="semibold" noOfLines={1}>
+                                    {mealName}
+                                  </Text>
+                                  <Badge colorScheme="green" variant="subtle" size="xs">
+                                    {mealType}
                       </Badge>
                     </HStack>
-                    <Text fontSize="md" fontWeight="semibold">
-                      {recentlyAddedMeal.meal_name || recentlyAddedMeal.name || 'Custom Meal'}
-                    </Text>
                   </VStack>
                   <Button
                     size="xs"
                     variant="ghost"
                     onClick={() => {
-                      setRecentlyAddedMeal(null);
-                      // Clear from localStorage when dismissed
-                      try {
-                        localStorage.removeItem('recentlyAddedMeal');
-                      } catch (e) {
-                        console.warn('Failed to remove recently added meal from localStorage:', e);
-                      }
+                                  // Remove this meal from the list
+                                  setRecentlyAddedMeals(prev => prev.filter(m => {
+                                    const mId = m.id || (m as any).meal_id || (m as any).mealId;
+                                    return String(mId) !== String(mealId);
+                                  }));
                     }}
-                    aria-label="Close"
+                                aria-label="Remove meal"
                   >
                     ×
                   </Button>
                 </HStack>
                 
-                <HStack spacing={4} fontSize="sm" color="gray.600">
+                            <HStack spacing={3} fontSize="xs" color="gray.600">
                   <Text fontWeight="semibold">
-                    {Math.round(
-                      recentlyAddedMeal.calories ??
-                      recentlyAddedMeal.recipe?.per_serving_calories ??
-                      recentlyAddedMeal.recipe?.nutrition?.calories ??
-                      recentlyAddedMeal.recipe?.calories ??
-                      0
-                    )} cal
+                                {Math.round(mealCalories)} cal
                   </Text>
-                  {(recentlyAddedMeal.protein || recentlyAddedMeal.recipe?.nutrition?.protein) && (
-                    <Text>P: {Math.round(recentlyAddedMeal.protein ?? recentlyAddedMeal.recipe?.nutrition?.protein ?? 0)}g</Text>
-                  )}
-                  {(recentlyAddedMeal.carbs || recentlyAddedMeal.recipe?.nutrition?.carbs) && (
-                    <Text>C: {Math.round(recentlyAddedMeal.carbs ?? recentlyAddedMeal.recipe?.nutrition?.carbs ?? 0)}g</Text>
-                  )}
-                  {(recentlyAddedMeal.fats || recentlyAddedMeal.recipe?.nutrition?.fats) && (
-                    <Text>F: {Math.round(recentlyAddedMeal.fats ?? recentlyAddedMeal.recipe?.nutrition?.fats ?? 0)}g</Text>
-                  )}
+                              {meal.protein && <Text>P: {Math.round(meal.protein)}g</Text>}
+                              {meal.carbs && <Text>C: {Math.round(meal.carbs)}g</Text>}
+                              {meal.fats && <Text>F: {Math.round(meal.fats)}g</Text>}
                 </HStack>
                 
-                {(recentlyAddedMeal.dietary_tags && recentlyAddedMeal.dietary_tags.length > 0) && (
-                  <HStack spacing={1} wrap="wrap">
-                    {recentlyAddedMeal.dietary_tags.slice(0, 5).map((tag: string) => (
-                      <Badge key={tag} size="xs" colorScheme="green" variant="subtle">
-                        {tag}
-                      </Badge>
-                    ))}
-                  </HStack>
-                )}
-                
-                <HStack spacing={2}>
+                            <HStack spacing={2} wrap="wrap">
                   <Button
-                    size="sm"
+                                size="xs"
                     colorScheme="blue"
                     variant="outline"
                     onClick={() => {
-                      if (recentlyAddedMeal) {
-                        handleViewRecipe(recentlyAddedMeal);
-                      }
+                                  handleViewRecipe(meal);
                     }}
                   >
-                    View Recipe
+                                View
                   </Button>
                   <Button
-                    size="sm"
+                                size="xs"
                     colorScheme="green"
                     variant="outline"
                     onClick={() => {
-                      if (recentlyAddedMeal) {
                         // Convert meal data to CustomMealData format
-                        const mealData = recentlyAddedMeal.recipe || recentlyAddedMeal;
+                                  const mealData = meal.recipe || meal;
+                                  const mealDataAny = mealData as any;
+                                  const mealAny = meal as any;
                         const customMealData = {
-                          meal_name: recentlyAddedMeal.meal_name ?? recentlyAddedMeal.name ?? mealData?.title ?? '',
-                          meal_type: (recentlyAddedMeal.meal_type ?? recentlyAddedMeal.type ?? 'breakfast') as any,
+                                    meal_name: meal.meal_name ?? meal.name ?? mealDataAny?.title ?? '',
+                                    meal_type: (meal.meal_type ?? meal.type ?? 'breakfast') as any,
                           cuisine: mealData?.cuisine ?? '',
-                          prep_time: mealData?.prep_time ?? recentlyAddedMeal.prep_time ?? 0,
-                          cook_time: mealData?.cook_time ?? recentlyAddedMeal.cook_time ?? 0,
-                          servings: mealData?.servings ?? 1,
-                          difficulty: (mealData?.difficulty ?? recentlyAddedMeal.difficulty_level ?? 'easy') as any,
-                          summary: mealData?.summary ?? '',
-                          ingredients: mealData?.ingredients ?? recentlyAddedMeal.ingredients ?? [{ name: '', quantity: 0, unit: 'g' }],
-                          instructions: mealData?.instructions ?? recentlyAddedMeal.instructions ?? [{ step: 1, description: '' }],
-                          dietary_tags: mealData?.dietary_tags ?? recentlyAddedMeal.dietary_tags ?? [],
+                                    prep_time: mealData?.prep_time ?? meal.prep_time ?? 0,
+                                    cook_time: mealData?.cook_time ?? meal.cook_time ?? 0,
+                                    servings: mealDataAny?.servings ?? 1,
+                                    difficulty: (mealData?.difficulty ?? meal.difficulty_level ?? 'easy') as any,
+                                    summary: mealDataAny?.summary ?? '',
+                                    ingredients: mealData?.ingredients ?? meal.ingredients ?? [{ name: '', quantity: 0, unit: 'g' }],
+                                    instructions: mealData?.instructions ?? meal.instructions ?? [{ step: 1, description: '' }],
+                                    dietary_tags: mealData?.dietary_tags ?? meal.dietary_tags ?? [],
                           nutrition: {
-                            calories: recentlyAddedMeal.calories ?? mealData?.nutrition?.calories ?? mealData?.per_serving_calories ?? 0,
-                            protein: recentlyAddedMeal.protein ?? mealData?.nutrition?.protein ?? 0,
-                            carbs: recentlyAddedMeal.carbs ?? mealData?.nutrition?.carbs ?? 0,
-                            fats: recentlyAddedMeal.fats ?? mealData?.nutrition?.fats ?? 0
+                                      calories: meal.calories ?? mealDataAny?.nutrition?.calories ?? mealDataAny?.per_serving_calories ?? 0,
+                                      protein: meal.protein ?? mealDataAny?.nutrition?.protein ?? 0,
+                                      carbs: meal.carbs ?? mealDataAny?.nutrition?.carbs ?? 0,
+                                      fats: meal.fats ?? mealDataAny?.nutrition?.fats ?? 0
                           }
                         };
-                        setEditingMealId(recentlyAddedMeal.id);
+                                  setEditingMealId(meal.id);
                         setEditingMealData(customMealData);
                         onCustomMealOpen();
-                      }
                     }}
                   >
-                    Edit Recipe
+                                Edit
                   </Button>
                   <Button
-                    size="sm"
-                    colorScheme="red"
-                    variant="outline"
-                    onClick={async () => {
-                      if (!recentlyAddedMeal || !mealPlan) return;
-                      
-                      if (!window.confirm(`Are you sure you want to delete "${recentlyAddedMeal.meal_name || recentlyAddedMeal.name}"?`)) {
+                                size="xs"
+                                colorScheme={swapMode && swapSourceMeal?.id === String(mealId) ? "gray" : "orange"}
+                                variant={swapMode && swapSourceMeal?.id === String(mealId) ? "outline" : "solid"}
+                                onClick={() => {
+                                  if (!mealPlan) return;
+                                  
+                                  // CRITICAL FIX: Toggle replace mode - if already active, deactivate it
+                                  if (swapMode && swapSourceMeal?.id === String(mealId)) {
+                                    // Deactivate replace mode
+                                    setSwapMode(false);
+                                    setSwapSourceMeal(null);
+                                    toast({
+                                      title: 'Replace mode cancelled',
+                                      description: 'You can click "Swap to Grid" again to reactivate',
+                                      status: 'info',
+                                      duration: 2000,
+                                      isClosable: true
+                                    });
                         return;
                       }
                       
-                      try {
-                        setLoading(true);
-                        const { supabase } = await import('../../lib/supabase.ts');
-                        const { data: { session } } = await supabase.auth.getSession();
-                        
-                        if (!session?.access_token) {
-                          toast({ title: 'Please log in', status: 'warning', duration: 2500, isClosable: true });
+                                  // CRITICAL FIX: Validate meal ID before entering replace mode
+                                  const mealAny = meal as any;
+                                  const mealIdToUse = meal.id || mealAny.meal_id || mealAny.mealId;
+                                  if (!mealIdToUse) {
+                                    toast({
+                                      title: 'Cannot swap',
+                                      description: 'Meal ID is missing. Please try adding the meal again.',
+                                      status: 'error',
+                                      duration: 3000,
+                                      isClosable: true
+                                    });
                           return;
                         }
                         
-                        const response = await fetch(`http://localhost:8000/nutrition/meal-plans/${mealPlan.id}/meals/${recentlyAddedMeal.id}`, {
-                          method: 'DELETE',
-                          headers: {
-                            'Authorization': `Bearer ${session.access_token}`,
-                            'Content-Type': 'application/json',
-                          },
-                        });
-                        
-                        if (response.ok) {
-                          // Clear the recently added meal from state and localStorage
-                          setRecentlyAddedMeal(null);
-                          try {
-                            localStorage.removeItem('recentlyAddedMeal');
-                          } catch (e) {
-                            console.warn('Failed to remove recently added meal from localStorage:', e);
-                          }
-                          
-                          // Reload meal plan
-                          await loadMealPlan();
-                          
+                                  // Enter replace mode - user will click a grid slot to replace
+                                  setSwapMode(true);
+                                  setSwapSourceMeal({ 
+                                    id: String(mealIdToUse), 
+                                    date: mealAny.meal_date || mealAny.date || '', 
+                                    mealType: meal.meal_type || meal.type || '',
+                                    isUserRecipe: true // Flag to indicate this is a user recipe replacement
+                                  });
                           toast({
-                            title: 'Meal deleted!',
-                            description: 'The meal has been removed from your meal plan.',
-                            status: 'success',
-                            duration: 3000,
-                            isClosable: true,
-                          });
-                        } else {
-                          throw new Error('Failed to delete meal');
-                        }
-                      } catch (err: any) {
-                        console.error('Error deleting meal:', err);
-                        toast({ 
-                          title: 'Failed to delete meal', 
-                          description: err.message, 
-                          status: 'error', 
+                                    title: 'Replace mode active',
+                                    description: 'Click a meal in the grid to replace it with your custom recipe',
+                                    status: 'info',
                           duration: 3000, 
                           isClosable: true 
                         });
-                      } finally {
-                        setLoading(false);
-                      }
                     }}
                   >
-                    Delete Recipe
+                                {swapMode && swapSourceMeal?.id === String(mealId) ? 'Cancel' : 'Swap to Grid'}
                   </Button>
-                  <Text fontSize="xs" color="gray.500">
-                    This meal has been added to your meal plan and will appear in the daily log and shopping list.
-                  </Text>
                 </HStack>
+                          </VStack>
+                        </CardBody>
+                      </Card>
+                    );
+                  })}
+                </SimpleGrid>
               </VStack>
             </CardBody>
           </Card>
@@ -4845,11 +5295,11 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
             <ModalHeader>
               <HStack justify="space-between" align="start" w="full" pr={8}>
                 <VStack align="start" spacing={1} flex={1}>
-                  <Text>{selectedRecipe?.title || selectedRecipe?.meal_name || selectedRecipe?.name || 'Recipe Details'}</Text>
+                  <Text>{(selectedRecipe as any)?.title || selectedRecipe?.meal_name || selectedRecipe?.name || 'Recipe Details'}</Text>
                   <HStack spacing={2}>
-                  {selectedRecipe?.database_fallback ? (
+                  {(selectedRecipe as any)?.database_fallback ? (
                     <Badge colorScheme="blue" variant="subtle">Database</Badge>
-                  ) : selectedRecipe?.ai_generated !== false ? (
+                  ) : (selectedRecipe as any)?.ai_generated !== false ? (
                     <Badge colorScheme="purple" variant="subtle">AI Generated</Badge>
                   ) : (
                     <Badge colorScheme="green" variant="subtle">Recipe Database</Badge>
@@ -4886,42 +5336,42 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
                       <Box p={3} bg="blue.50" borderRadius="md">
                         <Text fontSize="sm" color="gray.600">Calories</Text>
                         <Text fontSize="lg" fontWeight="bold">
-                          {selectedRecipe.per_serving_calories ?? 
-                           selectedRecipe.recipe?.per_serving_calories ??
+                          {(selectedRecipe as any)?.per_serving_calories ?? 
+                           (selectedRecipe.recipe as any)?.per_serving_calories ??
                            selectedRecipe.calories ?? 
-                           selectedRecipe.nutrition?.calories ?? 
+                           selectedRecipe.recipe?.nutrition?.calories ?? 
                            0}
                         </Text>
                       </Box>
                       <Box p={3} bg="green.50" borderRadius="md">
                         <Text fontSize="sm" color="gray.600">Protein</Text>
                         <Text fontSize="lg" fontWeight="bold">
-                          {selectedRecipe.per_serving_protein ?? 
-                           selectedRecipe.recipe?.per_serving_protein ??
+                          {(selectedRecipe as any)?.per_serving_protein ?? 
+                           (selectedRecipe.recipe as any)?.per_serving_protein ??
                            selectedRecipe.protein ?? 
-                           selectedRecipe.nutrition?.protein ?? 
+                           selectedRecipe.recipe?.nutrition?.protein ?? 
                            0}g
                         </Text>
                       </Box>
                       <Box p={3} bg="orange.50" borderRadius="md">
                         <Text fontSize="sm" color="gray.600">Carbs</Text>
                         <Text fontSize="lg" fontWeight="bold">
-                          {selectedRecipe.per_serving_carbs ?? 
-                           selectedRecipe.recipe?.per_serving_carbs ??
+                          {(selectedRecipe as any)?.per_serving_carbs ?? 
+                           (selectedRecipe.recipe as any)?.per_serving_carbs ??
                            selectedRecipe.carbs ?? 
-                           selectedRecipe.nutrition?.carbs ?? 
+                           selectedRecipe.recipe?.nutrition?.carbs ?? 
                            0}g
                         </Text>
                       </Box>
                       <Box p={3} bg="purple.50" borderRadius="md">
                         <Text fontSize="sm" color="gray.600">Fats</Text>
                         <Text fontSize="lg" fontWeight="bold">
-                          {selectedRecipe.per_serving_fat ?? 
-                           selectedRecipe.per_serving_fats ??
-                           selectedRecipe.recipe?.per_serving_fat ??
-                           selectedRecipe.recipe?.per_serving_fats ??
+                          {(selectedRecipe as any)?.per_serving_fat ?? 
+                           (selectedRecipe as any)?.per_serving_fats ??
+                           (selectedRecipe.recipe as any)?.per_serving_fat ??
+                           (selectedRecipe.recipe as any)?.per_serving_fats ??
                            selectedRecipe.fats ?? 
-                           selectedRecipe.nutrition?.fats ?? 
+                           selectedRecipe.recipe?.nutrition?.fats ?? 
                            0}g
                         </Text>
                       </Box>
@@ -4939,7 +5389,7 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
                           colorScheme="blue"
                           onClick={async () => {
                             const mealId = selectedRecipe.id || (selectedRecipe as any).meal_id;
-                            const newServings = (selectedRecipe.servings || selectedRecipe.recipe?.servings || 1) as number;
+                            const newServings = ((selectedRecipe as any).servings || selectedRecipe.recipe?.servings || 1) as number;
                             if (mealId && newServings > 0) {
                               try {
                                 setLoading(true);
@@ -4998,7 +5448,7 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
                           max={10}
                           step={0.25}
                           precision={2}
-                          onChange={(valueString, valueNumber) => {
+                          onChange={(_valueString: string, valueNumber: number) => {
                             if (valueNumber > 0) {
                               handleServingsChange(valueNumber);
                             }
@@ -5039,7 +5489,7 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
                         variant="ghost"
                         colorScheme="gray"
                         onClick={() => {
-                          const originalServings = selectedRecipe?.recipe?.servings || selectedRecipe?.servings || 1;
+                          const originalServings = selectedRecipe?.recipe?.servings || (selectedRecipe as any)?.servings || 1;
                           handleServingsChange(originalServings);
                         }}
                         isDisabled={loading}
@@ -5077,7 +5527,7 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
                       <VStack align="stretch" spacing={2}>
                         {selectedRecipe.ingredients.map((ingredient: any, index: number) => {
                           // Calculate adjusted quantity if portion has been changed
-                          const currentServings = selectedRecipe.servings || selectedRecipe.recipe?.servings || 1;
+                          const currentServings = (selectedRecipe as any).servings || selectedRecipe.recipe?.servings || 1;
                           const originalServings = (ingredient.original_servings || selectedRecipe.recipe?.servings || ingredient.servings || 1);
                           const multiplier = currentServings / originalServings;
                           const adjustedQuantity = typeof ingredient === 'object' && ingredient.quantity 
@@ -5100,7 +5550,7 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
                           );
                           
                           // Check recipe_details from the original meal object (what's in the database)
-                          const recipeDetailsFromDB = mealFromPlan?.recipe_details || mealFromPlan?.recipe?.recipe_details;
+                          const recipeDetailsFromDB = (mealFromPlan as any)?.recipe_details || (mealFromPlan?.recipe as any)?.recipe_details;
                           
                           // Check if recipe_details exists in database and has ingredients
                           const hasRecipeDetailsWithIngredients = recipeDetailsFromDB && 
@@ -5169,7 +5619,7 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
                         {(() => {
                           const tags = (selectedRecipe?.dietaryTags || selectedRecipe?.dietary_tags || []) as string[];
                           const ingredientsList = (selectedRecipe?.ingredients || []).map((i: any) => typeof i === 'string' ? i.toLowerCase() : String(i?.name || '').toLowerCase());
-                          const text = `${(selectedRecipe?.title || selectedRecipe?.meal_name || '')}`.toLowerCase() + ' ' + ingredientsList.join(' ');
+                          const text = `${((selectedRecipe as any)?.title || selectedRecipe?.meal_name || '')}`.toLowerCase() + ' ' + ingredientsList.join(' ');
                           const meat = ["chicken","beef","pork","lamb","turkey","bacon","ham","sausage","salami","fish","salmon","tuna","shrimp","prawn","anchovy","chorizo"].some(k=>text.includes(k));
                           const dairyOrEgg = ["milk","cheese","yogurt","butter","cream","feta","mozzarella","parmesan","egg"].some(k=>text.includes(k));
                           const gluten = ["wheat","flour","bread","pasta","noodle","tortilla","barley","rye","cracker","breadcrumbs"].some(k=>text.includes(k));
@@ -5204,7 +5654,7 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
                     const mealFromPlan = mealPlan?.meals?.find((m: any) => 
                       (m.id === mealId) || (m.meal_id === mealId)
                     );
-                    const hasRecipeDetailsInDB = mealFromPlan?.recipe_details || mealFromPlan?.recipe?.recipe_details;
+                    const hasRecipeDetailsInDB = (mealFromPlan as any)?.recipe_details || (mealFromPlan?.recipe as any)?.recipe_details;
                     
                     // Only show error if we have no ingredients, no instructions, AND no recipe_details in DB
                     return !hasIngredients && !hasInstructions && !hasRecipeDetailsInDB;
@@ -5500,7 +5950,7 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
           <ModalOverlay />
           <ModalContent>
             <ModalHeader>
-              <Text>Ingredient Values - {selectedRecipe?.title || selectedRecipe?.meal_name || selectedRecipe?.name || 'Recipe'}</Text>
+              <Text>Ingredient Values - {(selectedRecipe as any)?.title || selectedRecipe?.meal_name || selectedRecipe?.name || 'Recipe'}</Text>
             </ModalHeader>
             <ModalCloseButton />
             <ModalBody>
@@ -5512,8 +5962,9 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
                       <ResponsiveContainer width="100%" height="100%">
                         <BarChart
                           data={(() => {
-                            const currentServings = previewServings || selectedRecipe.servings || selectedRecipe.recipe?.servings || 1;
-                            const originalServings = selectedRecipe.recipe?.servings || selectedRecipe.servings || 1;
+                            const selectedRecipeAny = selectedRecipe as any;
+                            const currentServings = previewServings || selectedRecipeAny.servings || selectedRecipe.recipe?.servings || 1;
+                            const originalServings = selectedRecipe.recipe?.servings || selectedRecipeAny.servings || 1;
                             const multiplier = currentServings / originalServings;
                             
                             // Nutrition per 100g lookup
@@ -5631,15 +6082,16 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
                             tick={{ fontSize: 10 }}
                           />
                           <Tooltip 
-                            formatter={(value: any, name: string, props: any) => {
+                            formatter={(value: any, name: string) => {
                               // The name parameter is the dataKey ('protein', 'carbs', 'fats')
                               const label = name === 'protein' ? 'Protein' : name === 'carbs' ? 'Carbs' : name === 'fats' ? 'Fats' : name;
                               return [`${value}g`, label];
                             }}
-                            labelFormatter={(label) => {
+                            labelFormatter={(label: string) => {
                               const item = (() => {
-                                const currentServings = previewServings || selectedRecipe.servings || selectedRecipe.recipe?.servings || 1;
-                                const originalServings = selectedRecipe.recipe?.servings || selectedRecipe.servings || 1;
+                                const selectedRecipeAny = selectedRecipe as any;
+                                const currentServings = previewServings || selectedRecipeAny.servings || selectedRecipe.recipe?.servings || 1;
+                                const originalServings = selectedRecipe.recipe?.servings || selectedRecipeAny.servings || 1;
                                 const multiplier = currentServings / originalServings;
                                 return (selectedRecipe.ingredients || []).find((ing: any) => {
                                   const ingName = typeof ing === 'string' ? ing : (ing.name || '');
@@ -5662,8 +6114,9 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
                     <Heading size="sm" mb={2}>Ingredient Macronutrients</Heading>
                     <VStack align="stretch" spacing={2}>
                       {(() => {
-                        const currentServings = previewServings || selectedRecipe.servings || selectedRecipe.recipe?.servings || 1;
-                        const originalServings = selectedRecipe.recipe?.servings || selectedRecipe.servings || 1;
+                        const selectedRecipeAny = selectedRecipe as any;
+                        const currentServings = previewServings || selectedRecipeAny.servings || selectedRecipe.recipe?.servings || 1;
+                        const originalServings = selectedRecipe.recipe?.servings || selectedRecipeAny.servings || 1;
                         const multiplier = currentServings / originalServings;
                         
                         // Nutrition per 100g lookup (same as in graph)

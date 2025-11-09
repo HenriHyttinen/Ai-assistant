@@ -1143,7 +1143,7 @@ def add_recipe_to_meal_plan(
             "title": recipe.title,
             "summary": recipe.summary or "",
             "cuisine": recipe.cuisine or "",
-            "meal_type": meal_type_raw,  # Store original meal_type (morning snack/afternoon snack) for frontend slot assignment
+            "meal_type": meal_type,  # Store normalized meal_type (snack, not morning snack/afternoon snack)
             "prep_time": recipe.prep_time,
             "cook_time": recipe.cook_time,
             "difficulty_level": recipe.difficulty_level,
@@ -1512,16 +1512,13 @@ def swap_meals(
             )
         
         # ROOT CAUSE FIX: Swap the dates and meal types
-        # Also preserve recipe_details.meal_type for snacks (morning snack/afternoon snack)
+        # Simplified: Just swap meal_type directly, don't preserve specific snack types
+        # Frontend will assign snacks to slots by order, not by matching specific types
         meal_1_date = meal_1.meal_date
         meal_1_type = meal_1.meal_type
-        meal_1_recipe_details = meal_1.recipe_details or {}
-        meal_1_preserved_type = meal_1_recipe_details.get('meal_type', meal_1_type)
         
         meal_2_date = meal_2.meal_date
         meal_2_type = meal_2.meal_type
-        meal_2_recipe_details = meal_2.recipe_details or {}
-        meal_2_preserved_type = meal_2_recipe_details.get('meal_type', meal_2_type)
         
         # Swap dates and meal types
         meal_1.meal_date = meal_2_date
@@ -1529,14 +1526,13 @@ def swap_meals(
         meal_2.meal_date = meal_1_date
         meal_2.meal_type = meal_1_type
         
-        # ROOT CAUSE FIX: Also swap preserved meal_type in recipe_details for snacks
-        # This ensures "morning snack" and "afternoon snack" are preserved correctly
-        if meal_1_recipe_details:
-            meal_1_recipe_details['meal_type'] = meal_2_preserved_type
-            meal_1.recipe_details = meal_1_recipe_details
-        if meal_2_recipe_details:
-            meal_2_recipe_details['meal_type'] = meal_1_preserved_type
-            meal_2.recipe_details = meal_2_recipe_details
+        # CRITICAL FIX: Update recipe_details.meal_type to match the swapped meal_type
+        # This ensures recipe_details.meal_type reflects the current slot, not the original
+        # Frontend will assign meals to slots based on meal_type, not preserved types
+        if meal_1.recipe_details:
+            meal_1.recipe_details['meal_type'] = meal_2_type
+        if meal_2.recipe_details:
+            meal_2.recipe_details['meal_type'] = meal_1_type
         
         db.commit()
         db.refresh(meal_1)
@@ -2716,8 +2712,8 @@ def _adjust_daily_total(
                             meal.recipe_details['nutrition']['per_serving_protein'] = new_protein
                             meal.recipe_details['nutrition']['carbs'] = new_carbs
                             meal.recipe_details['nutrition']['per_serving_carbs'] = new_carbs
-                            meal.recipe_details['nutrition']['fats'] = new_fats
-                            meal.recipe_details['nutrition']['per_serving_fats'] = new_fats
+                        meal.recipe_details['nutrition']['fats'] = new_fats
+                        meal.recipe_details['nutrition']['per_serving_fats'] = new_fats
             
             db.commit()
             
@@ -4195,9 +4191,9 @@ async def generate_meal_slot(
         # Ensure recipe_details has all fields
         recipe_details['ai_generated'] = True
         recipe_details['database_source'] = False
-        # Store original meal_type (e.g., "morning snack") in recipe_details
-        # This distinguishes between different snack slots even though DB column stores "snack"
-        recipe_details['meal_type'] = meal_type_raw  # Store original: "morning snack", "afternoon snack", etc.
+        # Store normalized meal_type in recipe_details
+        # Frontend will assign snacks to slots by order, not by matching specific types
+        recipe_details['meal_type'] = meal_type  # Store normalized meal_type (snack, not morning snack/afternoon snack)
         
         # CRITICAL: Re-infer dietary tags from ingredients to ensure accuracy
         # This ensures seafood/fish/meat are properly tagged even if AI missed them

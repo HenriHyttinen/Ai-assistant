@@ -39,7 +39,8 @@ import {
   Line,
   Area,
   AreaChart,
-  Legend
+  Legend,
+  ReferenceLine
 } from 'recharts';
 import { 
   FiPieChart, 
@@ -232,13 +233,16 @@ const MacronutrientVisualization: React.FC<MacronutrientVisualizationProps> = ({
     }
   ];
 
-  // Prepare trend data
+  // Prepare trend data with calorie deficit/surplus
   const trendData = dailyBreakdown.map(day => ({
     date: new Date(day.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
     protein: day.protein,
     carbs: day.carbs,
     fats: day.fats,
-    calories: day.calories
+    calories: day.calories,
+    calorieTarget: targets.calories,
+    calorieDeficitSurplus: day.calories - targets.calories, // Positive = surplus, Negative = deficit
+    caloriePercentage: targets.calories > 0 ? (day.calories / targets.calories) * 100 : 0
   }));
 
   // Custom tooltip for pie chart
@@ -439,20 +443,77 @@ const MacronutrientVisualization: React.FC<MacronutrientVisualizationProps> = ({
                 <AreaChart data={trendData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                   <XAxis dataKey="date" stroke="#718096" />
-                  <YAxis yAxisId="left" stroke="#718096" />
-                  <YAxis yAxisId="right" orientation="right" stroke="#e53e3e" />
-                  <RechartsTooltip />
+                  <YAxis yAxisId="left" stroke="#718096" label={{ value: 'Macros (g)', angle: -90, position: 'insideLeft' }} />
+                  <YAxis yAxisId="right" orientation="right" stroke="#e53e3e" label={{ value: 'Calories / Deficit/Surplus', angle: 90, position: 'insideRight' }} />
+                  <RechartsTooltip 
+                    content={({ active, payload, label }) => {
+                      if (active && payload && payload.length) {
+                        const data = payload[0].payload;
+                        return (
+                          <Box
+                            bg="white"
+                            p={3}
+                            borderRadius="md"
+                            boxShadow="lg"
+                            border="1px solid"
+                            borderColor="gray.200"
+                          >
+                            <Text fontWeight="bold" mb={2}>{label}</Text>
+                            {payload.map((entry: any, index: number) => (
+                              <Text key={index} fontSize="sm" color={entry.color}>
+                                {entry.name}: {typeof entry.value === 'number' ? entry.value.toFixed(1) : entry.value}
+                                {entry.dataKey === 'calorieDeficitSurplus' && (
+                                  <Text as="span" color={entry.value >= 0 ? 'red.500' : 'green.500'} ml={1}>
+                                    ({entry.value >= 0 ? '+' : ''}{entry.value.toFixed(0)})
+                                  </Text>
+                                )}
+                              </Text>
+                            ))}
+                            {data.calorieTarget && (
+                              <Text fontSize="xs" color="gray.500" mt={1}>
+                                Target: {data.calorieTarget} cal ({data.caloriePercentage.toFixed(1)}%)
+                              </Text>
+                            )}
+                          </Box>
+                        );
+                      }
+                      return null;
+                    }}
+                  />
                   <Legend />
+                  {/* Calorie target line (reference line) - shows the target calories */}
+                  <Line
+                    yAxisId="right"
+                    type="monotone"
+                    dataKey="calorieTarget"
+                    stroke="#9ca3af"
+                    strokeWidth={1.5}
+                    strokeDasharray="5 5"
+                    dot={false}
+                    name="Calorie Target"
+                    legendType="line"
+                  />
+                  {/* Calorie intake line - shows actual calories consumed */}
                   <Line
                     yAxisId="right"
                     type="monotone"
                     dataKey="calories"
                     stroke="#e53e3e"
-                    strokeWidth={2}
-                    dot={{ r: 4 }}
+                    strokeWidth={2.5}
+                    dot={{ r: 5, fill: '#e53e3e' }}
                     name="Calories"
                   />
+                  {/* Reference line at target for easy comparison */}
+                  <ReferenceLine 
+                    yAxisId="right" 
+                    y={targets.calories} 
+                    stroke="#9ca3af" 
+                    strokeDasharray="3 3" 
+                    label={{ value: 'Target', position: 'topRight' }} 
+                  />
+                  {/* Macronutrient areas */}
                   <Area
+                    yAxisId="left"
                     type="monotone"
                     dataKey="protein"
                     stackId="1"
@@ -462,6 +523,7 @@ const MacronutrientVisualization: React.FC<MacronutrientVisualizationProps> = ({
                     name="Protein (g)"
                   />
                   <Area
+                    yAxisId="left"
                     type="monotone"
                     dataKey="carbs"
                     stackId="1"
@@ -471,6 +533,7 @@ const MacronutrientVisualization: React.FC<MacronutrientVisualizationProps> = ({
                     name="Carbs (g)"
                   />
                   <Area
+                    yAxisId="left"
                     type="monotone"
                     dataKey="fats"
                     stackId="1"

@@ -25,6 +25,7 @@ import {
 import { FiBarChart, FiTrendingUp, FiTrendingDown, FiTarget, FiRefreshCw } from 'react-icons/fi';
 import { t } from '../../utils/translations';
 import MacronutrientVisualization from './MacronutrientVisualization';
+import CalorieVisualization from './CalorieVisualization';
 
 interface NutritionalAnalysisProps {
   nutritionalLogs?: any[];
@@ -34,6 +35,13 @@ interface NutritionalAnalysisProps {
 const NutritionalAnalysis: React.FC<NutritionalAnalysisProps> = () => {
   const [analysisType, setAnalysisType] = useState<'daily' | 'weekly' | 'monthly'>('daily');
   const [loading, setLoading] = useState(false);
+  const [dailyTarget, setDailyTarget] = useState<number>(2000); // ROOT CAUSE FIX: Store daily target from preferences
+  const [dailyTargets, setDailyTargets] = useState<{calories: number; protein: number; carbs: number; fats: number}>({
+    calories: 2000,
+    protein: 150,
+    carbs: 250,
+    fats: 65
+  }); // ROOT CAUSE FIX: Store all daily targets from preferences
   const [analysisData, setAnalysisData] = useState<any>({
     totals: {
       calories: 0,
@@ -66,6 +74,48 @@ const NutritionalAnalysis: React.FC<NutritionalAnalysisProps> = () => {
     },
   });
   const toast = useToast();
+
+  // ROOT CAUSE FIX: Load user preferences to get daily target
+  const loadPreferences = useCallback(async () => {
+    try {
+      const { supabase } = await import('../../lib/supabase.ts');
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session?.access_token) {
+        return; // Can't load preferences without session
+      }
+      
+      const response = await fetch(
+        'http://localhost:8000/nutrition/preferences',
+        {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token}`,
+          },
+        }
+      );
+      
+      if (response.ok) {
+        const prefs = await response.json();
+        console.log('🎯 Loaded preferences:', prefs);
+        // ROOT CAUSE FIX: Use daily targets from preferences
+        // Backend uses: daily_calorie_target, protein_target, carbs_target, fats_target
+        const newDailyTargets = {
+          calories: prefs.daily_calorie_target || 2000,
+          protein: prefs.protein_target || 150,
+          carbs: prefs.carbs_target || 250,
+          fats: prefs.fats_target || 65
+        };
+        setDailyTargets(newDailyTargets);
+        setDailyTarget(newDailyTargets.calories);
+        console.log('✅ Daily targets from preferences:', newDailyTargets);
+      }
+    } catch (error) {
+      console.error('Error loading preferences:', error);
+      // Use default if preferences can't be loaded
+    }
+  }, []);
 
   const loadAnalysis = useCallback(async () => {
     try {
@@ -266,6 +316,11 @@ const NutritionalAnalysis: React.FC<NutritionalAnalysisProps> = () => {
     }
   }, [analysisType, toast]);
 
+  // ROOT CAUSE FIX: Load preferences on mount to get daily target
+  React.useEffect(() => {
+    loadPreferences();
+  }, [loadPreferences]);
+
   React.useEffect(() => {
     loadAnalysis();
   }, [loadAnalysis]);
@@ -276,6 +331,22 @@ const NutritionalAnalysis: React.FC<NutritionalAnalysisProps> = () => {
     if (percentage > 110) return 'red';
     return 'red';
   };
+
+  // ROOT CAUSE FIX: Calculate period targets from daily targets
+  // For weekly: multiply daily targets by 7
+  // For monthly: multiply daily targets by 30
+  // For daily: use daily targets as-is
+  const getPeriodTargets = useCallback(() => {
+    const days = analysisType === 'daily' ? 1 : analysisType === 'weekly' ? 7 : 30;
+    return {
+      calories: dailyTargets.calories * days,
+      protein: dailyTargets.protein * days,
+      carbs: dailyTargets.carbs * days,
+      fats: dailyTargets.fats * days
+    };
+  }, [analysisType, dailyTargets]);
+
+  const periodTargets = getPeriodTargets();
 
 
   return (
@@ -362,7 +433,7 @@ const NutritionalAnalysis: React.FC<NutritionalAnalysisProps> = () => {
                     {analysisData?.totals?.calories?.toFixed(0) || 0}
                   </Text>
                   <Text fontSize="xs" color="gray.500">
-                    of {analysisData?.targets?.calories || 0} target
+                    of {periodTargets.calories.toFixed(0)} target
                   </Text>
                 </VStack>
                 <VStack>
@@ -371,7 +442,7 @@ const NutritionalAnalysis: React.FC<NutritionalAnalysisProps> = () => {
                     {analysisData?.totals?.protein?.toFixed(1) || 0}g
                   </Text>
                   <Text fontSize="xs" color="gray.500">
-                    {((analysisData?.totals?.protein || 0) / (analysisData?.targets?.protein || 1) * 100).toFixed(0)}% of target
+                    {((analysisData?.totals?.protein || 0) / (periodTargets.protein || 1) * 100).toFixed(0)}% of target
                   </Text>
                 </VStack>
                 <VStack>
@@ -380,7 +451,7 @@ const NutritionalAnalysis: React.FC<NutritionalAnalysisProps> = () => {
                     {analysisData?.totals?.carbs?.toFixed(1) || 0}g
                   </Text>
                   <Text fontSize="xs" color="gray.500">
-                    {((analysisData?.totals?.carbs || 0) / (analysisData?.targets?.carbs || 1) * 100).toFixed(0)}% of target
+                    {((analysisData?.totals?.carbs || 0) / (periodTargets.carbs || 1) * 100).toFixed(0)}% of target
                   </Text>
                 </VStack>
                 <VStack>
@@ -389,7 +460,7 @@ const NutritionalAnalysis: React.FC<NutritionalAnalysisProps> = () => {
                     {analysisData?.totals?.fats?.toFixed(1) || 0}g
                   </Text>
                   <Text fontSize="xs" color="gray.500">
-                    {((analysisData?.totals?.fats || 0) / (analysisData?.targets?.fats || 1) * 100).toFixed(0)}% of target
+                    {((analysisData?.totals?.fats || 0) / (periodTargets.fats || 1) * 100).toFixed(0)}% of target
                   </Text>
                 </VStack>
               </SimpleGrid>
@@ -453,17 +524,17 @@ const NutritionalAnalysis: React.FC<NutritionalAnalysisProps> = () => {
                   <HStack justify="space-between" mb={2}>
                     <Text fontWeight="semibold">{t('calories', 'en')}</Text>
                     <Text fontSize="sm" color="gray.600">
-                      {analysisData?.totals?.calories?.toFixed(0) || 0} / {analysisData?.targets?.calories || 0}
+                      {analysisData?.totals?.calories?.toFixed(0) || 0} / {periodTargets.calories.toFixed(0)}
                     </Text>
                   </HStack>
                   <Progress
-                    value={analysisData?.percentages?.calories || 0}
-                    colorScheme={getProgressColor(analysisData?.percentages?.calories || 0)}
+                    value={((analysisData?.totals?.calories || 0) / (periodTargets.calories || 1) * 100)}
+                    colorScheme={getProgressColor((analysisData?.totals?.calories || 0) / (periodTargets.calories || 1) * 100)}
                     size="lg"
                     borderRadius="md"
                   />
                   <Text fontSize="sm" color="gray.600" mt={1}>
-                    {(analysisData?.percentages?.calories || 0).toFixed(1)}% of target
+                    {((analysisData?.totals?.calories || 0) / (periodTargets.calories || 1) * 100).toFixed(1)}% of target
                   </Text>
                 </Box>
 
@@ -471,17 +542,17 @@ const NutritionalAnalysis: React.FC<NutritionalAnalysisProps> = () => {
                   <HStack justify="space-between" mb={2}>
                     <Text fontWeight="semibold">{t('protein', 'en')}</Text>
                     <Text fontSize="sm" color="gray.600">
-                      {analysisData?.totals?.protein?.toFixed(1) || 0}g / {analysisData?.targets?.protein || 0}g
+                      {analysisData?.totals?.protein?.toFixed(1) || 0}g / {periodTargets.protein.toFixed(1)}g
                     </Text>
                   </HStack>
                   <Progress
-                    value={analysisData?.percentages?.protein || 0}
-                    colorScheme={getProgressColor(analysisData?.percentages?.protein || 0)}
+                    value={((analysisData?.totals?.protein || 0) / (periodTargets.protein || 1) * 100)}
+                    colorScheme={getProgressColor((analysisData?.totals?.protein || 0) / (periodTargets.protein || 1) * 100)}
                     size="lg"
                     borderRadius="md"
                   />
                   <Text fontSize="sm" color="gray.600" mt={1}>
-                    {(analysisData?.percentages?.protein || 0).toFixed(1)}% of target
+                    {((analysisData?.totals?.protein || 0) / (periodTargets.protein || 1) * 100).toFixed(1)}% of target
                   </Text>
                 </Box>
 
@@ -489,17 +560,17 @@ const NutritionalAnalysis: React.FC<NutritionalAnalysisProps> = () => {
                   <HStack justify="space-between" mb={2}>
                     <Text fontWeight="semibold">{t('carbs', 'en')}</Text>
                     <Text fontSize="sm" color="gray.600">
-                      {analysisData?.totals?.carbs?.toFixed(1) || 0}g / {analysisData?.targets?.carbs || 0}g
+                      {analysisData?.totals?.carbs?.toFixed(1) || 0}g / {periodTargets.carbs.toFixed(1)}g
                     </Text>
                   </HStack>
                   <Progress
-                    value={analysisData?.percentages?.carbs || 0}
-                    colorScheme={getProgressColor(analysisData?.percentages?.carbs || 0)}
+                    value={((analysisData?.totals?.carbs || 0) / (periodTargets.carbs || 1) * 100)}
+                    colorScheme={getProgressColor((analysisData?.totals?.carbs || 0) / (periodTargets.carbs || 1) * 100)}
                     size="lg"
                     borderRadius="md"
                   />
                   <Text fontSize="sm" color="gray.600" mt={1}>
-                    {(analysisData?.percentages?.carbs || 0).toFixed(1)}% of target
+                    {((analysisData?.totals?.carbs || 0) / (periodTargets.carbs || 1) * 100).toFixed(1)}% of target
                   </Text>
                 </Box>
 
@@ -507,22 +578,39 @@ const NutritionalAnalysis: React.FC<NutritionalAnalysisProps> = () => {
                   <HStack justify="space-between" mb={2}>
                     <Text fontWeight="semibold">{t('fats', 'en')}</Text>
                     <Text fontSize="sm" color="gray.600">
-                      {analysisData?.totals?.fats?.toFixed(1) || 0}g / {analysisData?.targets?.fats || 0}g
+                      {analysisData?.totals?.fats?.toFixed(1) || 0}g / {periodTargets.fats.toFixed(1)}g
                     </Text>
                   </HStack>
                   <Progress
-                    value={analysisData?.percentages?.fats || 0}
-                    colorScheme={getProgressColor(analysisData?.percentages?.fats || 0)}
+                    value={((analysisData?.totals?.fats || 0) / (periodTargets.fats || 1) * 100)}
+                    colorScheme={getProgressColor((analysisData?.totals?.fats || 0) / (periodTargets.fats || 1) * 100)}
                     size="lg"
                     borderRadius="md"
                   />
                   <Text fontSize="sm" color="gray.600" mt={1}>
-                    {(analysisData?.percentages?.fats || 0).toFixed(1)}% of target
+                    {((analysisData?.totals?.fats || 0) / (periodTargets.fats || 1) * 100).toFixed(1)}% of target
                   </Text>
                 </Box>
               </VStack>
             </CardBody>
           </Card>
+
+          {/* Calorie Visualization */}
+          <CalorieVisualization
+            currentData={{
+              calories: analysisData?.totals?.calories || 0
+            }}
+            target={{
+              calories: dailyTarget // ROOT CAUSE FIX: Always use daily target from preferences, not aggregated target
+            }}
+            dailyBreakdown={(analysisData?.daily_breakdown || []).map((day: any) => ({
+              date: day.date,
+              calories: day.calories,
+              calorieTarget: dailyTarget // ROOT CAUSE FIX: Always use daily target for each day
+            }))}
+            period={analysisType}
+            onPeriodChange={setAnalysisType}
+          />
 
           {/* Macronutrient Visualization */}
           <MacronutrientVisualization
