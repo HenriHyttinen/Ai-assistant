@@ -3,7 +3,7 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime, date, timedelta
 from sqlalchemy.orm import Session
 from fastapi import HTTPException, status
-from sqlalchemy import and_, or_, func, desc, case
+from sqlalchemy import and_, or_, func, desc, case, text, String
 
 from models.recipe import Recipe, Ingredient
 from models.nutrition import (
@@ -2309,6 +2309,10 @@ class NutritionService:
     def search_recipes(self, db: Session, search_request: RecipeSearchRequest) -> Dict[str, Any]:
         """Search recipes with filters"""
         try:
+            # ROOT CAUSE FIX: Detect database type for JSON array queries
+            db_url = str(db.bind.url) if hasattr(db, 'bind') and db.bind else ''
+            is_postgresql = 'postgresql' in db_url.lower() or 'postgres' in db_url.lower()
+            
             query = db.query(Recipe).filter(Recipe.is_active == True)
             
             if search_request.query:
@@ -2413,30 +2417,86 @@ class NutritionService:
                 query = query.filter(Recipe.meal_type == search_request.meal_type)
             
             if search_request.dietary_tags:
+                # ROOT CAUSE FIX: Use proper JSON array contains check
+                def json_array_contains(column, value):
+                    """Check if a JSON array column contains a specific string value"""
+                    if is_postgresql:
+                        # PostgreSQL: use JSONB @> operator
+                        return column.op('@>')(text(f"'[\"{value}\"]'::jsonb"))
+                    else:
+                        # SQLite or other: use LIKE for JSON array strings
+                        return func.cast(column, String).like(f'%"{value}"%')
+                
                 for tag in search_request.dietary_tags:
-                    query = query.filter(Recipe.dietary_tags.contains(tag))
+                    query = query.filter(json_array_contains(Recipe.dietary_tags, tag))
             
-            # Apply user preferences filtering (only when explicitly searching, not for general browsing)
-            # CRITICAL FIX: Only apply strict user preferences when there's a search query
-            # When browsing without a query, show all recipes to avoid empty results
-            if search_request.user_preferences and search_request.query:
+            # ROOT CAUSE FIX: Always apply allergy filtering for safety, regardless of query
+            # Apply dietary preferences filtering when explicitly set in search filters
+            if search_request.user_preferences:
                 prefs = search_request.user_preferences
                 
-                # Intelligent dietary preferences filtering
+                # ROOT CAUSE FIX: Always filter allergies for safety, even without search query
+                if prefs.allergies and len(prefs.allergies) > 0:
+                    for allergy in prefs.allergies:
+                        allergy_lower = allergy.lower()
+                        # Check for contains-{allergy} tag (e.g., contains-eggs, contains-tree-nuts)
+                        allergen_tag = f"contains-{allergy_lower}"
+                        # Also check for contains-{allergy} with underscores (e.g., contains-tree_nuts)
+                        allergen_tag_alt = f"contains-{allergy_lower.replace('-', '_')}"
+                        # ROOT CAUSE FIX: Use proper JSON array contains check for allergens
+                        def json_array_contains(column, value):
+                            """Check if a JSON array column contains a specific string value"""
+                            if is_postgresql:
+                                # PostgreSQL: use JSONB @> operator
+                                return column.op('@>')(text(f"'[\"{value}\"]'::jsonb"))
+                            else:
+                                # SQLite or other: use LIKE for JSON array strings
+                                return func.cast(column, String).like(f'%"{value}"%')
+                        
+                        # Filter out recipes that have the allergen tag
+                        query = query.filter(
+                            ~json_array_contains(Recipe.dietary_tags, allergen_tag),
+                            ~json_array_contains(Recipe.dietary_tags, allergen_tag_alt),
+                            ~json_array_contains(Recipe.dietary_tags, allergy_lower)
+                        )
+                        # ROOT CAUSE FIX: Also check recipe text for allergens (for recipes without proper tags)
+                        # Use case-insensitive matching to catch allergens in title/summary
+                        query = query.filter(
+                            ~func.lower(Recipe.title).like(f"%{allergy_lower}%"),
+                            ~func.lower(Recipe.summary).like(f"%{allergy_lower}%")
+                        )
+                
+                # ROOT CAUSE FIX: Apply dietary preferences filtering when explicitly set
+                # Only filter by dietary preferences if they're explicitly set in the search (not just from user prefs)
+                # This allows browsing all recipes when no dietary filters are selected
                 if prefs.dietary_preferences and len(prefs.dietary_preferences) > 0:
                     dietary_conditions = []
+                    
+                    # ROOT CAUSE FIX: SQLAlchemy's contains() for JSON arrays doesn't work correctly
+                    # We need to use a database-agnostic approach to check if a JSON array contains a string value
+                    # For PostgreSQL: use @> operator for JSONB
+                    # For SQLite: use LIKE or JSON functions
+                    def json_array_contains(column, value):
+                        """Check if a JSON array column contains a specific string value"""
+                        if is_postgresql:
+                            # PostgreSQL: use JSONB @> operator
+                            return column.op('@>')(text(f"'[\"{value}\"]'::jsonb"))
+                        else:
+                            # SQLite or other: use LIKE for JSON array strings
+                            # JSON arrays are stored as strings like '["vegetarian", "gluten-free"]'
+                            return func.cast(column, String).like(f'%"{value}"%')
                     
                     # Handle hierarchical dietary preferences intelligently
                     if 'vegan' in prefs.dietary_preferences:
                         # If user is vegan, only show vegan recipes (most restrictive)
-                        dietary_conditions.append(Recipe.dietary_tags.contains(['vegan']))
+                        dietary_conditions.append(json_array_contains(Recipe.dietary_tags, 'vegan'))
                     elif 'vegetarian' in prefs.dietary_preferences:
                         # If user is vegetarian (but not vegan), show both vegetarian AND vegan recipes
                         # because vegan recipes are also suitable for vegetarians
                         dietary_conditions.append(
                             or_(
-                                Recipe.dietary_tags.contains(['vegetarian']),
-                                Recipe.dietary_tags.contains(['vegan'])
+                                json_array_contains(Recipe.dietary_tags, 'vegetarian'),
+                                json_array_contains(Recipe.dietary_tags, 'vegan')
                             )
                         )
                     
@@ -2445,38 +2505,30 @@ class NutritionService:
                     
                     # Handle gluten-free hierarchy
                     if 'gluten-free' in other_prefs:
-                        dietary_conditions.append(Recipe.dietary_tags.contains(['gluten-free']))
+                        dietary_conditions.append(json_array_contains(Recipe.dietary_tags, 'gluten-free'))
                         other_prefs.remove('gluten-free')
                     
                     # Handle dairy-free hierarchy  
                     if 'dairy-free' in other_prefs:
-                        dietary_conditions.append(Recipe.dietary_tags.contains(['dairy-free']))
+                        dietary_conditions.append(json_array_contains(Recipe.dietary_tags, 'dairy-free'))
                         other_prefs.remove('dairy-free')
                     
                     # Handle nut-free hierarchy
                     if 'nut-free' in other_prefs:
-                        dietary_conditions.append(Recipe.dietary_tags.contains(['nut-free']))
+                        dietary_conditions.append(json_array_contains(Recipe.dietary_tags, 'nut-free'))
                         other_prefs.remove('nut-free')
                     
                     # Handle soy-free hierarchy
                     if 'soy-free' in other_prefs:
-                        dietary_conditions.append(Recipe.dietary_tags.contains(['soy-free']))
+                        dietary_conditions.append(json_array_contains(Recipe.dietary_tags, 'soy-free'))
                         other_prefs.remove('soy-free')
                     
                     # Handle remaining preferences
                     for pref in other_prefs:
-                        dietary_conditions.append(Recipe.dietary_tags.contains([pref]))
+                        dietary_conditions.append(json_array_contains(Recipe.dietary_tags, pref))
                     
                     if dietary_conditions:
                         query = query.filter(or_(*dietary_conditions))
-                
-                # Filter out recipes with user's allergies (exclude recipes containing allergens)
-                # CRITICAL: Always apply allergy filtering for safety, even without search query
-                if prefs.allergies and len(prefs.allergies) > 0:
-                    for allergy in prefs.allergies:
-                        # Check if recipe contains this allergen
-                        allergen_tag = f"contains-{allergy}"
-                        query = query.filter(~Recipe.dietary_tags.contains([allergen_tag]))
                 
                 # Filter out recipes with disliked ingredients (only when searching)
                 if prefs.disliked_ingredients and len(prefs.disliked_ingredients) > 0 and search_request.query:

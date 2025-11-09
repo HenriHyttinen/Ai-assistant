@@ -109,20 +109,65 @@ const NutritionDashboard: React.FC<NutritionDashboardProps> = ({ user = null }) 
     // First pass: honor explicit dates
     all.forEach(m => {
       const d = m.meal_date || m.date;
-      const t = (m.meal_type || m.type) as 'breakfast'|'lunch'|'dinner'|'snack';
-      if (d && result[d] && t && !result[d][t]) {
-        result[d][t] = m;
+      let t = (m.meal_type || m.type) as string;
+      if (!t || !d || !result[d]) return;
+      
+      // ROOT CAUSE FIX: Normalize meal type to one of the four keys
+      // Handle specific snack types (morning snack, afternoon snack, etc.)
+      if (t.includes('snack') || t === 'morning snack' || t === 'afternoon snack' || t === 'evening snack') {
+        t = 'snack';
+      }
+      
+      // Ensure t is a valid key
+      if (!['breakfast', 'lunch', 'dinner', 'snack'].includes(t)) {
+        return; // Skip if not a valid meal type
+      }
+      
+      if (!result[d][t as 'breakfast'|'lunch'|'dinner'|'snack']) {
+        result[d][t as 'breakfast'|'lunch'|'dinner'|'snack'] = m;
       }
     });
     
     // Second pass: assign remaining by round-robin per type
-    const remainingByType: Record<string, any[]> = { breakfast: [], lunch: [], dinner: [], snack: [] } as any;
+    const remainingByType: { breakfast: any[]; lunch: any[]; dinner: any[]; snack: any[] } = { 
+      breakfast: [], 
+      lunch: [], 
+      dinner: [], 
+      snack: [] 
+    };
+    
     all.forEach(m => {
       const d = m.meal_date || m.date;
-      const t = (m.meal_type || m.type) as keyof typeof remainingByType;
+      let t = String(m.meal_type || m.type || '').toLowerCase().trim();
       if (!t) return;
+      
+      // ROOT CAUSE FIX: Normalize meal type to one of the four keys
+      // Handle specific snack types (morning snack, afternoon snack, etc.)
+      if (t.includes('snack')) {
+        t = 'snack';
+      }
+      
+      // ROOT CAUSE FIX: Type-safe normalization with explicit type guard
+      let normalizedType: 'breakfast' | 'lunch' | 'dinner' | 'snack' | null = null;
+      if (t === 'breakfast') {
+        normalizedType = 'breakfast';
+      } else if (t === 'lunch') {
+        normalizedType = 'lunch';
+      } else if (t === 'dinner') {
+        normalizedType = 'dinner';
+      } else if (t === 'snack') {
+        normalizedType = 'snack';
+      }
+      
+      // Skip if not a valid meal type
+      if (!normalizedType) {
+        return;
+      }
+      
       const alreadyPlaced = d && result[d] && Object.values(result[d]).includes(m);
-      if (!alreadyPlaced) remainingByType[t].push(m);
+      if (!alreadyPlaced) {
+        remainingByType[normalizedType].push(m);
+      }
     });
     
     (['breakfast','lunch','dinner','snack'] as const).forEach(slot => {

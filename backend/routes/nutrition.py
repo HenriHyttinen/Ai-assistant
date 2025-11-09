@@ -1511,15 +1511,32 @@ def swap_meals(
                 detail=f"Meal {meal_id_2_int} not found"
             )
         
-        # Swap the dates and meal types
+        # ROOT CAUSE FIX: Swap the dates and meal types
+        # Also preserve recipe_details.meal_type for snacks (morning snack/afternoon snack)
         meal_1_date = meal_1.meal_date
         meal_1_type = meal_1.meal_type
+        meal_1_recipe_details = meal_1.recipe_details or {}
+        meal_1_preserved_type = meal_1_recipe_details.get('meal_type', meal_1_type)
         
-        meal_1.meal_date = meal_2.meal_date
-        meal_1.meal_type = meal_2.meal_type
+        meal_2_date = meal_2.meal_date
+        meal_2_type = meal_2.meal_type
+        meal_2_recipe_details = meal_2.recipe_details or {}
+        meal_2_preserved_type = meal_2_recipe_details.get('meal_type', meal_2_type)
         
+        # Swap dates and meal types
+        meal_1.meal_date = meal_2_date
+        meal_1.meal_type = meal_2_type
         meal_2.meal_date = meal_1_date
         meal_2.meal_type = meal_1_type
+        
+        # ROOT CAUSE FIX: Also swap preserved meal_type in recipe_details for snacks
+        # This ensures "morning snack" and "afternoon snack" are preserved correctly
+        if meal_1_recipe_details:
+            meal_1_recipe_details['meal_type'] = meal_2_preserved_type
+            meal_1.recipe_details = meal_1_recipe_details
+        if meal_2_recipe_details:
+            meal_2_recipe_details['meal_type'] = meal_1_preserved_type
+            meal_2.recipe_details = meal_2_recipe_details
         
         db.commit()
         db.refresh(meal_1)
@@ -3994,7 +4011,22 @@ async def generate_meal_slot(
         # Generate using Sequential RAG (task.md compliant)
         logger.info(f"🎯 Generating {meal_type} meal for {meal_date} using Sequential RAG (progressive generation)")
         
-        generated_meal = hybrid_generator.nutrition_ai._generate_single_meal_with_sequential_rag(meal_data, db)
+        try:
+            generated_meal = hybrid_generator.nutrition_ai._generate_single_meal_with_sequential_rag(meal_data, db)
+        except ValueError as e:
+            # ROOT CAUSE FIX: Catch validation errors (e.g., allergen detection) and return proper error
+            error_msg = str(e)
+            if "allergen" in error_msg.lower():
+                logger.error(f"❌ Failed to generate meal without allergens after retries: {error_msg}")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Could not generate meal without allergens. Please check your allergy preferences: {error_msg}"
+                )
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Failed to generate meal: {error_msg}"
+                )
         
         if not generated_meal:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to generate meal")

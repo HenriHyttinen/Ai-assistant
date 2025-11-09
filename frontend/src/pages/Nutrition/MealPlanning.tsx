@@ -622,8 +622,16 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
       const t = (m.meal_type || m.type) as string;
       // CRITICAL: Also check recipe_details for preserved meal_type (morning snack/afternoon snack)
       const preservedType = m.recipe?.meal_type || m.recipe_details?.meal_type;
-      const isSnack = t === 'snack' || t === 'morning snack' || t === 'afternoon snack' || t === 'evening snack' ||
-                     preservedType === 'snack' || preservedType === 'morning snack' || preservedType === 'afternoon snack' || preservedType === 'evening snack';
+      // ROOT CAUSE FIX: After swapping, a meal might have meal_type='snack' but preservedType='lunch'
+      // or vice versa. We need to check BOTH to determine if it's a snack.
+      // A meal is a snack if EITHER its current meal_type OR its preserved type indicates it's a snack
+      // BUT: After swapping, the preservedType is what the meal WAS, not what it IS
+      // So we should prioritize the current meal_type for categorization
+      // CRITICAL: If meal_type is a non-snack (breakfast/lunch/dinner), it's NOT a snack, even if preservedType is a snack
+      // This handles the case where a snack was swapped TO a lunch slot (it becomes lunch, not a snack)
+      const isSnack = (t === 'snack' || t === 'morning snack' || t === 'afternoon snack' || t === 'evening snack') ||
+                     (preservedType && (preservedType === 'snack' || preservedType === 'morning snack' || preservedType === 'afternoon snack' || preservedType === 'evening snack') && 
+                      (t !== 'breakfast' && t !== 'lunch' && t !== 'dinner' && t !== 'snack' && t !== 'morning snack' && t !== 'afternoon snack' && t !== 'evening snack'));
       
       if (isSnack) {
         const d = m.meal_date || m.date;
@@ -640,7 +648,20 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
           
           if (!isDuplicate) {
             // ROOT CAUSE DEBUG: Log what preserved meal_type we're using
-            const finalMealType = preservedType || t || 'snack';
+            // CRITICAL: After swapping, if meal_type is a snack type, use that
+            // Otherwise, use preservedType if it's a snack type
+            // This ensures swapped snacks are correctly identified
+            let finalMealType = t;
+            if (t === 'snack' || t === 'morning snack' || t === 'afternoon snack' || t === 'evening snack') {
+              // Current meal_type is a snack type, use it
+              finalMealType = t;
+            } else if (preservedType && (preservedType === 'snack' || preservedType === 'morning snack' || preservedType === 'afternoon snack' || preservedType === 'evening snack')) {
+              // Current meal_type is not a snack, but preservedType is - use preservedType
+              finalMealType = preservedType;
+            } else {
+              // Fallback to generic 'snack'
+              finalMealType = 'snack';
+            }
             console.log(`🔍 Adding snack to snacksByDate: id=${mealId}, name='${m.meal_name || m.mealName}', preservedType='${preservedType}', t='${t}', finalMealType='${finalMealType}'`);
             
             // Store with preserved meal_type if available (for correct slot assignment)
@@ -661,16 +682,35 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
       }
     });
     
-    // First pass: honor explicit dates and try to match by meal type + position (non-snacks first)
+    // ROOT CAUSE FIX: First pass - honor explicit dates and try to match by meal type + position (non-snacks first)
+    // CRITICAL: After swapping, meals might have swapped meal_types, so we need to match by the CURRENT meal_type
+    // (which is what the backend swapped to), not the preserved type
     nonSnackMeals.forEach(m => {
       const d = m.meal_date || m.date;
       const t = (m.meal_type || m.type) as string;
       if (!d || !result[d] || !t) return;
       
+      // ROOT CAUSE FIX: Check if this meal type matches any slot in the grid
+      // After swapping, a meal might have a different meal_type than its original slot
       if (mealTypes.includes(t)) {
         // Find the first available slot with matching meal type
         for (let idx = 0; idx < mealTypes.length; idx++) {
           if (mealTypes[idx] === t && !result[d][idx]) {
+            result[d][idx] = m;
+            break;
+          }
+        }
+      } else {
+        // ROOT CAUSE FIX: If meal_type doesn't match any slot, it might be a swapped meal
+        // Try to find an empty slot for this meal (fallback assignment)
+        // This handles cases where a snack was swapped with a lunch, etc.
+        for (let idx = 0; idx < mealTypes.length; idx++) {
+          // Skip snack slots - they're handled separately
+          if (mealTypes[idx] === 'morning snack' || mealTypes[idx] === 'afternoon snack' || mealTypes[idx] === 'evening snack' || mealTypes[idx] === 'snack') {
+            continue;
+          }
+          // Assign to first available non-snack slot
+          if (!result[d][idx]) {
             result[d][idx] = m;
             break;
           }
@@ -742,10 +782,24 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
         
         // ROOT CAUSE FIX: Check preserved meal_type from recipe_details (backend stores it there)
         // Try multiple locations to find the preserved meal_type
+        // CRITICAL: After swapping, preservedType is what the meal WAS (before swap)
+        // The current meal_type is what the meal IS (after swap)
+        // For snacks, we need to use the preservedType to match to the correct snack slot
         let preservedType = snack.recipe?.meal_type || snack.recipe_details?.meal_type || snack.meal_type || snack.type;
+        const currentMealType = snack.meal_type || snack.type;
         
-        // CRITICAL FIX: If we still have generic 'snack', try to infer from meal order or assign to first available slot
-        if (preservedType === 'snack' || !preservedType) {
+        // ROOT CAUSE FIX: After swapping, a snack might have meal_type='lunch' but preservedType='morning snack'
+        // This means the snack was swapped TO a lunch slot, but we want to match it to the snack slot
+        // So we should use the preservedType (what it was) to match it to the correct snack slot
+        // BUT: If the current meal_type is a snack type, use that instead (it's already in the right slot)
+        if (currentMealType && (currentMealType === 'morning snack' || currentMealType === 'afternoon snack' || currentMealType === 'evening snack')) {
+          // Use current meal_type if it's a specific snack type (meal is already in correct slot)
+          preservedType = currentMealType;
+        } else if (preservedType && (preservedType === 'morning snack' || preservedType === 'afternoon snack' || preservedType === 'evening snack')) {
+          // Use preserved type if it's a specific snack type (meal was swapped, use original type)
+          // This handles snacks that were swapped (they keep their original snack type in recipe_details)
+        } else if (preservedType === 'snack' || !preservedType) {
+          // CRITICAL FIX: If we still have generic 'snack', try to infer from meal order or assign to first available slot
           // Check if we already have a morning snack assigned for this date
           const morningSnackSlot = snackSlotMap['morning snack'];
           const afternoonSnackSlot = snackSlotMap['afternoon snack'];
@@ -5417,6 +5471,8 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
           }}
           onSave={handleCustomMealSave}
           initialData={editingMealData || undefined}
+          selectedDate={selectedDate} // ROOT CAUSE FIX: Pass selected date to modal
+          selectedMealType={selectedSlot?.mealType} // ROOT CAUSE FIX: Pass selected meal type to modal
         />
         
         {/* Add to Meal Plan Modal */}

@@ -65,13 +65,17 @@ interface CustomMealModalProps {
   onClose: () => void;
   onSave: (mealData: CustomMealData) => void;
   initialData?: Partial<CustomMealData>;
+  selectedDate?: string; // ROOT CAUSE FIX: Allow passing selected date
+  selectedMealType?: string; // ROOT CAUSE FIX: Allow passing selected meal type
 }
 
 const CustomMealModal: React.FC<CustomMealModalProps> = ({
   isOpen,
   onClose,
   onSave,
-  initialData
+  initialData,
+  selectedDate,
+  selectedMealType
 }) => {
   const [formData, setFormData] = useState<CustomMealData>({
     meal_name: '',
@@ -97,11 +101,21 @@ const CustomMealModal: React.FC<CustomMealModalProps> = ({
   // Update formData when modal opens/closes or initialData changes
   useEffect(() => {
     if (isOpen) {
+      // ROOT CAUSE FIX: Pre-fill date and meal_type if provided
+      const baseData: Partial<CustomMealData> = {};
+      if (selectedDate) {
+        (baseData as any).meal_date = selectedDate;
+        (baseData as any).date = selectedDate;
+      }
+      if (selectedMealType) {
+        baseData.meal_type = selectedMealType as any;
+      }
+      
       if (initialData) {
         // Editing: use initialData with proper defaults for missing fields
         setFormData({
           meal_name: initialData.meal_name ?? '',
-          meal_type: initialData.meal_type ?? 'breakfast',
+          meal_type: initialData.meal_type ?? (selectedMealType as any) ?? 'breakfast',
           cuisine: initialData.cuisine ?? '',
           prep_time: initialData.prep_time ?? 0,
           cook_time: initialData.cook_time ?? 0,
@@ -120,13 +134,14 @@ const CustomMealModal: React.FC<CustomMealModalProps> = ({
             protein: initialData.nutrition?.protein ?? 0,
             carbs: initialData.nutrition?.carbs ?? 0,
             fats: initialData.nutrition?.fats ?? 0
-          }
+          },
+          ...baseData
         });
       } else {
-        // Creating new meal: reset to empty/0 defaults
+        // Creating new meal: reset to empty/0 defaults, but use selected date/type if provided
         setFormData({
           meal_name: '',
-          meal_type: 'breakfast',
+          meal_type: (selectedMealType as any) ?? 'breakfast',
           cuisine: '',
           prep_time: 0,
           cook_time: 0,
@@ -141,7 +156,8 @@ const CustomMealModal: React.FC<CustomMealModalProps> = ({
             protein: 0,
             carbs: 0,
             fats: 0
-          }
+          },
+          ...baseData
         });
       }
       // Reset new ingredient/instruction/tag inputs
