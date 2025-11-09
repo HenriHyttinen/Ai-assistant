@@ -1814,6 +1814,35 @@ Return ONLY minified JSON (no markdown):
             if meal_data.get('explicit_avoid_ingredients'):
                 explicit_avoid += f"\n\nCRITICAL: Previous attempt included these DISLIKED ingredients: {', '.join(meal_data['explicit_avoid_ingredients'])}\nDO NOT include these ingredients - use substitutes instead.\n"
             
+            # ROOT CAUSE FIX: Build allergy expansion list ONLY for user's actual allergies
+            allergies = user_preferences.get('allergies', [])
+            allergy_expansions = {
+                'nuts': 'DO NOT use nuts, almonds, walnuts, cashews, pistachios, hazelnuts, pecans, macadamia nuts, brazil nuts, pine nuts, or ANY nut-based ingredients',
+                'tree_nuts': 'DO NOT use almonds, walnuts, cashews, pistachios, hazelnuts, pecans, macadamia nuts, brazil nuts, pine nuts, or ANY tree nut-based ingredients',
+                'peanuts': 'DO NOT use peanuts, peanut butter, groundnuts, or ANY peanut-based ingredients',
+                'eggs': 'DO NOT use eggs, egg whites, egg yolks, or ANY egg-based ingredients. ABSOLUTELY FORBIDDEN - use substitutes like tofu, chickpea flour, or flax eggs instead.',
+                'dairy': 'DO NOT use milk, cheese, butter, yogurt, cream, whey, casein, or ANY dairy products',
+                'fish': 'DO NOT use fish, salmon, tuna, cod, sardines, anchovies, mackerel, trout, or ANY fish',
+                'shellfish': 'DO NOT use shrimp, crab, lobster, mussels, oysters, scallops, clams, or ANY shellfish',
+                'soy': 'DO NOT use soy, soya, tofu, tempeh, edamame, soybeans, or ANY soy-based ingredients',
+                'wheat': 'DO NOT use wheat, flour, bread, pasta, noodles, or ANY wheat-containing ingredients',
+                'gluten': 'DO NOT use wheat, barley, rye, flour, bread, pasta, noodles, or ANY gluten-containing ingredients',
+                'sesame': 'DO NOT use sesame, tahini, sesame seeds, or ANY sesame-based ingredients',
+                'mustard': 'DO NOT use mustard, mustard seeds, or ANY mustard-based ingredients',
+                'sulfites': 'DO NOT use sulfites, sulphur dioxide, or ANY sulfite-containing ingredients'
+            }
+            
+            # Build allergy instructions only for user's actual allergies
+            allergy_instructions = ""
+            if allergies:
+                allergy_instructions = "\n  * ABSOLUTELY FORBIDDEN - NEVER include these ingredients:\n"
+                for allergy in allergies:
+                    allergy_lower = allergy.lower()
+                    if allergy_lower in allergy_expansions:
+                        allergy_instructions += f"    - {allergy_expansions[allergy_lower]}\n"
+                    else:
+                        allergy_instructions += f"    - DO NOT use {allergy_lower} or ANY {allergy_lower}-based ingredients\n"
+            
             # Simplified prompt - focus on recipe quality, let post-processing handle exact calories
             prompt = f"""Generate a single {meal_type} recipe (~{target_calories} calories, {target_cuisine} cuisine).
 {explicit_avoid}
@@ -1830,10 +1859,7 @@ DIETARY REQUIREMENTS (CRITICAL - STRICTLY ENFORCE):
   * If vegan: NO animal products at all
   * If gluten-free: NO wheat, barley, rye, or gluten-containing ingredients
   * If keto: LOW carbs, HIGH fats
-- Allergies: NEVER include these ingredients - ABSOLUTELY FORBIDDEN: {', '.join(user_preferences.get('allergies', [])) or 'NONE'}
-  * If user has gluten allergy: DO NOT use wheat, barley, rye, flour, bread, pasta, or any gluten-containing ingredients
-  * If user has nut allergy: DO NOT use nuts, almonds, peanuts, or any nut-based ingredients
-  * If user has dairy allergy: DO NOT use milk, cheese, butter, yogurt, or any dairy products
+- Allergies: {', '.join(allergies) if allergies else 'NONE'}{allergy_instructions}
 - Disliked Ingredients: STRICTLY avoid these - DO NOT include: {', '.join(user_preferences.get('disliked_ingredients', [])) or 'NONE'}
   * Check ingredient names carefully - if any disliked ingredient appears in the name, use a substitute
 
@@ -1878,47 +1904,138 @@ OUTPUT: Valid minified JSON only (no markdown):
             if not result:
                 raise ValueError("Failed to parse AI response")
             
-            # CRITICAL FIX: Post-generation validation - check for allergies and disliked ingredients
+            # ROOT CAUSE FIX: Post-generation validation - check for allergies and disliked ingredients
+            # This validation checks both recipe text AND individual ingredient names for better detection
             allergies = user_preferences.get('allergies', [])
             disliked_ingredients = user_preferences.get('disliked_ingredients', [])
             if allergies or disliked_ingredients:
                 recipe = result.get('recipe', {})
                 ingredients = recipe.get('ingredients', [])
-                recipe_text = f"{recipe.get('title', '')} {recipe.get('summary', '')} {', '.join([ing.get('name', '') if isinstance(ing, dict) else str(ing) for ing in ingredients])}".lower()
                 
-                # Check for allergies
+                # ROOT CAUSE FIX: Expand allergies to include all related ingredients
+                # e.g., "nuts" -> ["almonds", "walnuts", "cashews", "pistachios", "hazelnuts", "pecans", "macadamia nuts", "nuts"]
+                # e.g., "tree_nuts" -> ["almonds", "walnuts", "cashews", "pistachios", "hazelnuts", "pecans", "macadamia nuts"]
+                # e.g., "eggs" -> ["egg", "eggs"]
+                allergy_expansions = {
+                    'nuts': ['almonds', 'walnuts', 'cashews', 'pistachios', 'hazelnuts', 'pecans', 'macadamia nuts', 'brazil nuts', 'pine nuts', 'nuts', 'nut'],
+                    'tree_nuts': ['almonds', 'walnuts', 'cashews', 'pistachios', 'hazelnuts', 'pecans', 'macadamia nuts', 'brazil nuts', 'pine nuts'],
+                    'peanuts': ['peanuts', 'peanut', 'groundnuts'],
+                    'eggs': ['egg', 'eggs'],
+                    'dairy': ['milk', 'cheese', 'butter', 'yogurt', 'yoghurt', 'cream', 'dairy', 'whey', 'casein'],
+                    'fish': ['fish', 'salmon', 'tuna', 'cod', 'sardines', 'anchovies', 'mackerel', 'trout'],
+                    'shellfish': ['shrimp', 'crab', 'lobster', 'mussels', 'oysters', 'scallops', 'clams', 'shellfish'],
+                    'soy': ['soy', 'soya', 'tofu', 'tempeh', 'edamame', 'soybeans'],
+                    'wheat': ['wheat', 'flour', 'bread', 'pasta', 'noodles'],
+                    'gluten': ['wheat', 'barley', 'rye', 'flour', 'bread', 'pasta', 'noodles', 'gluten'],
+                    'sesame': ['sesame', 'tahini', 'sesame seeds'],
+                    'mustard': ['mustard', 'mustard seeds'],
+                    'sulfites': ['sulfites', 'sulphites', 'sulfur dioxide']
+                }
+                
+                # Build expanded allergy list
+                expanded_allergies = set()
+                for allergy in allergies:
+                    allergy_lower = allergy.lower()
+                    expanded_allergies.add(allergy_lower)  # Add the original
+                    if allergy_lower in allergy_expansions:
+                        expanded_allergies.update([a.lower() for a in allergy_expansions[allergy_lower]])
+                    # Also handle tree_nuts if user has "nuts" (tree_nuts are a subset of nuts)
+                    if allergy_lower == 'nuts':
+                        expanded_allergies.update([a.lower() for a in allergy_expansions.get('tree_nuts', [])])
+                
+                # ROOT CAUSE FIX: Check recipe text and individual ingredient names
+                # Extract ingredient names properly - handle both dict format and string format
+                # Also handle cases where name includes quantity/unit (e.g., "eggs - 2unit" -> "eggs")
+                recipe_text = f"{recipe.get('title', '')} {recipe.get('summary', '')}".lower()
+                ingredient_names = []
+                for ing in ingredients:
+                    if isinstance(ing, dict):
+                        # Extract name and strip any extra info (e.g., "eggs - 2unit" -> "eggs")
+                        name = str(ing.get('name', '')).lower().strip()
+                        # Remove quantity/unit info if present (e.g., "eggs - 2unit" -> "eggs")
+                        if ' - ' in name:
+                            name = name.split(' - ')[0].strip()
+                        ingredient_names.append(name)
+                    else:
+                        name = str(ing).lower().strip()
+                        # Remove quantity/unit info if present
+                        if ' - ' in name:
+                            name = name.split(' - ')[0].strip()
+                        ingredient_names.append(name)
+                
+                all_text = f"{recipe_text} {' '.join(ingredient_names)}"
+                
+                # Check for allergies - check both recipe text and individual ingredients
                 import re
                 for allergy in allergies:
                     allergy_lower = allergy.lower()
-                    # CRITICAL FIX: Use word boundary matching to avoid false positives (e.g., "egg" in "eggplant")
-                    pattern = r'\b' + re.escape(allergy_lower) + r'\b'
-                    if re.search(pattern, recipe_text):
-                        # Additional check: exclude common false positives
-                        false_positives = {
-                            'egg': ['eggplant', 'eggplants', 'eggplant', 'eggnog', 'eggshell'],
-                            'nut': ['peanut', 'peanuts', 'coconut', 'coconuts'],
-                            'fish': ['shellfish']
-                        }
-                        is_false_positive = False
-                        if allergy_lower in false_positives:
-                            for fp in false_positives[allergy_lower]:
-                                if fp in recipe_text:
-                                    is_false_positive = True
-                                    break
-                        
-                        if not is_false_positive:
-                            logger.warning(f"⚠️ Generated recipe contains allergen '{allergy}' - rejecting and retrying")
-                            # Retry with explicit avoidance
-                            meal_data['explicit_avoid_names'] = meal_data.get('explicit_avoid_names', []) + [result.get('meal_name', '')]
-                            meal_data['explicit_avoid_allergens'] = meal_data.get('explicit_avoid_allergens', []) + [allergy]
-                            # Recursively retry (with limit to prevent infinite loop)
-                            retry_count = meal_data.get('retry_count', 0)
-                            if retry_count < 3:
-                                meal_data['retry_count'] = retry_count + 1
-                                return self._generate_single_meal_with_sequential_rag(meal_data, db)
-                            else:
-                                logger.error(f"❌ Failed to generate recipe without allergen '{allergy}' after 3 retries")
-                                raise ValueError(f"Could not generate recipe without allergen: {allergy}")
+                    expanded_list = list(expanded_allergies)
+                    
+                    # Check if any expanded allergy term appears in recipe text or ingredient names
+                    found_allergen = False
+                    for expanded_allergy in expanded_list:
+                        # Use word boundary matching to avoid false positives
+                        pattern = r'\b' + re.escape(expanded_allergy) + r'\b'
+                        if re.search(pattern, all_text):
+                            # Additional check: exclude common false positives
+                            false_positives = {
+                                'egg': ['eggplant', 'eggplants', 'eggnog', 'eggshell'],
+                                'nut': ['peanut', 'peanuts', 'coconut', 'coconuts'],
+                                'fish': ['shellfish']
+                            }
+                            is_false_positive = False
+                            if expanded_allergy in false_positives:
+                                for fp in false_positives[expanded_allergy]:
+                                    if fp in all_text:
+                                        is_false_positive = True
+                                        break
+                            
+                            if not is_false_positive:
+                                found_allergen = True
+                                break
+                    
+                    # ROOT CAUSE FIX: Also check individual ingredient names for better detection
+                    # Use word boundary matching for each ingredient name individually
+                    if not found_allergen:
+                        for ing_name in ingredient_names:
+                            for expanded_allergy in expanded_list:
+                                # Use word boundary matching to avoid false positives
+                                pattern = r'\b' + re.escape(expanded_allergy) + r'\b'
+                                if re.search(pattern, ing_name):
+                                    # Check false positives
+                                    false_positives = {
+                                        'egg': ['eggplant', 'eggplants', 'eggnog', 'eggshell'],
+                                        'nut': ['peanut', 'peanuts', 'coconut', 'coconuts'],
+                                        'fish': ['shellfish']
+                                    }
+                                    is_false_positive = False
+                                    if expanded_allergy in false_positives:
+                                        for fp in false_positives[expanded_allergy]:
+                                            if fp in ing_name:
+                                                is_false_positive = True
+                                                break
+                                    
+                                    if not is_false_positive:
+                                        found_allergen = True
+                                        logger.warning(f"⚠️ Found allergen '{expanded_allergy}' in ingredient name: '{ing_name}'")
+                                        break
+                            
+                            if found_allergen:
+                                break
+                    
+                    if found_allergen:
+                        logger.warning(f"⚠️ Generated recipe contains allergen '{allergy}' (found in ingredients: {ingredient_names}) - rejecting and retrying")
+                        # Retry with explicit avoidance
+                        meal_data['explicit_avoid_names'] = meal_data.get('explicit_avoid_names', []) + [result.get('meal_name', '')]
+                        meal_data['explicit_avoid_allergens'] = meal_data.get('explicit_avoid_allergens', []) + [allergy]
+                        # Recursively retry (with limit to prevent infinite loop)
+                        retry_count = meal_data.get('retry_count', 0)
+                        if retry_count < 3:
+                            meal_data['retry_count'] = retry_count + 1
+                            return self._generate_single_meal_with_sequential_rag(meal_data, db)
+                        else:
+                            logger.error(f"❌ Failed to generate recipe without allergen '{allergy}' after 3 retries")
+                            raise ValueError(f"Could not generate recipe without allergen: {allergy}")
                 
                 # Check for disliked ingredients
                 for ingredient in disliked_ingredients:

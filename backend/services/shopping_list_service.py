@@ -253,14 +253,20 @@ class ShoppingListService:
                         
                         # Use ingredient_id as the key for aggregation
                         if ingredient_id in ingredient_aggregator:
+                            # ROOT CAUSE FIX: Round quantity before aggregation to prevent floating point errors
+                            quantity = round(float(ingredient.get('quantity', 0)), 2)
                             # Aggregate quantities
-                            ingredient_aggregator[ingredient_id]['total_quantity'] += quantity
+                            ingredient_aggregator[ingredient_id]['total_quantity'] = round(
+                                ingredient_aggregator[ingredient_id]['total_quantity'] + quantity, 2
+                            )
                             ingredient_aggregator[ingredient_id]['meals_used_in'].append(meal.meal_name)
                         else:
                             # First occurrence - get category from database if available
                             db_ingredient = db.query(Ingredient).filter(Ingredient.id == ingredient_id).first()
                             category = db_ingredient.category if db_ingredient else self._categorize_ingredient(ingredient_name)
                             
+                            # ROOT CAUSE FIX: Round quantity to 2 decimal places
+                            quantity = round(float(ingredient.get('quantity', 0)), 2)
                             ingredient_aggregator[ingredient_id] = {
                                 'ingredient_id': ingredient_id,
                                 'ingredient_name': ingredient_name,
@@ -274,6 +280,10 @@ class ShoppingListService:
         result = []
         for ingredient_data in ingredient_aggregator.values():
             if ingredient_data['total_quantity'] > 0:
+                # ROOT CAUSE FIX: Round quantity to 2 decimal places to avoid floating point precision errors
+                # This prevents values like 875.4200000000001 g from appearing
+                ingredient_data['total_quantity'] = round(ingredient_data['total_quantity'], 2)
+                
                 # Add notes about which meals use this ingredient
                 meals_str = ", ".join(ingredient_data['meals_used_in'])
                 ingredient_data['notes'] = f"Used in: {meals_str}"
