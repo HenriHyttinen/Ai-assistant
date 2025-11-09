@@ -18,8 +18,8 @@ This guide will help you get the Numbers Don't Lie project up and running quickl
 ### 1. Clone the Repository
 
 ```bash
-git clone <repository-url>
-cd numbers-dont-lie
+git clone https://gitea.kood.tech/henrijuhanihyttinen/counting-calories
+cd counting-calories
 ```
 
 ### 2. Backend Setup
@@ -292,7 +292,7 @@ After setup, verify:
 ## Project Structure
 
 ```
-numbers-dont-lie/
+counting-calories/
 ├── backend/          # FastAPI backend
 │   ├── models/       # Database models
 │   ├── routes/       # API endpoints

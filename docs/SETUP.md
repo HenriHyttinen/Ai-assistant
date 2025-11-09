@@ -15,8 +15,8 @@ This is a wellness platform built with FastAPI (backend) and React (frontend) th
 ### 1. Clone the Repository
 
 ```bash
-git clone <your-repo-url>
-cd numbers-dont-lie
+git clone https://gitea.kood.tech/henrijuhanihyttinen/counting-calories
+cd counting-calories
 ```
 
 ### 2. Backend Setup
@@ -309,7 +309,7 @@ Then login with:
 ## Project Structure
 
 ```
-numbers-dont-lie/
+counting-calories/
 ├── backend/                 # FastAPI backend
 │   ├── ai/                 # AI integration (OpenAI, RAG)
 │   ├── alembic/            # Database migrations

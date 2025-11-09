@@ -58,8 +58,8 @@ This platform helps users track their health metrics, plan meals, and manage the
 
 ```bash
 # Clone the repository
-git clone <repository-url>
-cd numbers-dont-lie
+git clone https://gitea.kood.tech/henrijuhanihyttinen/counting-calories
+cd counting-calories
 
 # Navigate to backend
 cd backend
