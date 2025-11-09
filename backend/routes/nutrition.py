@@ -918,7 +918,25 @@ def delete_meal_plan(
                 detail="Meal plan not found"
             )
         
-        # Cascade delete will handle meals automatically due to relationship
+        # CRITICAL FIX: Delete or update nutritional_logs that reference meals before deleting meals
+        # Get all meal IDs from this meal plan
+        meal_ids = [meal.id for meal in meal_plan.meals]
+        
+        if meal_ids:
+            # Import NutritionalLog model
+            from models.nutrition import NutritionalLog
+            
+            # Set meal_id to NULL in nutritional_logs that reference these meals
+            # This allows the logs to remain but removes the reference to deleted meals
+            db.query(NutritionalLog).filter(
+                NutritionalLog.meal_id.in_(meal_ids)
+            ).update(
+                {NutritionalLog.meal_id: None},
+                synchronize_session=False
+            )
+            logger.info(f"Updated {len(meal_ids)} nutritional logs to remove meal references")
+        
+        # Now safe to delete the meal plan (cascade will handle meals)
         db.delete(meal_plan)
         db.commit()
         

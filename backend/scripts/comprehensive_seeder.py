@@ -321,14 +321,62 @@ def create_recipes():
                 )
                 db.add(recipe_ingredient)
             
-            # Add instructions
-            num_steps = random.randint(3, 8)
+            # Generate realistic instructions based on meal type and ingredients
+            num_steps = random.randint(4, 8)
+            
+            # Base instructions templates by meal type
+            if template["meal_type"] == "breakfast":
+                base_instructions = [
+                    f"Prepare all ingredients and set aside.",
+                    f"Heat a pan or skillet over medium heat.",
+                    f"Add {selected_ingredients[0].name if selected_ingredients else 'main ingredients'} and cook until tender.",
+                    f"Add remaining ingredients and combine well.",
+                    f"Cook until everything is heated through.",
+                    f"Season with salt, pepper, and spices to taste.",
+                    f"Plate and serve hot."
+                ]
+            elif template["meal_type"] == "lunch":
+                base_instructions = [
+                    f"Wash and prepare all fresh ingredients.",
+                    f"Chop {selected_ingredients[0].name if selected_ingredients else 'vegetables'} and other vegetables.",
+                    f"Combine {selected_ingredients[0].name if selected_ingredients else 'ingredients'} with other ingredients in a bowl.",
+                    f"Mix well and season with your preferred dressing or spices.",
+                    f"Let sit for a few minutes to allow flavors to meld.",
+                    f"Toss gently before serving.",
+                    f"Garnish and serve."
+                ]
+            elif template["meal_type"] == "dinner":
+                base_instructions = [
+                    f"Preheat oven or prepare cooking surface.",
+                    f"Prepare {selected_ingredients[0].name if selected_ingredients else 'main ingredients'} and other main ingredients.",
+                    f"Season {selected_ingredients[0].name if selected_ingredients else 'main ingredients'} with salt, pepper, and spices.",
+                    f"Cook main ingredients until browned or tender.",
+                    f"Add remaining ingredients and combine.",
+                    f"Continue cooking until all ingredients are done.",
+                    f"Adjust seasoning and serve hot."
+                ]
+            else:  # snack
+                base_instructions = [
+                    f"Gather all ingredients.",
+                    f"Mix {selected_ingredients[0].name if selected_ingredients else 'ingredients'} with other ingredients.",
+                    f"Combine well until evenly distributed.",
+                    f"Portion into serving sizes.",
+                    f"Store in airtight container if not serving immediately."
+                ]
+            
+            # Use base instructions and pad if needed
             for i in range(num_steps):
+                if i < len(base_instructions):
+                    instruction_text = base_instructions[i]
+                else:
+                    # Generic continuation
+                    instruction_text = f"Continue following the recipe until complete."
+                
                 instruction = RecipeInstruction(
                     recipe_id=recipe.id,
                     step_number=i + 1,
                     step_title=f"Step {i + 1}",
-                    description=f"Instruction for step {i + 1} of {template['title']}",
+                    description=instruction_text,
                     time_required=random.randint(2, 15)
                 )
                 db.add(instruction)
