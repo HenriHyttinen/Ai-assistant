@@ -343,26 +343,57 @@ def create_recipes():
             difficulties = ["easy", "medium", "hard"]
             dietary_options = [["vegetarian"], ["vegan"], ["gluten-free"], ["dairy-free"], ["keto"], ["paleo"], [], ["vegetarian", "gluten-free"], ["vegan", "gluten-free"]]
             
+            cuisine = random.choice(cuisines)
+            meal_type = random.choice(meal_types)
+            difficulty = random.choice(difficulties)
+            dietary_tags = random.choice(dietary_options)
+            
+            # Add random ingredients FIRST to generate name from them
+            num_ingredients = random.randint(3, 10)
+            selected_ingredients = random.sample(list(ingredients.values()), min(num_ingredients, len(ingredients)))
+            
+            # Generate descriptive recipe name from ingredients and cuisine
+            main_ingredient = selected_ingredients[0].name.title()
+            secondary_ingredient = selected_ingredients[1].name.title() if len(selected_ingredients) > 1 else ""
+            
+            # Create recipe name based on cuisine, meal type, and main ingredients
+            recipe_name_parts = []
+            if cuisine:
+                recipe_name_parts.append(cuisine)
+            
+            # Add main ingredient or meal type descriptor
+            if meal_type == "breakfast":
+                recipe_name_parts.append(main_ingredient)
+                recipe_name_parts.append(random.choice(["Bowl", "Platter", "Delight", "Special"]))
+            elif meal_type == "lunch":
+                recipe_name_parts.append(main_ingredient)
+                recipe_name_parts.append(random.choice(["Salad", "Wrap", "Bowl", "Plate"]))
+            elif meal_type == "dinner":
+                recipe_name_parts.append(main_ingredient)
+                recipe_name_parts.append(random.choice(["Dish", "Stew", "Casserole", "Platter"]))
+            else:  # snack
+                recipe_name_parts.append(main_ingredient)
+                recipe_name_parts.append(random.choice(["Bites", "Mix", "Trail Mix", "Snack"]))
+            
+            recipe_title = " ".join(recipe_name_parts)
+            
             recipe = Recipe(
                 id=f"r_{recipes_created + 1}",
-                title=f"Recipe {recipes_created + 1}",
-                cuisine=random.choice(cuisines),
-                meal_type=random.choice(meal_types),
+                title=recipe_title,
+                cuisine=cuisine,
+                meal_type=meal_type,
                 servings=random.randint(2, 8),
-                summary=f"Delicious recipe {recipes_created + 1}",
+                summary=f"A delicious {recipe_title.lower()} perfect for {meal_type}",
                 prep_time=random.randint(5, 30),
                 cook_time=random.randint(10, 120),
-                difficulty_level=random.choice(difficulties),
-                dietary_tags=random.choice(dietary_options),
+                difficulty_level=difficulty,
+                dietary_tags=dietary_tags,
                 source="comprehensive-seeder"
             )
             db.add(recipe)
             db.flush()
             
-            # Add random ingredients
-            num_ingredients = random.randint(3, 10)
-            selected_ingredients = random.sample(list(ingredients.values()), min(num_ingredients, len(ingredients)))
-            
+            # Add ingredients
             for ingredient in selected_ingredients:
                 recipe_ingredient = RecipeIngredient(
                     recipe_id=recipe.id,
@@ -372,14 +403,63 @@ def create_recipes():
                 )
                 db.add(recipe_ingredient)
             
-            # Add instructions
-            num_steps = random.randint(3, 10)
+            # Generate realistic instructions based on meal type and ingredients
+            num_steps = random.randint(4, 8)
+            instructions = []
+            
+            # Base instructions templates by meal type
+            if meal_type == "breakfast":
+                base_instructions = [
+                    f"Prepare all ingredients and set aside.",
+                    f"Heat a pan or skillet over medium heat.",
+                    f"Add {selected_ingredients[0].name} and cook until tender.",
+                    f"Add remaining ingredients and combine well.",
+                    f"Cook until everything is heated through.",
+                    f"Season with salt, pepper, and spices to taste.",
+                    f"Plate and serve hot."
+                ]
+            elif meal_type == "lunch":
+                base_instructions = [
+                    f"Wash and prepare all fresh ingredients.",
+                    f"Chop {selected_ingredients[0].name} and other vegetables.",
+                    f"Combine {selected_ingredients[0].name} with other ingredients in a bowl.",
+                    f"Mix well and season with your preferred dressing or spices.",
+                    f"Let sit for a few minutes to allow flavors to meld.",
+                    f"Toss gently before serving.",
+                    f"Garnish and serve."
+                ]
+            elif meal_type == "dinner":
+                base_instructions = [
+                    f"Preheat oven or prepare cooking surface.",
+                    f"Prepare {selected_ingredients[0].name} and other main ingredients.",
+                    f"Season {selected_ingredients[0].name} with salt, pepper, and spices.",
+                    f"Cook main ingredients until browned or tender.",
+                    f"Add remaining ingredients and combine.",
+                    f"Continue cooking until all ingredients are done.",
+                    f"Adjust seasoning and serve hot."
+                ]
+            else:  # snack
+                base_instructions = [
+                    f"Gather all ingredients.",
+                    f"Mix {selected_ingredients[0].name} with other ingredients.",
+                    f"Combine well until evenly distributed.",
+                    f"Portion into serving sizes.",
+                    f"Store in airtight container if not serving immediately."
+                ]
+            
+            # Use base instructions and pad if needed
             for i in range(num_steps):
+                if i < len(base_instructions):
+                    instruction_text = base_instructions[i]
+                else:
+                    # Generic continuation
+                    instruction_text = f"Continue following the recipe until complete."
+                
                 instruction = RecipeInstruction(
                     recipe_id=recipe.id,
                     step_number=i + 1,
                     step_title=f"Step {i + 1}",
-                    description=f"Instruction for step {i + 1}",
+                    description=instruction_text,
                     time_required=random.randint(1, 20)
                 )
                 db.add(instruction)
