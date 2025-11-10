@@ -718,7 +718,29 @@ Flavor Profile: Note aromatic base, spices used, acid elements, and finishing to
         """
     
     def generate_nutritional_insights(self, nutritional_data: Dict[str, Any], user_preferences: Dict[str, Any]) -> Dict[str, Any]:
-        """Generate AI-powered nutritional insights and recommendations"""
+        """
+        Generate AI-powered nutritional insights and recommendations.
+        
+        This method analyzes user's nutritional data and generates comprehensive
+        personalized insights including:
+        - Achievements and positive feedback
+        - Areas for attention and concerns
+        - Food recommendations
+        - Meal timing adjustments
+        - Portion size modifications
+        - Alternative ingredients
+        - Meal plan optimizations
+        - General recommendations
+        
+        Args:
+            nutritional_data: Dictionary containing user's nutritional totals
+                (calories, protein, carbs, fats, etc.)
+            user_preferences: Dictionary containing user preferences including
+                dietary_preferences, allergies, and target macros
+        
+        Returns:
+            Dictionary containing all AI insights organized by category
+        """
         try:
             prompt = f"""
             Analyze this user's nutritional data and provide comprehensive personalized insights based on their goals and preferences.

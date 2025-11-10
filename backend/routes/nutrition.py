@@ -2433,7 +2433,22 @@ def get_nutritional_analysis(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Get nutritional analysis and insights"""
+    """
+    Get nutritional analysis and AI-powered insights.
+    
+    Returns comprehensive nutritional analysis including:
+    - Totals for all macronutrients and micronutrients
+    - Daily/weekly/monthly breakdowns
+    - AI-generated insights including:
+      * Achievements and positive feedback
+      * Areas for attention
+      * Food recommendations
+      * Meal timing adjustments
+      * Portion size modifications
+      * Alternative ingredients
+      * Meal plan optimizations
+      * General recommendations
+    """
     try:
         # Get nutritional analysis with AI-powered insights
         analysis = nutrition_service.get_nutritional_analysis(
@@ -2484,7 +2499,7 @@ def get_nutritional_analysis(
                     )
                 
                 analysis['ai_insights'] = ai_insights
-                print(f"✅ Generated AI insights for user {current_user.id}")
+                logger.info(f"✅ Generated AI insights for user {current_user.id}")
             else:
                 # No preferences - generate basic insights
                 totals = analysis.get('totals', {})
@@ -2502,9 +2517,7 @@ def get_nutritional_analysis(
                     )
                     analysis['ai_insights'] = ai_insights
         except Exception as e:
-            print(f"Error generating AI insights: {str(e)}")
-            import traceback
-            traceback.print_exc()
+            logger.error(f"Error generating AI insights: {str(e)}", exc_info=True)
             # Don't fail the request if AI insights fail - just log and continue
         
         return analysis

@@ -267,10 +267,9 @@ const NutritionDashboard: React.FC<NutritionDashboardProps> = ({ user = null }) 
     loadNutritionData();
   }, []);
 
-  // CRITICAL FIX: Listen for meal plan updates from other pages
+  // Listen for meal plan updates from other pages
   useEffect(() => {
     const handleMealPlanUpdate = () => {
-      console.log('🔄 Meal plan updated, reloading dashboard...');
       loadNutritionData();
     };
     
@@ -320,12 +319,12 @@ const NutritionDashboard: React.FC<NutritionDashboardProps> = ({ user = null }) 
       });
       
       if (response.ok) {
-        console.log('Default nutrition preferences created successfully');
+        // Default nutrition preferences created successfully
       } else {
-        console.error('Failed to create default preferences:', response.status);
+        // Failed to create default preferences
       }
     } catch (error) {
-      console.error('Error setting up default preferences:', error);
+      // Error setting up default preferences - will use defaults
     }
   };
 
@@ -338,13 +337,11 @@ const NutritionDashboard: React.FC<NutritionDashboardProps> = ({ user = null }) 
       const { data: { session } } = await supabase.auth.getSession();
       
       if (!session?.access_token) {
-        console.error('No Supabase session found');
         setError('Please log in to access nutrition features');
         return;
       }
       
       const headers = { Authorization: `Bearer ${session.access_token}` };
-      console.log('Using Supabase token for nutrition API calls');
       
       // Load nutrition preferences
       const preferencesResponse = await fetch('http://localhost:8000/nutrition/preferences', {
@@ -365,7 +362,7 @@ const NutritionDashboard: React.FC<NutritionDashboardProps> = ({ user = null }) 
         });
       } else if (preferencesResponse.status === 404) {
         // User doesn't have preferences yet - use defaults
-        console.log('No nutrition preferences found, using defaults');
+        // No nutrition preferences found, using defaults
         setGoals({
           calories: 2000,
           protein: 150,
@@ -406,7 +403,7 @@ const NutritionDashboard: React.FC<NutritionDashboardProps> = ({ user = null }) 
           const chosen = pickMealsForToday(byDate[0]);
           if (chosen.meals.length > 0) {
             setMealPlan(byDate[0]);
-            console.log('✅ Loaded meal plan with', chosen.meals.length, 'meals for today');
+            // Loaded meal plan successfully
           } else {
             // CRITICAL FIX: Fallback to latest weekly plan that contains today
             const weeklyResp = await fetch('http://localhost:8000/nutrition/meal-plans?plan_type=weekly&limit=1', {
@@ -420,16 +417,16 @@ const NutritionDashboard: React.FC<NutritionDashboardProps> = ({ user = null }) 
                 const weeklyMeals = pickMealsForToday(weeklyPlan);
                 if (weeklyMeals.meals.length > 0) {
                   setMealPlan(weeklyPlan);
-                  console.log('✅ Loaded weekly meal plan with', weeklyMeals.meals.length, 'meals for today');
+                  // Loaded weekly meal plan successfully
                 } else {
-                  console.log('⚠️ Weekly plan found but no meals for today');
+                  // Weekly plan found but no meals for today
                 }
               }
             }
           }
         } else {
           // CRITICAL FIX: If no plan found by date, try weekly plan
-          console.log('⚠️ No meal plan found for date, trying weekly plan...');
+          // No meal plan found for date, trying weekly plan
           const weeklyResp = await fetch('http://localhost:8000/nutrition/meal-plans?plan_type=weekly&limit=1', {
             method: 'GET',
             headers: { 'Content-Type': 'application/json', ...headers }
@@ -441,7 +438,7 @@ const NutritionDashboard: React.FC<NutritionDashboardProps> = ({ user = null }) 
               const weeklyMeals = pickMealsForToday(weeklyPlan);
               if (weeklyMeals.meals.length > 0) {
                 setMealPlan(weeklyPlan);
-                console.log('✅ Loaded weekly meal plan with', weeklyMeals.meals.length, 'meals for today');
+                // Loaded weekly meal plan successfully
               }
             }
           }
@@ -461,7 +458,7 @@ const NutritionDashboard: React.FC<NutritionDashboardProps> = ({ user = null }) 
       if (dailyLogResponse.ok) {
         const dailyLogData = await dailyLogResponse.json();
         dailyLogEntries = dailyLogData.entries || [];
-        console.log('📊 Loaded daily log entries:', dailyLogEntries.length);
+        // Loaded daily log entries
       }
       
       // Store daily log entries in state for display
@@ -488,16 +485,14 @@ const NutritionDashboard: React.FC<NutritionDashboardProps> = ({ user = null }) 
           sodium: analysis.totals?.sodium || 0
         });
         
-        // CRITICAL FIX: Store AI insights from analysis
+        // Store AI insights from analysis
         if (analysis.ai_insights) {
           setAiInsights(analysis.ai_insights);
-          console.log('✅ AI insights loaded:', analysis.ai_insights);
         } else {
-          console.log('⚠️ No AI insights in analysis response:', analysis);
           setAiInsights(null);
         }
       } else {
-        console.warn('⚠️ Failed to fetch nutritional analysis:', analysisResponse.status);
+        // Failed to fetch nutritional analysis - will use fallback data
         // Fallback to mock data if API fails
         setNutritionalData({
           calories: 1850,
@@ -514,7 +509,7 @@ const NutritionDashboard: React.FC<NutritionDashboardProps> = ({ user = null }) 
 
       setError(null);
     } catch (err) {
-      console.error('Error loading nutrition data:', err);
+      // Error loading nutrition data
       setError('Failed to load nutrition data');
       
       // Fallback to mock data
@@ -909,7 +904,7 @@ const NutritionDashboard: React.FC<NutritionDashboardProps> = ({ user = null }) 
           </CardBody>
         </Card>
 
-        {/* AI Insights Overview - Comprehensive display of all AI features */}
+        {/* AI Insights Overview - Comprehensive display of all AI-driven nutritional analysis features */}
         <AIInsightsOverview insights={aiInsights} loading={loadingInsights} />
 
         {/* Quick Actions */}
@@ -1022,7 +1017,7 @@ const NutritionDashboard: React.FC<NutritionDashboardProps> = ({ user = null }) 
           </>
         ) : (
           <>
-            {/* AI Insights Overview - Comprehensive display of all AI features */}
+            {/* AI Insights Overview - Comprehensive display of all AI-driven nutritional analysis features */}
             <AIInsightsOverview insights={aiInsights} loading={loadingInsights} />
             
             <MicronutrientAnalysis userId={user?.id} onUpdate={loadNutritionData} />

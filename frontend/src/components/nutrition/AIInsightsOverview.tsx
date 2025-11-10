@@ -13,7 +13,6 @@ import {
   Divider,
   useColorModeValue,
   SimpleGrid,
-  Flex,
   Spinner,
   Center
 } from '@chakra-ui/react';
@@ -29,6 +28,9 @@ import {
   FiInfo
 } from 'react-icons/fi';
 
+/**
+ * Interface for AI-generated nutritional insights
+ */
 interface AIInsights {
   achievements?: string[];
   concerns?: string[];
@@ -40,10 +42,31 @@ interface AIInsights {
   meal_plan_optimizations?: string[];
 }
 
+/**
+ * Props for the AIInsightsOverview component
+ */
 interface AIInsightsOverviewProps {
+  /** AI insights data from nutritional analysis */
   insights: AIInsights | null;
+  /** Whether insights are currently being loaded */
   loading?: boolean;
 }
+
+/**
+ * AI Insights Overview Component
+ * 
+ * Displays comprehensive AI-driven nutritional analysis including:
+ * - Achievements and positive feedback
+ * - Areas for attention and concerns
+ * - Food recommendations
+ * - Meal timing adjustments
+ * - Portion size modifications
+ * - Alternative ingredients
+ * - Meal plan optimizations
+ * - General recommendations
+ * 
+ * @component
+ */
 
 const AIInsightsOverview: React.FC<AIInsightsOverviewProps> = ({ insights, loading }) => {
   const cardBg = useColorModeValue('white', 'gray.800');
