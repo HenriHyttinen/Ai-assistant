@@ -844,7 +844,7 @@ class EnhancedNutritionAI:
         
         try:
             response = self.openai_client.chat.completions.create(
-                model="gpt-4",
+                model="gpt-3.5-turbo",
                 messages=[{"role": "user", "content": prompt}],
                 temperature=temperature,
                 max_tokens=self.max_tokens

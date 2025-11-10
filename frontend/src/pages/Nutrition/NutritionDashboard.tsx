@@ -38,6 +38,7 @@ import {
 } from 'react-icons/fi';
 import MicronutrientAnalysis from '../../components/nutrition/MicronutrientAnalysis';
 import MacronutrientVisualization from '../../components/nutrition/MacronutrientVisualization';
+import AIInsightsOverview from '../../components/nutrition/AIInsightsOverview';
 
 interface NutritionalData {
   calories: number;
@@ -85,6 +86,8 @@ const NutritionDashboard: React.FC<NutritionDashboardProps> = ({ user = null }) 
   const [activeTab, setActiveTab] = useState<'overview' | 'micronutrients'>('overview');
   const [showAllMeals, setShowAllMeals] = useState(false);
   const [dailyLogEntries, setDailyLogEntries] = useState<any[]>([]); // CRITICAL FIX: Add missing state
+  const [aiInsights, setAiInsights] = useState<any>(null); // AI insights from nutritional analysis
+  const [loadingInsights, setLoadingInsights] = useState(false);
 
   // (moved todayTotals below gridAssignments to avoid temporal dead zone)
 
@@ -484,7 +487,17 @@ const NutritionDashboard: React.FC<NutritionDashboardProps> = ({ user = null }) 
           sugar: analysis.totals?.sugar || 0,
           sodium: analysis.totals?.sodium || 0
         });
+        
+        // CRITICAL FIX: Store AI insights from analysis
+        if (analysis.ai_insights) {
+          setAiInsights(analysis.ai_insights);
+          console.log('✅ AI insights loaded:', analysis.ai_insights);
+        } else {
+          console.log('⚠️ No AI insights in analysis response:', analysis);
+          setAiInsights(null);
+        }
       } else {
+        console.warn('⚠️ Failed to fetch nutritional analysis:', analysisResponse.status);
         // Fallback to mock data if API fails
         setNutritionalData({
           calories: 1850,
@@ -495,7 +508,9 @@ const NutritionDashboard: React.FC<NutritionDashboardProps> = ({ user = null }) 
           sugar: 45,
           sodium: 2100
         });
+        setAiInsights(null);
       }
+      setLoadingInsights(false);
 
       setError(null);
     } catch (err) {
@@ -894,6 +909,9 @@ const NutritionDashboard: React.FC<NutritionDashboardProps> = ({ user = null }) 
           </CardBody>
         </Card>
 
+        {/* AI Insights Overview - Comprehensive display of all AI features */}
+        <AIInsightsOverview insights={aiInsights} loading={loadingInsights} />
+
         {/* Quick Actions */}
         <Grid templateColumns={{ base: '1fr', md: 'repeat(3, 1fr)' }} gap={4}>
           <Card bg={cardBg} borderColor={borderColor} _hover={{ shadow: 'md' }} transition="all 0.2s">
@@ -1004,6 +1022,9 @@ const NutritionDashboard: React.FC<NutritionDashboardProps> = ({ user = null }) 
           </>
         ) : (
           <>
+            {/* AI Insights Overview - Comprehensive display of all AI features */}
+            <AIInsightsOverview insights={aiInsights} loading={loadingInsights} />
+            
             <MicronutrientAnalysis userId={user?.id} onUpdate={loadNutritionData} />
             <MacronutrientVisualization
               currentData={{

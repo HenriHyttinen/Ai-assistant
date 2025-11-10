@@ -721,7 +721,7 @@ Flavor Profile: Note aromatic base, spices used, acid elements, and finishing to
         """Generate AI-powered nutritional insights and recommendations"""
         try:
             prompt = f"""
-            Analyze this user's nutritional data and provide personalized insights based on their goals and preferences.
+            Analyze this user's nutritional data and provide comprehensive personalized insights based on their goals and preferences.
             
             User's Nutritional Data:
             - Daily Calories: {nutritional_data.get('calories', 0)} (Target: {user_preferences.get('daily_calorie_target', 2000)})
@@ -733,15 +733,24 @@ Flavor Profile: Note aromatic base, spices used, acid elements, and finishing to
             - Dietary: {user_preferences.get('dietary_preferences', [])}
             - Allergies: {user_preferences.get('allergies', [])}
             
-            Provide a JSON response with:
+            Provide a comprehensive JSON response with ALL of the following sections:
             {{
-                "achievements": ["specific_positive_achievements"],
-                "concerns": ["areas_that_need_attention"],
-                "suggestions": ["actionable_recommendations"],
-                "meal_timing_advice": ["timing_optimization_tips"],
-                "ingredient_recommendations": ["specific_foods_to_add"],
-                "portion_advice": ["portion_size_recommendations"]
+                "achievements": ["specific_positive_achievements - what they're doing well"],
+                "concerns": ["areas_that_need_attention - what needs improvement"],
+                "suggestions": ["general_actionable_recommendations"],
+                "meal_timing_advice": ["specific_meal_timing_optimization_tips - when to eat meals"],
+                "ingredient_recommendations": ["specific_foods_to_add - food recommendations to improve nutrition"],
+                "portion_advice": ["portion_size_modifications - how to adjust serving sizes"],
+                "alternative_ingredients": ["healthier_ingredient_swaps - alternative ingredients for better nutrition"],
+                "meal_plan_optimizations": ["meal_plan_improvement_suggestions - how to optimize meal plans"]
             }}
+            
+            IMPORTANT: Provide at least 2-3 items in each array. Be specific and actionable. Consider:
+            - Food recommendations: Suggest specific foods to add based on nutritional gaps
+            - Meal timing adjustments: Suggest optimal meal times based on their schedule and goals
+            - Portion size modifications: Suggest how to adjust portions to meet targets
+            - Alternative ingredients: Suggest healthier swaps (e.g., "Use Greek yogurt instead of sour cream")
+            - Meal plan optimizations: Suggest improvements to meal variety, balance, or timing
             """
             
             response = self._call_openai(prompt, self.parameters["insights"]["temperature"])
@@ -755,7 +764,9 @@ Flavor Profile: Note aromatic base, spices used, acid elements, and finishing to
                 "suggestions": ["Stay consistent with your meal planning"],
                 "meal_timing_advice": ["Maintain regular meal times"],
                 "ingredient_recommendations": ["Include more variety in your meals"],
-                "portion_advice": ["Monitor portion sizes"]
+                "portion_advice": ["Monitor portion sizes"],
+                "alternative_ingredients": ["Consider healthier ingredient alternatives"],
+                "meal_plan_optimizations": ["Optimize your meal plan for better nutrition"]
             }
     
     async def generate_nutritional_insights_with_recovery(self, nutritional_data: Dict[str, Any], user_preferences: Dict[str, Any]) -> Dict[str, Any]:
@@ -1605,6 +1616,169 @@ Return ONLY minified JSON (no markdown):
                 result['recipe']['database_source'] = False
                 result['ai_generated'] = True
                 
+                # CRITICAL FIX: Add validation for dietary preferences and allergies (same as sequential RAG)
+                # This ensures fast generation also respects user preferences
+                dietary_preferences = user_preferences.get('dietary_preferences', [])
+                allergies = user_preferences.get('allergies', [])
+                disliked_ingredients = user_preferences.get('disliked_ingredients', [])
+                
+                if dietary_preferences or allergies or disliked_ingredients:
+                    logger.info(f"🔍 Fast generation validation: dietary_preferences={dietary_preferences}, allergies={allergies}, disliked={disliked_ingredients}")
+                    # Use simplified validation - check for critical violations
+                    try:
+                        recipe = result.get('recipe', {})
+                        ingredients = recipe.get('ingredients', [])
+                        recipe_title = recipe.get('title', '') or result.get('meal_name', '')
+                        recipe_text = f"{recipe_title} {recipe.get('summary', '')}".lower()
+                        
+                        # Extract ingredient names
+                        ingredient_names = []
+                        for ing in ingredients:
+                            if isinstance(ing, dict):
+                                name = str(ing.get('name', '')).lower().strip()
+                                if ' - ' in name:
+                                    name = name.split(' - ')[0].strip()
+                                if name:
+                                    ingredient_names.append(name)
+                        
+                        all_text = f"{recipe_text} {' '.join(ingredient_names)}".lower()
+                        dietary_prefs_lower = [p.lower() for p in dietary_preferences]
+                        import re
+                        
+                        # Check for vegan/vegetarian violations
+                        if 'vegan' in dietary_prefs_lower or 'vegetarian' in dietary_prefs_lower:
+                            meat_terms = ['chicken', 'beef', 'ground beef', 'beef sirloin', 'pork', 'lamb', 'turkey', 'bacon', 'ham', 'sausage', 'chorizo', 'mince', 'meat', 'poultry', 'duck', 'goose', 'venison', 'bison', 'steak', 'burger', 'patty']
+                            fish_terms = ['fish', 'salmon', 'salmon fillet', 'salmon fillets', 'tuna', 'cod', 'sardines', 'anchovies', 'mackerel', 'trout', 'shrimp', 'prawn', 'crab', 'lobster', 'mussels', 'oysters', 'scallops', 'clams', 'shellfish', 'seafood']
+                            egg_terms = ['egg', 'eggs', 'scrambled eggs', 'fried eggs', 'boiled eggs', 'poached eggs', 'egg whites', 'egg yolks', 'tamagoyaki']
+                            dairy_terms = ['milk', 'cheese', 'butter', 'yogurt', 'yoghurt', 'cream', 'dairy', 'whey', 'casein']
+                            
+                            found_violation = False
+                            for term in meat_terms + fish_terms:
+                                # CRITICAL FIX: Handle plurals for fish terms (salmon fillet vs salmon fillets)
+                                escaped_term = re.escape(term)
+                                # Pattern: word boundary + term + optional s + word boundary
+                                pattern1 = r'\b' + escaped_term + r's?\b'  # Matches "salmon fillet" or "salmon fillets"
+                                pattern2 = r'\b' + escaped_term + r'es?\b'  # Matches "fillet" or "fillets"
+                                
+                                matches = re.search(pattern1, all_text) or re.search(pattern2, all_text) or term in all_text
+                                if matches:
+                                    found_violation = True
+                                    logger.warning(f"⚠️ Fast generation: Found meat/fish '{term}' in recipe '{recipe_title}'")
+                                    break
+                            
+                            if not found_violation:
+                                for ing_name in ingredient_names:
+                                    for term in meat_terms + fish_terms:
+                                        # CRITICAL FIX: Handle plurals for fish terms
+                                        escaped_term = re.escape(term)
+                                        pattern1 = r'\b' + escaped_term + r's?\b'
+                                        pattern2 = r'\b' + escaped_term + r'es?\b'
+                                        
+                                        matches = (re.search(pattern1, ing_name) or 
+                                                  re.search(pattern2, ing_name) or 
+                                                  term in ing_name or
+                                                  ing_name == term or
+                                                  ing_name == term + 's' or
+                                                  ing_name == term + 'es')
+                                        if matches:
+                                            found_violation = True
+                                            logger.warning(f"⚠️ Fast generation: Found meat/fish '{term}' in ingredient '{ing_name}'")
+                                            break
+                                    if found_violation:
+                                        break
+                            
+                            if 'vegan' in dietary_prefs_lower:
+                                # Also check for eggs and dairy
+                                for term in egg_terms:
+                                    if term in all_text.lower() and not re.search(r'(eggplant|eggnog|eggshell)', all_text, re.IGNORECASE):
+                                        found_violation = True
+                                        logger.warning(f"⚠️ Fast generation: Found egg '{term}' in recipe '{recipe_title}'")
+                                        break
+                                if not found_violation:
+                                    for term in dairy_terms:
+                                        pattern = r'\b' + re.escape(term) + r'\b'
+                                        if re.search(pattern, all_text) and not re.search(r'(dairy-free|non-dairy|no-dairy)', all_text, re.IGNORECASE):
+                                            found_violation = True
+                                            logger.warning(f"⚠️ Fast generation: Found dairy '{term}' in recipe '{recipe_title}'")
+                                            break
+                            
+                            if found_violation:
+                                logger.warning(f"⚠️ Fast generation: Recipe violates dietary preferences - rejecting")
+                                meal_data['explicit_avoid_names'] = meal_data.get('explicit_avoid_names', []) + [result.get('meal_name', '')]
+                                retry_count = meal_data.get('retry_count', 0)
+                                if retry_count < 3:
+                                    meal_data['retry_count'] = retry_count + 1
+                                    return self._generate_single_meal_fast(meal_data)
+                                else:
+                                    logger.error(f"❌ Fast generation: Failed to generate compliant recipe after 3 retries")
+                                    # Fall back to fallback generator
+                                    from .fallback_recipes import fallback_generator
+                                    existing_names = [meal.get('meal_name', '') for meal in meal_data.get('existing_meals', [])]
+                                    return fallback_generator.generate_unique_recipe(
+                                        meal_data.get('meal_type', 'breakfast'),
+                                        meal_data.get('target_calories', 500),
+                                        meal_data.get('target_cuisine', 'International'),
+                                        existing_names
+                                    )
+                        
+                        # Check for allergies
+                        if allergies:
+                            allergy_expansions = {
+                                'nuts': ['almonds', 'almond', 'walnuts', 'walnut', 'cashews', 'cashew', 'pistachios', 'pistachio', 'hazelnuts', 'hazelnut', 'pecans', 'pecan', 'macadamia nuts', 'macadamia', 'brazil nuts', 'brazil nut', 'pine nuts', 'pine nut', 'nuts', 'nut'],
+                                'tree_nuts': ['almonds', 'almond', 'walnuts', 'walnut', 'cashews', 'cashew', 'pistachios', 'pistachio', 'hazelnuts', 'hazelnut', 'pecans', 'pecan', 'macadamia nuts', 'macadamia', 'brazil nuts', 'brazil nut', 'pine nuts', 'pine nut'],
+                                'peanuts': ['peanuts', 'peanut', 'groundnuts'],
+                                'eggs': ['egg', 'eggs', 'scrambled eggs', 'fried eggs', 'boiled eggs', 'poached eggs', 'egg whites', 'egg yolks', 'tamagoyaki'],
+                                'fish': ['fish', 'salmon', 'salmon fillet', 'salmon fillets', 'tuna', 'cod', 'sardines', 'anchovies', 'mackerel', 'trout'],
+                            }
+                            expanded_allergies = set()
+                            for allergy in allergies:
+                                allergy_lower = allergy.lower()
+                                expanded_allergies.add(allergy_lower)
+                                if allergy_lower in allergy_expansions:
+                                    expanded_allergies.update([a.lower() for a in allergy_expansions[allergy_lower]])
+                            
+                            found_allergen = False
+                            for expanded_allergy in expanded_allergies:
+                                escaped_allergy = re.escape(expanded_allergy)
+                                pattern1 = r'\b' + escaped_allergy + r's?\b'
+                                pattern2 = r'\b' + escaped_allergy + r'es?\b'
+                                if re.search(pattern1, all_text) or re.search(pattern2, all_text):
+                                    if not re.search(r'(eggplant|eggnog|eggshell)', all_text, re.IGNORECASE):
+                                        found_allergen = True
+                                        logger.warning(f"⚠️ Fast generation: Found allergen '{expanded_allergy}' in recipe '{recipe_title}'")
+                                        break
+                            
+                            if not found_allergen:
+                                for ing_name in ingredient_names:
+                                    for expanded_allergy in expanded_allergies:
+                                        if expanded_allergy in ing_name or ing_name == expanded_allergy or ing_name == expanded_allergy + 's':
+                                            found_allergen = True
+                                            logger.warning(f"⚠️ Fast generation: Found allergen '{expanded_allergy}' in ingredient '{ing_name}'")
+                                            break
+                                    if found_allergen:
+                                        break
+                            
+                            if found_allergen:
+                                logger.warning(f"⚠️ Fast generation: Recipe contains allergen - rejecting")
+                                meal_data['explicit_avoid_names'] = meal_data.get('explicit_avoid_names', []) + [result.get('meal_name', '')]
+                                retry_count = meal_data.get('retry_count', 0)
+                                if retry_count < 3:
+                                    meal_data['retry_count'] = retry_count + 1
+                                    return self._generate_single_meal_fast(meal_data)
+                                else:
+                                    logger.error(f"❌ Fast generation: Failed to generate recipe without allergen after 3 retries")
+                                    from .fallback_recipes import fallback_generator
+                                    existing_names = [meal.get('meal_name', '') for meal in meal_data.get('existing_meals', [])]
+                                    return fallback_generator.generate_unique_recipe(
+                                        meal_data.get('meal_type', 'breakfast'),
+                                        meal_data.get('target_calories', 500),
+                                        meal_data.get('target_cuisine', 'International'),
+                                        existing_names
+                                    )
+                    except Exception as e:
+                        logger.error(f"Fast generation: Validation error: {e}", exc_info=True)
+                        # Continue if validation fails (don't block generation)
+                
                 # Calculate nutrition from ingredients (same as sequential RAG)
                 # Replace placeholder values with calculated values from ingredients
                 # Note: Fast generation doesn't have db access, will use estimates
@@ -1820,8 +1994,8 @@ Return ONLY minified JSON (no markdown):
                 # CRITICAL FIX: Map violation types to specific forbidden ingredients
                 violation_mappings = {
                     'vegan_violation': 'meat, fish, eggs, dairy, honey - NO animal products at all. Use plant-based substitutes like tofu, tempeh, legumes, nuts, seeds, plant-based milk, etc.',
-                    'vegetarian_violation': 'meat, fish, poultry - NO meat or fish. Eggs and dairy are OK, but NO chicken, beef, pork, lamb, turkey, fish, seafood, etc.',
-                    'pescatarian_violation': 'meat, poultry - NO meat or poultry. Fish and seafood are OK, but NO chicken, beef, pork, lamb, turkey, etc.'
+                    'vegetarian_violation': 'meat, fish, poultry - NO meat or fish. Eggs and dairy are OK, but NO chicken, beef, ground beef, beef sirloin, pork, lamb, turkey, fish, seafood, etc.',
+                    'pescatarian_violation': 'meat, poultry - NO meat or poultry. Fish and seafood are OK, but NO chicken, beef, ground beef, beef sirloin, pork, lamb, turkey, etc.'
                 }
                 
                 avoid_instructions = []
@@ -1842,10 +2016,10 @@ Return ONLY minified JSON (no markdown):
                 'nuts': 'DO NOT use nuts, almonds, walnuts, cashews, pistachios, hazelnuts, pecans, macadamia nuts, brazil nuts, pine nuts, or ANY nut-based ingredients',
                 'tree_nuts': 'DO NOT use almonds, walnuts, cashews, pistachios, hazelnuts, pecans, macadamia nuts, brazil nuts, pine nuts, or ANY tree nut-based ingredients',
                 'peanuts': 'DO NOT use peanuts, peanut butter, groundnuts, or ANY peanut-based ingredients',
-                'eggs': 'DO NOT use eggs, egg whites, egg yolks, scrambled eggs, fried eggs, boiled eggs, or ANY egg-based ingredients. ABSOLUTELY FORBIDDEN - use substitutes like tofu, chickpea flour, or flax eggs instead.',
-                'egg': 'DO NOT use egg, eggs, egg whites, egg yolks, scrambled eggs, fried eggs, boiled eggs, or ANY egg-based ingredients. ABSOLUTELY FORBIDDEN - use substitutes like tofu, chickpea flour, or flax eggs instead.',
+                'eggs': 'DO NOT use eggs, egg whites, egg yolks, scrambled eggs, fried eggs, boiled eggs, tamagoyaki, or ANY egg-based ingredients. ABSOLUTELY FORBIDDEN - use substitutes like tofu, chickpea flour, or flax eggs instead.',
+                'egg': 'DO NOT use egg, eggs, egg whites, egg yolks, scrambled eggs, fried eggs, boiled eggs, tamagoyaki, or ANY egg-based ingredients. ABSOLUTELY FORBIDDEN - use substitutes like tofu, chickpea flour, or flax eggs instead.',
                 'dairy': 'DO NOT use milk, cheese, butter, yogurt, cream, whey, casein, or ANY dairy products',
-                'fish': 'DO NOT use fish, salmon, tuna, cod, sardines, anchovies, mackerel, trout, or ANY fish',
+                'fish': 'DO NOT use fish, salmon, salmon fillet, salmon fillets, tuna, cod, sardines, anchovies, mackerel, trout, or ANY fish',
                 'shellfish': 'DO NOT use shrimp, crab, lobster, mussels, oysters, scallops, clams, or ANY shellfish',
                 'soy': 'DO NOT use soy, soya, tofu, tempeh, edamame, soybeans, or ANY soy-based ingredients',
                 'wheat': 'DO NOT use wheat, flour, bread, pasta, noodles, or ANY wheat-containing ingredients',
@@ -1876,17 +2050,19 @@ Return ONLY minified JSON (no markdown):
 🚫🚫🚫 CRITICAL DIETARY RESTRICTION: USER IS VEGAN 🚫🚫🚫
 YOU MUST CREATE A 100% PLANT-BASED RECIPE. ABSOLUTELY NO ANIMAL PRODUCTS ALLOWED.
 
-FORBIDDEN INGREDIENTS (DO NOT USE IN ANY FORM):
-- NO MEAT: chicken, beef, pork, lamb, turkey, bacon, ham, sausage, chorizo, mince, meat, poultry, duck, goose, venison, bison, steak, burger, patty
-- NO FISH: fish, salmon, tuna, cod, sardines, anchovies, mackerel, trout, shrimp, prawn, crab, lobster, mussels, oysters, scallops, clams, shellfish, seafood
+FORBIDDEN INGREDIENTS (DO NOT USE IN ANY FORM - DO NOT EVEN MENTION THESE WORDS):
+- NO MEAT: chicken, beef, ground beef, beef sirloin, pork, lamb, turkey, bacon, ham, sausage, chorizo, mince, meat, poultry, duck, goose, venison, bison, steak, burger, patty
+- NO FISH: fish, salmon, salmon fillet, salmon fillets, tuna, cod, sardines, anchovies, mackerel, trout, shrimp, prawn, crab, lobster, mussels, oysters, scallops, clams, shellfish, seafood
 - NO EGGS: egg, eggs, scrambled eggs, fried eggs, boiled eggs, poached eggs, egg whites, egg yolks
-- NO DAIRY: milk, cheese, butter, yogurt, cream, whey, casein, mozzarella, cheddar, feta, parmesan, gouda, brie, ricotta
+- NO DAIRY: milk, cheese, butter, yogurt, cream, whey, casein, mozzarella, cheddar, feta, parmesan, gouda, brie, ricotta, dairy
 - NO HONEY: honey, bee pollen, royal jelly
 
-ALLOWED INGREDIENTS (USE THESE INSTEAD):
-- Vegetables, fruits, grains, legumes, nuts, seeds, tofu, tempeh, plant-based milk, plant-based cheese, plant-based butter
+CRITICAL: DO NOT mention the word "dairy" anywhere in your recipe - not in ingredients, not in instructions, not in summary, not in dietary tags. Use "plant-based" or "non-dairy" alternatives instead.
 
-IF YOU INCLUDE ANY FORBIDDEN INGREDIENT, THE RECIPE WILL BE REJECTED AND YOU WILL HAVE TO START OVER.
+ALLOWED INGREDIENTS (USE THESE INSTEAD):
+- Vegetables, fruits, grains, legumes, nuts, seeds, tofu, tempeh, plant-based milk (almond milk, soy milk, oat milk), plant-based cheese, plant-based butter, nutritional yeast
+
+IF YOU INCLUDE ANY FORBIDDEN INGREDIENT OR MENTION FORBIDDEN WORDS, THE RECIPE WILL BE REJECTED AND YOU WILL HAVE TO START OVER.
 """
             elif 'vegetarian' in dietary_prefs_lower:
                 dietary_restrictions_section = """
@@ -1895,7 +2071,7 @@ YOU MUST CREATE A RECIPE WITHOUT MEAT OR FISH. EGGS AND DAIRY ARE ALLOWED.
 
 FORBIDDEN INGREDIENTS (DO NOT USE IN ANY FORM):
 - NO MEAT: chicken, beef, pork, lamb, turkey, bacon, ham, sausage, chorizo, mince, meat, poultry, duck, goose, venison, bison, steak, burger, patty
-- NO FISH: fish, salmon, tuna, cod, sardines, anchovies, mackerel, trout, shrimp, prawn, crab, lobster, mussels, oysters, scallops, clams, shellfish, seafood
+- NO FISH: fish, salmon, salmon fillet, salmon fillets, tuna, cod, sardines, anchovies, mackerel, trout, shrimp, prawn, crab, lobster, mussels, oysters, scallops, clams, shellfish, seafood
 
 ALLOWED INGREDIENTS:
 - Eggs, dairy (milk, cheese, butter, yogurt), vegetables, fruits, grains, legumes, nuts, seeds, tofu, tempeh
@@ -1932,9 +2108,12 @@ AVOID DUPLICATES: Do not repeat these recent recipes: {', '.join(existing_names[
 DIETARY REQUIREMENTS (CRITICAL - STRICTLY ENFORCE - VIOLATIONS WILL CAUSE REJECTION):
 - Dietary Preferences: {', '.join(user_preferences.get('dietary_preferences', [])) or 'NONE (include meat/fish/dairy/eggs)'}
   * REMEMBER: The dietary restrictions above are MANDATORY. You MUST follow them.
+  * If vegan: DO NOT mention words like "dairy", "milk", "cheese", "butter", "yogurt", "egg", "meat", "fish" anywhere in your recipe - use plant-based alternatives instead
+  * If vegetarian: DO NOT mention words like "meat", "fish", "chicken", "beef", "ground beef", "beef sirloin", "pork" anywhere in your recipe
   * If gluten-free: NO wheat, barley, rye, or gluten-containing ingredients
   * If keto: LOW carbs, HIGH fats
   * CRITICAL: Do NOT add dietary_tags like "CONTAINS-MEAT", "contains-meat", "meat", "fish", "dairy", or "egg" if the user prefers vegan/vegetarian - these tags will cause rejection
+  * CRITICAL: Do NOT mention forbidden ingredients in instructions, summary, or anywhere else - use substitutes instead
 - Allergies: {', '.join(allergies) if allergies else 'NONE'}{allergy_instructions}
 - Disliked Ingredients: STRICTLY avoid these - DO NOT include: {', '.join(user_preferences.get('disliked_ingredients', [])) or 'NONE'}
   * Check ingredient names carefully - if any disliked ingredient appears in the name, use a substitute
@@ -2140,9 +2319,9 @@ OUTPUT: Valid minified JSON only (no markdown):
                 if 'vegan' in dietary_prefs_lower:
                     # Vegan: NO animal products at all (no meat, fish, eggs, dairy, honey, etc.)
                     vegan_violations = {
-                        'meat': ['chicken', 'beef', 'pork', 'lamb', 'turkey', 'bacon', 'ham', 'sausage', 'chorizo', 'mince', 'meat', 'poultry', 'duck', 'goose', 'venison', 'bison', 'steak', 'burger', 'patty'],
-                        'fish': ['fish', 'salmon', 'tuna', 'cod', 'sardines', 'anchovies', 'mackerel', 'trout', 'shrimp', 'prawn', 'crab', 'lobster', 'mussels', 'oysters', 'scallops', 'clams', 'shellfish', 'seafood'],
-                        'eggs': ['egg', 'eggs', 'scrambled eggs', 'fried eggs', 'boiled eggs', 'poached eggs', 'egg whites', 'egg yolks'],
+                        'meat': ['chicken', 'beef', 'ground beef', 'beef sirloin', 'pork', 'lamb', 'turkey', 'bacon', 'ham', 'sausage', 'chorizo', 'mince', 'meat', 'poultry', 'duck', 'goose', 'venison', 'bison', 'steak', 'burger', 'patty'],
+                        'fish': ['fish', 'salmon', 'salmon fillet', 'salmon fillets', 'tuna', 'cod', 'sardines', 'anchovies', 'mackerel', 'trout', 'shrimp', 'prawn', 'crab', 'lobster', 'mussels', 'oysters', 'scallops', 'clams', 'shellfish', 'seafood'],
+                        'eggs': ['egg', 'eggs', 'scrambled eggs', 'fried eggs', 'boiled eggs', 'poached eggs', 'egg whites', 'egg yolks', 'tamagoyaki'],
                         'dairy': ['milk', 'cheese', 'butter', 'yogurt', 'yoghurt', 'cream', 'dairy', 'whey', 'casein', 'mozzarella', 'cheddar', 'feta', 'parmesan', 'gouda', 'brie', 'ricotta'],
                         'honey': ['honey', 'bee pollen', 'royal jelly']
                     }
@@ -2152,11 +2331,132 @@ OUTPUT: Valid minified JSON only (no markdown):
                     import re
                     for violation_category, violation_terms in vegan_violations.items():
                         for term in violation_terms:
-                            pattern = r'\b' + re.escape(term) + r'\b'
-                            if re.search(pattern, all_text):
-                                found_violation = True
-                                violation_type = violation_category
-                                logger.warning(f"⚠️ Generated recipe violates VEGAN preference: found {violation_category} '{term}' in recipe '{recipe.get('title', '')}'")
+                            # CRITICAL FIX: Check both all_text AND individual ingredient names
+                            # Use word boundary matching, but exclude false positives like "dairy-free", "non-dairy", "no-dairy"
+                            # CRITICAL FIX: For eggs, use flexible pattern matching to handle plurals and compound terms
+                            if violation_category == 'eggs':
+                                # For egg terms, check if ANY egg-related term appears (not just the specific term)
+                                # This catches "egg yolks" when checking for "eggs", "scrambled eggs" when checking for "egg", etc.
+                                # First check if this specific term matches
+                                escaped_term = re.escape(term)
+                                egg_patterns = [
+                                    r'\b' + escaped_term + r's?\b',  # Matches "egg" or "eggs"
+                                    r'\b' + escaped_term + r'es?\b',  # Matches "egg" or "egges"
+                                ]
+                                pattern_matches = any(re.search(p, all_text) for p in egg_patterns)
+                                term_in_text = term in all_text.lower()
+                                
+                                # Also check if any other egg term from the list appears in the text
+                                # This ensures "egg yolks" is caught when checking for "eggs"
+                                other_egg_terms = [t for t in violation_terms if t != term]
+                                any_egg_term_matches = False
+                                for other_term in other_egg_terms:
+                                    if other_term in all_text.lower():
+                                        any_egg_term_matches = True
+                                        break
+                                
+                                # If pattern matches, term is in text, or any other egg term matches, check for false positives
+                                if pattern_matches or term_in_text or any_egg_term_matches:
+                                    # Exclude false positives like "eggplant", "eggnog", "eggshell"
+                                    if not re.search(r'(eggplant|eggnog|eggshell)', all_text, re.IGNORECASE):
+                                        found_violation = True
+                                        violation_type = violation_category
+                                        logger.warning(f"⚠️ Generated recipe violates VEGAN preference: found {violation_category} '{term}' in recipe '{recipe.get('title', '')}' (all_text: '{all_text[:100]}...')")
+                                        logger.warning(f"⚠️ Egg validation details: pattern_matches={pattern_matches}, term_in_text={term_in_text}, any_egg_term_matches={any_egg_term_matches}, ingredient_names={ingredient_names}")
+                                        break
+                            else:
+                                # CRITICAL FIX: Handle plurals for fish terms (salmon fillet vs salmon fillets)
+                                escaped_term = re.escape(term)
+                                pattern1 = r'\b' + escaped_term + r's?\b'  # Matches "salmon fillet" or "salmon fillets"
+                                pattern2 = r'\b' + escaped_term + r'es?\b'  # Matches "fillet" or "fillets"
+                                
+                                # Check if pattern matches in all_text
+                                matches = None
+                                if re.search(pattern1, all_text) or re.search(pattern2, all_text) or term in all_text.lower():
+                                    # Get matches for context checking
+                                    matches = re.finditer(pattern1, all_text)
+                                    if not any(matches):
+                                        matches = re.finditer(pattern2, all_text)
+                                    
+                                    for match in matches:
+                                        start, end = match.span()
+                                        # Get context around the match (20 chars before and after)
+                                        context_start = max(0, start - 20)
+                                        context_end = min(len(all_text), end + 20)
+                                        context = all_text[context_start:context_end]
+                                        # Check if it's part of a negative phrase (dairy-free, non-dairy, no-dairy, etc.)
+                                        is_false_positive = False
+                                        if violation_category == 'dairy':
+                                            if re.search(r'(dairy-free|non-dairy|no-dairy|dairy-free|free.*dairy|without.*dairy)', context, re.IGNORECASE):
+                                                is_false_positive = True
+                                        
+                                        if not is_false_positive:
+                                            found_violation = True
+                                            violation_type = violation_category
+                                            logger.warning(f"⚠️ Generated recipe violates VEGAN preference: found {violation_category} '{term}' in recipe '{recipe.get('title', '')}' at context: '{context}'")
+                                            break
+                                    
+                                    # If no matches found but term is in text, check directly
+                                    if not found_violation and term in all_text.lower():
+                                        # Check for false positives
+                                        is_false_positive = False
+                                        if violation_category == 'dairy':
+                                            if re.search(r'(dairy-free|non-dairy|no-dairy|dairy-free|free.*dairy|without.*dairy)', all_text, re.IGNORECASE):
+                                                is_false_positive = True
+                                        
+                                        if not is_false_positive:
+                                            found_violation = True
+                                            violation_type = violation_category
+                                            logger.warning(f"⚠️ Generated recipe violates VEGAN preference: found {violation_category} '{term}' in recipe '{recipe.get('title', '')}'")
+                            
+                            # CRITICAL FIX: Also check individual ingredient names for better detection
+                            # This catches cases where "beef" appears in ingredient name but not in recipe text
+                            # CRITICAL FIX: For eggs, also check if ingredient name contains any egg-related term
+                            if not found_violation:
+                                for ing_name in ingredient_names:
+                                    # For egg-related terms, check if ingredient name contains the term or any variation
+                                    if violation_category == 'eggs':
+                                        # Check if ingredient name contains any egg-related term (handles plurals and compound terms)
+                                        escaped_term = re.escape(term)
+                                        egg_patterns = [
+                                            r'\b' + escaped_term + r's?\b',  # Matches "egg" or "eggs"
+                                            r'\b' + escaped_term + r'es?\b',  # Matches "egg" or "egges" (unlikely but safe)
+                                        ]
+                                        pattern_matches = any(re.search(p, ing_name) for p in egg_patterns)
+                                        term_in_name = term in ing_name
+                                        
+                                        # Also check if any other egg term from the list appears in the ingredient name
+                                        # This ensures "egg yolks" is caught when checking for "eggs"
+                                        other_egg_terms = [t for t in violation_terms if t != term]
+                                        any_egg_term_matches = any(other_term in ing_name for other_term in other_egg_terms)
+                                        
+                                        matches_egg = pattern_matches or term_in_name or any_egg_term_matches
+                                        if matches_egg:
+                                            found_violation = True
+                                            violation_type = violation_category
+                                            logger.warning(f"⚠️ Generated recipe violates VEGAN preference: found {violation_category} '{term}' in ingredient name: '{ing_name}'")
+                                            logger.warning(f"⚠️ Egg ingredient validation details: pattern_matches={pattern_matches}, term_in_name={term_in_name}, any_egg_term_matches={any_egg_term_matches}, all_ingredient_names={ingredient_names}")
+                                            break
+                                    else:
+                                        # For other terms, use pattern matching with plural handling
+                                        # CRITICAL FIX: Handle plurals for fish terms (salmon fillet vs salmon fillets)
+                                        escaped_term = re.escape(term)
+                                        pattern1 = r'\b' + escaped_term + r's?\b'
+                                        pattern2 = r'\b' + escaped_term + r'es?\b'
+                                        
+                                        matches = (re.search(pattern1, ing_name) or 
+                                                  re.search(pattern2, ing_name) or 
+                                                  term in ing_name or
+                                                  ing_name == term or
+                                                  ing_name == term + 's' or
+                                                  ing_name == term + 'es')
+                                        if matches:
+                                            found_violation = True
+                                            violation_type = violation_category
+                                            logger.warning(f"⚠️ Generated recipe violates VEGAN preference: found {violation_category} '{term}' in ingredient name: '{ing_name}'")
+                                            break
+                            
+                            if found_violation:
                                 break
                         if found_violation:
                             break
@@ -2177,8 +2477,8 @@ OUTPUT: Valid minified JSON only (no markdown):
                 elif 'vegetarian' in [p.lower() for p in dietary_preferences]:
                     # Vegetarian: NO meat, fish, or poultry (but eggs and dairy are OK)
                     vegetarian_violations = {
-                        'meat': ['chicken', 'beef', 'pork', 'lamb', 'turkey', 'bacon', 'ham', 'sausage', 'chorizo', 'mince', 'meat', 'poultry', 'duck', 'goose', 'venison', 'bison', 'steak', 'burger', 'patty'],
-                        'fish': ['fish', 'salmon', 'tuna', 'cod', 'sardines', 'anchovies', 'mackerel', 'trout', 'shrimp', 'prawn', 'crab', 'lobster', 'mussels', 'oysters', 'scallops', 'clams', 'shellfish', 'seafood']
+                        'meat': ['chicken', 'beef', 'ground beef', 'beef sirloin', 'pork', 'lamb', 'turkey', 'bacon', 'ham', 'sausage', 'chorizo', 'mince', 'meat', 'poultry', 'duck', 'goose', 'venison', 'bison', 'steak', 'burger', 'patty'],
+                        'fish': ['fish', 'salmon', 'salmon fillet', 'tuna', 'cod', 'sardines', 'anchovies', 'mackerel', 'trout', 'shrimp', 'prawn', 'crab', 'lobster', 'mussels', 'oysters', 'scallops', 'clams', 'shellfish', 'seafood']
                     }
                     
                     found_violation = False
@@ -2186,11 +2486,36 @@ OUTPUT: Valid minified JSON only (no markdown):
                     import re
                     for violation_category, violation_terms in vegetarian_violations.items():
                         for term in violation_terms:
-                            pattern = r'\b' + re.escape(term) + r'\b'
-                            if re.search(pattern, all_text):
+                            # CRITICAL FIX: Handle plurals for fish terms (salmon fillet vs salmon fillets)
+                            escaped_term = re.escape(term)
+                            pattern1 = r'\b' + escaped_term + r's?\b'  # Matches "salmon fillet" or "salmon fillets"
+                            pattern2 = r'\b' + escaped_term + r'es?\b'  # Matches "fillet" or "fillets"
+                            
+                            matches = re.search(pattern1, all_text) or re.search(pattern2, all_text) or term in all_text
+                            if matches:
                                 found_violation = True
                                 violation_type = violation_category
                                 logger.warning(f"⚠️ Generated recipe violates VEGETARIAN preference: found {violation_category} '{term}' in recipe '{recipe.get('title', '')}'")
+                                break
+                            
+                            # CRITICAL FIX: Also check individual ingredient names for better detection
+                            # This catches cases where "beef" appears in ingredient name but not in recipe text
+                            # CRITICAL FIX: Handle plurals for fish terms
+                            if not found_violation:
+                                for ing_name in ingredient_names:
+                                    matches = (re.search(pattern1, ing_name) or 
+                                              re.search(pattern2, ing_name) or 
+                                              term in ing_name or
+                                              ing_name == term or
+                                              ing_name == term + 's' or
+                                              ing_name == term + 'es')
+                                    if matches:
+                                        found_violation = True
+                                        violation_type = violation_category
+                                        logger.warning(f"⚠️ Generated recipe violates VEGETARIAN preference: found {violation_category} '{term}' in ingredient name: '{ing_name}'")
+                                        break
+                            
+                            if found_violation:
                                 break
                         if found_violation:
                             break
@@ -2210,7 +2535,7 @@ OUTPUT: Valid minified JSON only (no markdown):
                 # Check for pescatarian violations (no meat or poultry, but fish is OK)
                 if 'pescatarian' in dietary_prefs_lower:
                     pescatarian_violations = {
-                        'meat': ['chicken', 'beef', 'pork', 'lamb', 'turkey', 'bacon', 'ham', 'sausage', 'chorizo', 'mince', 'meat', 'poultry', 'duck', 'goose', 'venison', 'bison', 'steak', 'burger', 'patty']
+                        'meat': ['chicken', 'beef', 'ground beef', 'pork', 'lamb', 'turkey', 'bacon', 'ham', 'sausage', 'chorizo', 'mince', 'meat', 'poultry', 'duck', 'goose', 'venison', 'bison', 'steak', 'burger', 'patty']
                     }
                     
                     found_violation = False
@@ -2627,10 +2952,10 @@ OUTPUT: Valid minified JSON only (no markdown):
                     'nuts': ['almonds', 'almond', 'walnuts', 'walnut', 'cashews', 'cashew', 'pistachios', 'pistachio', 'hazelnuts', 'hazelnut', 'pecans', 'pecan', 'macadamia nuts', 'macadamia', 'brazil nuts', 'brazil nut', 'pine nuts', 'pine nut', 'nuts', 'nut'],
                     'tree_nuts': ['almonds', 'almond', 'walnuts', 'walnut', 'cashews', 'cashew', 'pistachios', 'pistachio', 'hazelnuts', 'hazelnut', 'pecans', 'pecan', 'macadamia nuts', 'macadamia', 'brazil nuts', 'brazil nut', 'pine nuts', 'pine nut'],
                     'peanuts': ['peanuts', 'peanut', 'groundnuts'],
-                    'eggs': ['egg', 'eggs', 'scrambled eggs', 'fried eggs', 'boiled eggs', 'poached eggs', 'egg whites', 'egg yolks'],
+                                'eggs': ['egg', 'eggs', 'scrambled eggs', 'fried eggs', 'boiled eggs', 'poached eggs', 'egg whites', 'egg yolks', 'tamagoyaki'],
                     'egg': ['egg', 'eggs', 'scrambled eggs', 'fried eggs', 'boiled eggs', 'poached eggs', 'egg whites', 'egg yolks'],
                     'dairy': ['milk', 'cheese', 'butter', 'yogurt', 'yoghurt', 'cream', 'dairy', 'whey', 'casein'],
-                    'fish': ['fish', 'salmon', 'tuna', 'cod', 'sardines', 'anchovies', 'mackerel', 'trout'],
+                    'fish': ['fish', 'salmon', 'salmon fillet', 'tuna', 'cod', 'sardines', 'anchovies', 'mackerel', 'trout'],
                     'shellfish': ['shrimp', 'crab', 'lobster', 'mussels', 'oysters', 'scallops', 'clams', 'shellfish'],
                     'soy': ['soy', 'soya', 'tofu', 'tempeh', 'edamame', 'soybeans'],
                     'wheat': ['wheat', 'flour', 'bread', 'pasta', 'noodles'],
@@ -2700,9 +3025,15 @@ OUTPUT: Valid minified JSON only (no markdown):
                     # Check if any expanded allergy term appears in recipe text or ingredient names
                     found_allergen = False
                     for expanded_allergy in expanded_list:
-                        # Use word boundary matching to avoid false positives
-                        pattern = r'\b' + re.escape(expanded_allergy) + r'\b'
-                        if re.search(pattern, all_text):
+                        # CRITICAL FIX: Use flexible pattern that handles both singular and plural forms
+                        # This catches: "cashew" in "cashews", "pistachio" in "pistachios", etc.
+                        escaped_allergy = re.escape(expanded_allergy)
+                        # Pattern: word boundary + allergen + optional s/es + word boundary
+                        pattern1 = r'\b' + escaped_allergy + r's?\b'  # Matches "cashew" or "cashews"
+                        pattern2 = r'\b' + escaped_allergy + r'es?\b'  # Matches "pistachio" or "pistachios"
+                        
+                        matches = re.search(pattern1, all_text) or re.search(pattern2, all_text)
+                        if matches:
                             # Additional check: exclude common false positives
                             false_positives = {
                                 'egg': ['eggplant', 'eggplants', 'eggnog', 'eggshell'],
@@ -2724,12 +3055,32 @@ OUTPUT: Valid minified JSON only (no markdown):
                     # ROOT CAUSE FIX: Also check individual ingredient names for better detection
                     # Use word boundary matching for each ingredient name individually
                     # Also check for partial matches in compound names (e.g., "scrambled eggs" contains "eggs")
+                    # CRITICAL FIX: Handle plural forms (cashews vs cashew, pistachios vs pistachio)
                     if not found_allergen:
                         for ing_name in ingredient_names:
                             for expanded_allergy in expanded_list:
-                                # Use word boundary matching to avoid false positives
-                                pattern = r'\b' + re.escape(expanded_allergy) + r'\b'
-                                if re.search(pattern, ing_name):
+                                # CRITICAL FIX: Use flexible pattern that handles both singular and plural forms
+                                # Match the allergen term with optional 's' or 'es' at the end, with word boundaries
+                                # This catches: "cashew" in "cashews", "pistachio" in "pistachios", etc.
+                                escaped_allergy = re.escape(expanded_allergy)
+                                # Pattern: word boundary + allergen + optional s/es + word boundary
+                                # Also check if ingredient name starts with or equals the allergen
+                                pattern1 = r'\b' + escaped_allergy + r's?\b'  # Matches "cashew" or "cashews"
+                                pattern2 = r'\b' + escaped_allergy + r'es?\b'  # Matches "pistachio" or "pistachios"
+                                pattern3 = r'^' + escaped_allergy + r's?$'  # Exact match for singular/plural
+                                
+                                # Check if ingredient name contains the allergen (handles plurals)
+                                matches = (
+                                    re.search(pattern1, ing_name) or 
+                                    re.search(pattern2, ing_name) or 
+                                    re.search(pattern3, ing_name) or
+                                    ing_name.startswith(expanded_allergy) or
+                                    ing_name == expanded_allergy or
+                                    ing_name == expanded_allergy + 's' or
+                                    ing_name == expanded_allergy + 'es'
+                                )
+                                
+                                if matches:
                                     # Check false positives
                                     false_positives = {
                                         'egg': ['eggplant', 'eggplants', 'eggnog', 'eggshell'],

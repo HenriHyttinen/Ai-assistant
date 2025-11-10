@@ -28,6 +28,7 @@ from services.integration_service import IntegrationService
 from services.meal_alternatives_service import MealAlternativesService
 from services.meal_regeneration_service import MealRegenerationService
 from services.shopping_list_service import ShoppingListService
+from services.ai_recovery_service import clear_service_cache
 from services.portion_adjustment_service import PortionAdjustmentService
 from services.measurement_standardization_service import MeasurementStandardizationService
 from services.nutrition_analytics import NutritionAnalyticsService
@@ -222,11 +223,35 @@ def create_nutrition_preferences(
         
         if existing_prefs:
             # Update existing preferences
+            # Store old preferences to detect changes
+            old_dietary_prefs = existing_prefs.dietary_preferences or []
+            old_allergies = existing_prefs.allergies or []
+            old_disliked = existing_prefs.disliked_ingredients or []
+            
             for field, value in preferences.dict(exclude_unset=True).items():
                 setattr(existing_prefs, field, value)
             existing_prefs.updated_at = datetime.utcnow()
             db.commit()
             db.refresh(existing_prefs)
+            
+            # CRITICAL FIX: Clear meal plan generation cache when preferences change
+            new_dietary_prefs = existing_prefs.dietary_preferences or []
+            new_allergies = existing_prefs.allergies or []
+            new_disliked = existing_prefs.disliked_ingredients or []
+            
+            preferences_changed = (
+                sorted(old_dietary_prefs) != sorted(new_dietary_prefs) or
+                sorted(old_allergies) != sorted(new_allergies) or
+                sorted(old_disliked) != sorted(new_disliked)
+            )
+            
+            if preferences_changed:
+                try:
+                    clear_service_cache("meal_plan_generation")
+                    logger.info(f"✅ Cleared meal plan generation cache after preferences update for user {current_user.id}")
+                except Exception as e:
+                    logger.warning(f"⚠️ Failed to clear cache after preferences update: {e}")
+            
             return existing_prefs
         else:
             # Create new preferences
@@ -237,6 +262,15 @@ def create_nutrition_preferences(
             db.add(db_preferences)
             db.commit()
             db.refresh(db_preferences)
+            
+            # CRITICAL FIX: Clear cache when creating new preferences
+            # This ensures new preferences apply immediately
+            try:
+                clear_service_cache("meal_plan_generation")
+                logger.info(f"✅ Cleared meal plan generation cache after creating preferences for user {current_user.id}")
+            except Exception as e:
+                logger.warning(f"⚠️ Failed to clear cache after creating preferences: {e}")
+            
             return db_preferences
             
     except Exception as e:
@@ -281,6 +315,11 @@ def update_nutrition_preferences(
                 detail="Nutrition preferences not found"
             )
         
+        # Store old preferences to detect changes
+        old_dietary_prefs = db_preferences.dietary_preferences or []
+        old_allergies = db_preferences.allergies or []
+        old_disliked = db_preferences.disliked_ingredients or []
+        
         # Update only provided fields
         for field, value in preferences.dict(exclude_unset=True).items():
             setattr(db_preferences, field, value)
@@ -288,6 +327,30 @@ def update_nutrition_preferences(
         db_preferences.updated_at = datetime.utcnow()
         db.commit()
         db.refresh(db_preferences)
+        
+        # CRITICAL FIX: Clear meal plan generation cache when preferences change
+        # This ensures new preferences apply instantly to future meal plan generation
+        # NOTE: This only clears generation cache, NOT saved meal plans in database
+        new_dietary_prefs = db_preferences.dietary_preferences or []
+        new_allergies = db_preferences.allergies or []
+        new_disliked = db_preferences.disliked_ingredients or []
+        
+        # Check if preferences actually changed (to avoid unnecessary cache clearing)
+        preferences_changed = (
+            sorted(old_dietary_prefs) != sorted(new_dietary_prefs) or
+            sorted(old_allergies) != sorted(new_allergies) or
+            sorted(old_disliked) != sorted(new_disliked)
+        )
+        
+        if preferences_changed:
+            try:
+                # Clear meal plan generation cache so new preferences apply immediately
+                clear_service_cache("meal_plan_generation")
+                logger.info(f"✅ Cleared meal plan generation cache after preferences update for user {current_user.id}")
+            except Exception as e:
+                # Don't fail the request if cache clearing fails
+                logger.warning(f"⚠️ Failed to clear cache after preferences update: {e}")
+        
         return db_preferences
         
     except Exception as e:
@@ -699,6 +762,10 @@ def add_custom_meal(
         
         # Create new meal entry
         from datetime import date, datetime
+        import uuid
+        from models.recipe import Recipe, RecipeIngredient, RecipeInstruction
+        from models.recipe import Ingredient
+        
         # CRITICAL FIX: Allow meal_date to be specified in custom_meal_data
         meal_date_str = custom_meal_data.get('meal_date') or custom_meal_data.get('date')
         if meal_date_str:
@@ -709,11 +776,101 @@ def add_custom_meal(
         else:
             meal_date = date.today()  # Fallback to today if not specified
         
+        # CRITICAL FIX: Create Recipe record for custom meal so it persists after deletion from grid
+        # Generate unique recipe ID for custom meal
+        meal_name = custom_meal_data.get('meal_name', 'Custom Meal')
+        recipe_id = f"custom_{current_user.id}_{uuid.uuid4().hex[:12]}"
+        
+        # Check if recipe already exists (by title and user)
+        existing_recipe = db.query(Recipe).filter(
+            Recipe.title == meal_name,
+            Recipe.source == "user-custom"
+        ).first()
+        
+        if existing_recipe:
+            recipe_id = existing_recipe.id
+            recipe = existing_recipe
+        else:
+            # Create new Recipe record for custom meal
+            nutrition = custom_meal_data.get('nutrition', {})
+            recipe = Recipe(
+                id=recipe_id,
+                title=meal_name,
+                cuisine=custom_meal_data.get('cuisine', 'Custom'),
+                meal_type=custom_meal_data.get('meal_type', 'breakfast'),
+                servings=custom_meal_data.get('servings', 1),
+                summary=custom_meal_data.get('summary', ''),
+                prep_time=custom_meal_data.get('prep_time', 0),
+                cook_time=custom_meal_data.get('cook_time', 0),
+                difficulty_level=custom_meal_data.get('difficulty', 'easy'),
+                dietary_tags=custom_meal_data.get('dietary_tags', []),
+                source="user-custom",  # Mark as custom user recipe
+                per_serving_calories=nutrition.get('calories', 0),
+                per_serving_protein=nutrition.get('protein', 0),
+                per_serving_carbs=nutrition.get('carbs', 0),
+                per_serving_fat=nutrition.get('fats', 0),
+                is_active=True
+            )
+            db.add(recipe)
+            db.flush()  # Get recipe ID
+            
+            # Add ingredients to recipe
+            ingredients_list = custom_meal_data.get('ingredients', [])
+            for ing_data in ingredients_list:
+                if isinstance(ing_data, dict):
+                    ing_name = ing_data.get('name', '')
+                    if ing_name:
+                        # Find or create ingredient
+                        ingredient = db.query(Ingredient).filter(
+                            Ingredient.name == ing_name
+                        ).first()
+                        
+                        if not ingredient:
+                            # Create ingredient if it doesn't exist
+                            ingredient = Ingredient(
+                                name=ing_name,
+                                category=ing_data.get('category', 'Other')
+                            )
+                            db.add(ingredient)
+                            db.flush()
+                        
+                        # Create recipe ingredient
+                        recipe_ingredient = RecipeIngredient(
+                            recipe_id=recipe.id,
+                            ingredient_id=ingredient.id,
+                            quantity=ing_data.get('quantity', 0),
+                            unit=ing_data.get('unit', 'g')
+                        )
+                        db.add(recipe_ingredient)
+            
+            # Add instructions to recipe
+            instructions_list = custom_meal_data.get('instructions', [])
+            for i, instr_data in enumerate(instructions_list, 1):
+                if isinstance(instr_data, dict):
+                    instruction = RecipeInstruction(
+                        recipe_id=recipe.id,
+                        step_number=i,
+                        step_title=f"Step {i}",
+                        description=instr_data.get('description', instr_data.get('text', '')),
+                        time_required=instr_data.get('time_required', 0)
+                    )
+                else:
+                    # Handle string instructions
+                    instruction = RecipeInstruction(
+                        recipe_id=recipe.id,
+                        step_number=i,
+                        step_title=f"Step {i}",
+                        description=str(instr_data),
+                        time_required=0
+                    )
+                db.add(instruction)
+        
+        # Create MealPlanMeal with reference to Recipe
         new_meal = MealPlanMeal(
             meal_plan_id=meal_plan_id,
             meal_date=meal_date,  # Use specified date or today
             meal_type=custom_meal_data.get('meal_type', 'breakfast'),
-            meal_name=custom_meal_data.get('meal_name', 'Custom Meal'),
+            meal_name=meal_name,
             calories=custom_meal_data.get('nutrition', {}).get('calories', 0),
             protein=custom_meal_data.get('nutrition', {}).get('protein', 0),
             carbs=custom_meal_data.get('nutrition', {}).get('carbs', 0),
@@ -723,12 +880,24 @@ def add_custom_meal(
         )
         
         db.add(new_meal)
+        db.flush()  # Get meal ID
+        
+        # Create MealPlanRecipe relationship to link meal to recipe
+        from models.nutrition import MealPlanRecipe
+        meal_plan_recipe = MealPlanRecipe(
+            meal_plan_id=meal_plan_id,
+            meal_id=new_meal.id,
+            recipe_id=recipe.id,
+            servings=custom_meal_data.get('servings', 1)
+        )
+        db.add(meal_plan_recipe)
         db.commit()
         db.refresh(new_meal)
         
         return {
             "message": "Custom meal added successfully",
             "meal_id": new_meal.id,
+            "recipe_id": recipe.id,  # CRITICAL FIX: Return recipe_id so frontend can use it for recreation
             "meal_date": new_meal.meal_date.isoformat() if new_meal.meal_date else None,
             "meal": {
                 "id": new_meal.id,
@@ -736,6 +905,7 @@ def add_custom_meal(
                 "meal_type": new_meal.meal_type,
                 "meal_date": new_meal.meal_date.isoformat() if new_meal.meal_date else None,
                 "calories": new_meal.calories,
+                "recipe_id": recipe.id,  # CRITICAL FIX: Include recipe_id in meal object
                 "protein": new_meal.protein,
                 "carbs": new_meal.carbs,
                 "fats": new_meal.fats,
@@ -1279,11 +1449,37 @@ def delete_meal(
                 detail="Meal not found"
             )
         
-        # Delete the meal
+        # CRITICAL FIX: For custom meals, keep the Recipe record so it can be added back later
+        # Only delete the MealPlanMeal and MealPlanRecipe relationships, NOT the Recipe itself
+        # Check if this is a custom meal (has recipe_details with custom meal data or source is "user-custom")
+        recipe_details = meal.recipe_details or {}
+        is_custom_meal = (
+            recipe_details.get('source') == 'user-custom' or
+            recipe_details.get('ai_generated') == False or
+            recipe_details.get('database_source') == False
+        )
+        
+        # Get recipe ID from MealPlanRecipe if it exists
+        from models.nutrition import MealPlanRecipe
+        meal_plan_recipe = db.query(MealPlanRecipe).filter(
+            MealPlanRecipe.meal_id == meal_id_int,
+            MealPlanRecipe.meal_plan_id == meal_plan_id
+        ).first()
+        
+        recipe_id = None
+        if meal_plan_recipe:
+            recipe_id = meal_plan_recipe.recipe_id
+            # Delete the MealPlanRecipe relationship (but keep the Recipe)
+            db.delete(meal_plan_recipe)
+        
+        # Delete the MealPlanMeal (but keep the Recipe if it's a custom meal)
         db.delete(meal)
         db.commit()
         
-        logger.info(f"Deleted meal {meal_id} from meal plan {meal_plan_id}")
+        if is_custom_meal and recipe_id:
+            logger.info(f"Deleted meal {meal_id} from meal plan {meal_plan_id} (kept Recipe {recipe_id} for custom meal)")
+        else:
+            logger.info(f"Deleted meal {meal_id} from meal plan {meal_plan_id}")
         
         return {
             "message": "Meal deleted successfully",
@@ -2249,7 +2445,9 @@ def get_nutritional_analysis(
         )
         
         # Add AI-powered insights if we have nutritional data
-        if analysis.get('totals', {}).get('calories', 0) > 0:
+        # CRITICAL FIX: Always try to generate AI insights, even if calories are 0
+        # This ensures users see insights even when starting out
+        try:
             # Get user preferences for AI insights
             preferences = db.query(UserNutritionPreferences).filter(
                 UserNutritionPreferences.user_id == current_user.id
@@ -2265,12 +2463,49 @@ def get_nutritional_analysis(
                     "fats_target": preferences.fats_target or 60
                 }
                 
-                # Generate AI insights
-                ai_insights = nutrition_ai.generate_nutritional_insights(
-                    analysis['totals'], 
-                    prefs_dict
-                )
+                # Generate AI insights (even if calories are 0, provide general recommendations)
+                totals = analysis.get('totals', {})
+                if totals.get('calories', 0) > 0:
+                    # User has logged meals - generate personalized insights
+                    ai_insights = nutrition_ai.generate_nutritional_insights(
+                        totals, 
+                        prefs_dict
+                    )
+                else:
+                    # No meals logged yet - generate general recommendations
+                    ai_insights = nutrition_ai.generate_nutritional_insights(
+                        {
+                            'calories': 0,
+                            'protein': 0,
+                            'carbs': 0,
+                            'fats': 0
+                        },
+                        prefs_dict
+                    )
+                
                 analysis['ai_insights'] = ai_insights
+                print(f"✅ Generated AI insights for user {current_user.id}")
+            else:
+                # No preferences - generate basic insights
+                totals = analysis.get('totals', {})
+                if totals.get('calories', 0) > 0:
+                    ai_insights = nutrition_ai.generate_nutritional_insights(
+                        totals,
+                        {
+                            "dietary_preferences": [],
+                            "allergies": [],
+                            "daily_calorie_target": 2000,
+                            "protein_target": 100,
+                            "carbs_target": 200,
+                            "fats_target": 60
+                        }
+                    )
+                    analysis['ai_insights'] = ai_insights
+        except Exception as e:
+            print(f"Error generating AI insights: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            # Don't fail the request if AI insights fail - just log and continue
         
         return analysis
         

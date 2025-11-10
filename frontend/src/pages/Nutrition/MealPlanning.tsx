@@ -2344,10 +2344,6 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
         
         const freshMealPlan = await mealPlanResponse.json();
         
-        // CRITICAL FIX: Verify meal exists in meal plan before trying to move it
-        // The meal ID from recentlyAddedMeal might be stale, so check the actual meal plan
-        let actualMealId = swapSourceMeal.id;
-        
         // CRITICAL FIX: First, check if this meal was removed from grid (needs recreation)
         // This check must happen BEFORE we try to find it in the meal plan
         const foundRecentlyAddedMeal = recentlyAddedMeals.find(m => {
@@ -2357,12 +2353,30 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
         
         const mealNotInGrid = foundRecentlyAddedMeal && (foundRecentlyAddedMeal as any)._notInGrid;
         const customMealData = (foundRecentlyAddedMeal as any)?._customMealData;
+        const recipeId = (foundRecentlyAddedMeal as any)?.recipe_id || (foundRecentlyAddedMeal as any)?.recipe?.id || customMealData?.recipe_id;
         
-        console.log(`🔍 Looking for meal: swapSourceMeal.id=${swapSourceMeal.id}, recentlyAddedMeal=${foundRecentlyAddedMeal ? JSON.stringify({ id: foundRecentlyAddedMeal.id, name: foundRecentlyAddedMeal.meal_name || foundRecentlyAddedMeal.name }) : 'null'}, mealNotInGrid=${mealNotInGrid}`);
+        console.log(`🔍 Looking for meal: swapSourceMeal.id=${swapSourceMeal.id}, recentlyAddedMeal=${foundRecentlyAddedMeal ? JSON.stringify({ id: foundRecentlyAddedMeal.id, name: foundRecentlyAddedMeal.meal_name || foundRecentlyAddedMeal.name }) : 'null'}, mealNotInGrid=${mealNotInGrid}, recipeId=${recipeId}`);
         
-        // CRITICAL FIX: Only try to find meal in meal plan if it wasn't removed from grid
-        // If it was removed, we'll recreate it later
-        if (!mealNotInGrid && freshMealPlan && freshMealPlan.meals) {
+        // CRITICAL FIX: If meal was removed from grid, skip ID lookup and go straight to recreation
+        // Don't try to find it by ID since it doesn't exist in the meal plan anymore
+        let actualMealId = swapSourceMeal.id;
+        
+        // CRITICAL FIX: If meal was removed from grid OR if it's a custom meal not in the plan, skip lookup
+        // Check if meal is in recentlyAddedMeals but not in the meal plan (was removed)
+        const mealInPlanById = freshMealPlan && freshMealPlan.meals ? freshMealPlan.meals.find((m: any) => {
+          const mId = m.id || m.meal_id || m.mealId;
+          return String(mId) === String(swapSourceMeal.id);
+        }) : null;
+        
+        // If meal was removed from grid OR not found in meal plan but is in recentlyAddedMeals, skip lookup
+        const shouldRecreate = mealNotInGrid || (!mealInPlanById && foundRecentlyAddedMeal);
+        
+        if (shouldRecreate) {
+          // Meal was removed from grid or not in meal plan - skip ID lookup, will recreate it
+          console.log(`ℹ️ Meal was removed from grid or not in meal plan, will recreate it (skipping ID lookup). mealNotInGrid=${mealNotInGrid}, mealInPlanById=${!!mealInPlanById}, foundRecentlyAddedMeal=${!!foundRecentlyAddedMeal}`);
+        } else if (freshMealPlan && freshMealPlan.meals) {
+          // CRITICAL FIX: Only try to find meal in meal plan if it wasn't removed from grid
+          // If it was removed, we'll recreate it later
           console.log(`📋 Meal plan has ${freshMealPlan.meals.length} meals`);
           
           // Try to find by ID first
@@ -2457,7 +2471,154 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
           }
         }
         
-        // CRITICAL FIX: Ensure meal ID is a valid integer
+        // CRITICAL FIX: Check if meal was removed from grid (not in meal plan)
+        // If so, we need to recreate it first before moving it
+        // Note: We already checked mealNotInGrid and customMealData above, so we can use those values
+        if (shouldRecreate) {
+          // CRITICAL FIX: Meal was removed from grid, recreate it first
+          console.log(`🔄 Meal was removed from grid, recreating it first`);
+          
+          // Step 1: Delete the AI recipe in the grid slot (if it exists)
+          if (mealId && mealId !== '') {
+            const deleteResponse = await fetch(`http://localhost:8000/nutrition/meal-plans/${mealPlan.id}/meals/${mealId}`, {
+              method: 'DELETE',
+              headers: {
+                'Authorization': `Bearer ${session.access_token}`,
+                'Content-Type': 'application/json',
+              },
+            });
+            
+            if (!deleteResponse.ok && deleteResponse.status !== 404) {
+              const errorData = await deleteResponse.json().catch(() => ({ detail: 'Failed to delete meal' }));
+              throw new Error(errorData.detail || 'Failed to delete meal');
+            }
+          }
+          
+          // Step 2: Recreate the meal using recipe_id if available, otherwise use custom meal data
+          if (recipeId && customMealData) {
+            // CRITICAL FIX: Use recipe endpoint if we have a recipe_id
+            console.log(`🔄 Recreating meal using recipe_id: ${recipeId}`);
+            
+            const addRecipeUrl = `http://localhost:8000/nutrition/meal-plans/${mealPlan.id}/meals`;
+            const addRecipeData = {
+              recipe_id: recipeId,
+              meal_date: date,
+              meal_type: mealType
+            };
+            
+            const addRecipeResponse = await fetch(addRecipeUrl, {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${session.access_token}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify(addRecipeData),
+            });
+            
+            if (!addRecipeResponse.ok) {
+              const errorData = await addRecipeResponse.json().catch(() => ({ detail: 'Failed to add recipe' }));
+              throw new Error(errorData.detail || 'Failed to add recipe');
+            }
+            
+            const addRecipeResult = await addRecipeResponse.json();
+            const newMealId = addRecipeResult.meal?.id || addRecipeResult.meal_id || addRecipeResult.id;
+            
+            if (!newMealId) {
+              throw new Error('Failed to get meal ID after adding recipe');
+            }
+            
+            console.log(`✅ Meal recreated using recipe: newId=${newMealId}`);
+            
+            // Update the meal ID in the recently added meals list
+            setRecentlyAddedMeals(prev => prev.map(m => {
+              const mId = m.id || (m as any).meal_id || (m as any).mealId;
+              if (String(mId) === String(swapSourceMeal.id)) {
+                return {
+                  ...m,
+                  id: String(newMealId),
+                  _notInGrid: false // Mark as in grid now
+                };
+              }
+              return m;
+            }));
+            
+            // Reload meal plan and exit
+            await loadMealPlan();
+            setSwapMode(false);
+            setSwapSourceMeal(null);
+            toast({
+              title: 'Meal added successfully',
+              description: 'Custom meal has been added to the grid',
+              status: 'success',
+              duration: 3000,
+              isClosable: true
+            });
+            return;
+          } else if (customMealData) {
+            // Fallback: Recreate using custom meal endpoint
+            console.log(`🔄 Recreating meal using custom meal data`);
+            
+            const recreateUrl = `http://localhost:8000/nutrition/meal-plans/${mealPlan.id}/custom-meal`;
+            const recreateData = {
+              ...customMealData,
+              meal_date: date, // Use target date
+              meal_type: mealType // Use target meal type
+            };
+            
+            const recreateResponse = await fetch(recreateUrl, {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${session.access_token}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify(recreateData),
+            });
+            
+            if (!recreateResponse.ok) {
+              const errorData = await recreateResponse.json().catch(() => ({ detail: 'Failed to recreate meal' }));
+              throw new Error(errorData.detail || 'Failed to recreate meal');
+            }
+            
+            const recreateResult = await recreateResponse.json();
+            const newMealId = recreateResult.meal_id || recreateResult.meal?.id || recreateResult.id;
+            
+            if (!newMealId) {
+              throw new Error('Failed to get meal ID after recreation');
+            }
+            
+            console.log(`✅ Meal recreated: newId=${newMealId}`);
+            
+            // Update the meal ID in the recently added meals list
+            setRecentlyAddedMeals(prev => prev.map(m => {
+              const mId = m.id || (m as any).meal_id || (m as any).mealId;
+              if (String(mId) === String(swapSourceMeal.id)) {
+                return {
+                  ...m,
+                  id: String(newMealId),
+                  _notInGrid: false // Mark as in grid now
+                };
+              }
+              return m;
+            }));
+            
+            // Reload meal plan and exit
+            await loadMealPlan();
+            setSwapMode(false);
+            setSwapSourceMeal(null);
+            toast({
+              title: 'Meal added successfully',
+              description: 'Custom meal has been added to the grid',
+              status: 'success',
+              duration: 3000,
+              isClosable: true
+            });
+            return;
+          } else {
+            throw new Error('Cannot recreate meal: missing custom meal data');
+          }
+        }
+        
+        // CRITICAL FIX: Ensure meal ID is a valid integer (only if meal is in grid)
         const mealIdInt = parseInt(actualMealId, 10);
         if (isNaN(mealIdInt)) {
           throw new Error(`Invalid meal ID: ${actualMealId}. Please try adding the meal again.`);
@@ -2480,61 +2641,6 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
             const errorData = await deleteResponse.json().catch(() => ({ detail: 'Failed to delete meal' }));
             throw new Error(errorData.detail || 'Failed to delete meal');
           }
-        }
-        
-        // CRITICAL FIX: Check if meal was removed from grid (not in meal plan)
-        // If so, we need to recreate it first before moving it
-        // Note: We already checked mealNotInGrid and customMealData above, so we can use those values
-        if (mealNotInGrid && customMealData) {
-          // CRITICAL FIX: Meal was removed from grid, recreate it first
-          console.log(`🔄 Meal was removed from grid, recreating it first: id=${actualMealId}`);
-          
-          // Recreate the meal in the meal plan
-          const recreateUrl = `http://localhost:8000/nutrition/meal-plans/${mealPlan.id}/custom-meal`;
-          const recreateData = {
-            ...customMealData,
-            meal_date: date, // Use target date
-            meal_type: mealType // Use target meal type
-          };
-          
-          const recreateResponse = await fetch(recreateUrl, {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${session.access_token}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(recreateData),
-          });
-          
-          if (!recreateResponse.ok) {
-            const errorData = await recreateResponse.json().catch(() => ({ detail: 'Failed to recreate meal' }));
-            throw new Error(errorData.detail || 'Failed to recreate meal');
-          }
-          
-          const recreateResult = await recreateResponse.json();
-          const newMealId = recreateResult.meal_id || recreateResult.meal?.id || recreateResult.id;
-          
-          if (!newMealId) {
-            throw new Error('Failed to get meal ID after recreation');
-          }
-          
-          console.log(`✅ Meal recreated: newId=${newMealId}`);
-          
-          // Update the meal ID in the recently added meals list
-          setRecentlyAddedMeals(prev => prev.map(m => {
-            const mId = m.id || (m as any).meal_id || (m as any).mealId;
-            if (String(mId) === String(actualMealId)) {
-              return {
-                ...m,
-                id: String(newMealId),
-                _notInGrid: false // Mark as in grid now
-              };
-            }
-            return m;
-          }));
-          
-          // Use the new meal ID for the move operation
-          actualMealId = String(newMealId);
         }
         
         // Step 2: Move user recipe to the grid slot
@@ -3056,10 +3162,15 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
         
         // CRITICAL FIX: Store the full meal data (not just ID) in case we need to recreate it
         // Add a flag to indicate this meal is not in the grid yet
-        const mealForStorage: Meal & { meal_date?: string; date?: string; _customMealData?: any; _notInGrid?: boolean } = {
+        // Also store recipe_id if available from the backend response
+        const backendRecipeId = result.recipe_id || result.meal?.recipe_id || result.recipe?.id;
+        
+        const mealForStorage: Meal & { meal_date?: string; date?: string; _customMealData?: any; _notInGrid?: boolean; recipe_id?: string } = {
           ...newMeal,
+          id: String(backendMealId || newMeal.id), // Use backend meal ID if available
           _customMealData: customMealData, // Store full custom meal data for recreation
-          _notInGrid: mealRemovedFromGrid // Flag to indicate if meal was removed from grid
+          _notInGrid: mealRemovedFromGrid, // Flag to indicate if meal was removed from grid
+          recipe_id: backendRecipeId // Store recipe_id for easy recreation
         };
         
         // CRITICAL FIX: Add the meal to the persistent list of recently added meals
