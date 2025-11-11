@@ -23,6 +23,7 @@ import { FiActivity, FiList, FiCoffee, FiStar, FiSettings, FiAward, FiHome, FiTr
 import { useSupabaseAuth } from '../contexts/SupabaseAuthContext';
 import { useApp } from '../contexts/AppContext';
 import { t } from '../utils/translations';
+import { useNavigate } from 'react-router-dom';
 
 interface MobileNavbarProps {
   onMenuOpen: () => void;
@@ -31,11 +32,30 @@ interface MobileNavbarProps {
 const MobileNavbar: React.FC<MobileNavbarProps> = ({ onMenuOpen }) => {
   const { user, signOut } = useSupabaseAuth();
   const { language } = useApp();
+  const navigate = useNavigate();
   const isMobile = useBreakpointValue({ base: true, md: false });
   
   const bgColor = useColorModeValue('white', 'gray.800');
   const borderColor = useColorModeValue('gray.200', 'gray.700');
   const textColor = useColorModeValue('gray.600', 'gray.300');
+
+  const handleLogout = async () => {
+    try {
+      const { error } = await signOut();
+      if (error) {
+        console.error('Logout error:', error);
+      }
+      // Navigate to login page
+      navigate('/login');
+      // Force page reload to clear any cached state
+      window.location.href = '/login';
+    } catch (err) {
+      console.error('Logout failed:', err);
+      // Still navigate to login even if there's an error
+      navigate('/login');
+      window.location.href = '/login';
+    }
+  };
 
   if (!isMobile) return null;
 
@@ -119,7 +139,7 @@ const MobileNavbar: React.FC<MobileNavbarProps> = ({ onMenuOpen }) => {
                   {t('settings', language)}
                 </MenuItem>
                 <MenuDivider />
-                <MenuItem onClick={signOut} color="red.500">
+                <MenuItem onClick={handleLogout} color="red.500">
                   {t('signOut', language)}
                 </MenuItem>
               </MenuList>

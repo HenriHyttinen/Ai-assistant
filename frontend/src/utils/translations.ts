@@ -11,6 +11,7 @@ export const translations = {
     activityHistory: 'Activity History',
     achievements: 'Achievements',
     nutrition: 'Nutrition',
+    assistant: 'AI Assistant',
     mealPlanning: 'Meal Planning',
     recipes: 'Recipes',
     shoppingList: 'Shopping List',

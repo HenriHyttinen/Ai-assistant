@@ -29,6 +29,7 @@ from models.nutrition import (
 from models.recipe_rating import RecipeRating, RecipeReview, ReviewHelpful
 from models.nutrition_goals import NutritionGoal, GoalProgressLog, GoalMilestone, GoalTemplate
 from models.micronutrients import MicronutrientGoal, DailyMicronutrientIntake, MicronutrientDeficiency
+from models.conversation import Conversation, Message
 from models.nutrition_education import (
     NutritionArticle, NutritionTip, QuizQuestion, UserEducationProgress,
     UserQuizAnswer, UserLearningPath, DailyNutritionTip, NutritionFact
@@ -56,6 +57,7 @@ from routes.recipe_rating import router as recipe_rating_router
 from routes.nutrition_analytics import router as nutrition_analytics_router
 from routes.nutrition_goals import router as nutrition_goals_router
 from routes.meal_plan_recipes import router as meal_plan_recipes_router
+from routes.assistant import router as assistant_router
 from services.tasks import start_background_tasks
 from config import get_settings
 from logging_config import setup_logging
@@ -187,6 +189,7 @@ app.include_router(recipe_rating_router, tags=["Recipe Ratings"])
 app.include_router(nutrition_analytics_router, tags=["Nutrition Analytics"])
 app.include_router(nutrition_goals_router, tags=["Nutrition Goals"])
 app.include_router(meal_plan_recipes_router, tags=["Meal Plan Recipes"])
+app.include_router(assistant_router, prefix="/api/assistant", tags=["AI Assistant"])
 
 @app.get("/")
 async def root():

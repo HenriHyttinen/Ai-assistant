@@ -1,1 +1,4 @@
-# This file makes the ai directory a Python package
+"""
+AI-related modules for assistant.
+"""
+

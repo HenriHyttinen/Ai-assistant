@@ -51,6 +51,10 @@ class Settings(BaseSettings):
     # Logging settings
     LOG_LEVEL: str = "INFO"
     
+    # API URLs for AI Assistant (points to same backend)
+    health_api_url: str = "http://localhost:8000/health"
+    nutrition_api_url: str = "http://localhost:8000/nutrition"
+    
     # Analytics settings
     WELLNESS_SCORE_WEIGHTS: dict = {
         "physical_activity": 0.3,

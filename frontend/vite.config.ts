@@ -8,6 +8,10 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
+  server: {
+    port: 5173,  // Main project uses port 5173
+    host: true,
+  },
   resolve: {
     dedupe: ['react', 'react-dom', '@emotion/react', '@emotion/styled'],
     alias: {

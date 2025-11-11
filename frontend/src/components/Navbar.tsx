@@ -28,11 +28,12 @@ import {
   TriangleUpIcon,
   SettingsIcon,
 } from '@chakra-ui/icons';
-import { FiActivity, FiList, FiCoffee } from 'react-icons/fi';
+import { FiActivity, FiList, FiCoffee, FiMessageCircle } from 'react-icons/fi';
 import { useSupabaseAuth } from '../contexts/SupabaseAuthContext';
 import { useApp, AppContext } from '../contexts/AppContext';
 import { t } from '../utils/translations';
 import { useContext } from 'react';
+import { useNavigate } from 'react-router-dom';
 
 // Navigation items - same as in Sidebar
 const LinkItems = [
@@ -41,6 +42,7 @@ const LinkItems = [
   { nameKey: 'analytics', icon: FiActivity, path: '/analytics' },
   { nameKey: 'activityHistory', icon: FiList, path: '/activities' },
   { nameKey: 'nutrition', icon: FiCoffee, path: '/nutrition' },
+  { nameKey: 'assistant', icon: FiMessageCircle, path: '/assistant' },
   { nameKey: 'goals', icon: StarIcon, path: '/goals' },
   { nameKey: 'achievements', icon: TriangleUpIcon, path: '/achievements' },
   { nameKey: 'settings', icon: SettingsIcon, path: '/settings' },
@@ -50,11 +52,30 @@ export default function Navbar() {
   const { isOpen, onToggle } = useDisclosure();
   const { user, signOut } = useSupabaseAuth();
   const appContext = useContext(AppContext);
+  const navigate = useNavigate();
   
   // Safety check to prevent context errors during hot reload
   if (!appContext) {
     return null;
   }
+
+  const handleLogout = async () => {
+    try {
+      const { error } = await signOut();
+      if (error) {
+        console.error('Logout error:', error);
+      }
+      // Navigate to login page
+      navigate('/login');
+      // Force page reload to clear any cached state
+      window.location.href = '/login';
+    } catch (err) {
+      console.error('Logout failed:', err);
+      // Still navigate to login even if there's an error
+      navigate('/login');
+      window.location.href = '/login';
+    }
+  };
 
   return (
     <Box position="fixed" w="full" zIndex={1000}>
@@ -128,7 +149,7 @@ export default function Navbar() {
                 Settings
               </MenuItem>
               <MenuDivider />
-              <MenuItem onClick={() => signOut()}>Logout</MenuItem>
+              <MenuItem onClick={handleLogout}>Logout</MenuItem>
             </MenuList>
           </Menu>
         </Stack>

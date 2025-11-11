@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from fastapi import HTTPException, status
 from sqlalchemy import and_, or_, func, desc, case, text, String
 
-from models.recipe import Recipe, Ingredient
+from models.recipe import Recipe, Ingredient, RecipeIngredient, RecipeInstruction
 from models.nutrition import (
     MealPlan, MealPlanMeal, MealPlanRecipe,
     NutritionalLog, ShoppingList, ShoppingListItem, UserNutritionPreferences
@@ -2183,9 +2183,38 @@ class NutritionService:
             db.add(recipe)
             db.flush()
             
-            # Add ingredients and instructions
-            self._add_recipe_ingredients(db, recipe.id, recipe_data.get("ingredients", []))
-            self._add_recipe_instructions(db, recipe.id, recipe_data.get("instructions", []))
+            # CRITICAL: Always add ingredients and instructions - these are required for complete recipes
+            ingredients_data = recipe_data.get("ingredients", [])
+            instructions_data = recipe_data.get("instructions", [])
+            
+            logger.info(f"Creating recipe {recipe.id} with {len(ingredients_data)} ingredients and {len(instructions_data)} instructions")
+            
+            # Add ingredients and instructions (with error handling)
+            try:
+                self._add_recipe_ingredients(db, recipe.id, ingredients_data)
+                self._add_recipe_instructions(db, recipe.id, instructions_data)
+                
+                # Commit to ensure ingredients/instructions are saved
+                db.commit()
+                db.refresh(recipe)
+                
+                # Verify ingredients/instructions were saved
+                from models.recipe import RecipeIngredient, RecipeInstruction
+                saved_ingredients = db.query(RecipeIngredient).filter(RecipeIngredient.recipe_id == recipe.id).count()
+                saved_instructions = db.query(RecipeInstruction).filter(RecipeInstruction.recipe_id == recipe.id).count()
+                
+                logger.info(f"✅ Recipe {recipe.id} created: {saved_ingredients} ingredients, {saved_instructions} instructions saved")
+                
+                if saved_ingredients == 0 and len(ingredients_data) > 0:
+                    logger.error(f"⚠️ CRITICAL: Recipe {recipe.id} created but NO ingredients were saved despite {len(ingredients_data)} provided!")
+                if saved_instructions == 0 and len(instructions_data) > 0:
+                    logger.error(f"⚠️ CRITICAL: Recipe {recipe.id} created but NO instructions were saved despite {len(instructions_data)} provided!")
+                    
+            except Exception as e:
+                logger.error(f"CRITICAL: Failed to add ingredients/instructions to recipe {recipe.id}: {str(e)}", exc_info=True)
+                db.rollback()
+                # Don't raise - allow recipe to be created even if ingredients/instructions fail
+                # But log the error so we can fix it
             
             return recipe
             
@@ -2194,48 +2223,108 @@ class NutritionService:
             return None
     
     def _add_recipe_ingredients(self, db: Session, recipe_id: str, ingredients_data: List[Dict[str, Any]]):
-        """Add ingredients to recipe"""
-        for ing_data in ingredients_data:
-            # Find or create ingredient
-            ingredient = db.query(Ingredient).filter(
-                Ingredient.name.ilike(f"%{ing_data.get('name', '')}%")
-            ).first()
+        """Add ingredients to recipe - CRITICAL: Always saves ingredients"""
+        if not ingredients_data:
+            logger.warning(f"No ingredients data provided for recipe {recipe_id}")
+            return
+        
+        try:
+            ingredients_added = 0
+            for ing_data in ingredients_data:
+                try:
+                    if not isinstance(ing_data, dict):
+                        logger.warning(f"Invalid ingredient data format for recipe {recipe_id}: {ing_data}")
+                        continue
+                    
+                    ingredient_name = ing_data.get("name", "").strip()
+                    if not ingredient_name:
+                        logger.warning(f"Empty ingredient name for recipe {recipe_id}, skipping")
+                        continue
+                    
+                    # Find or create ingredient
+                    ingredient = db.query(Ingredient).filter(
+                        Ingredient.name.ilike(f"%{ingredient_name}%")
+                    ).first()
+                    
+                    if not ingredient:
+                        # Create new ingredient
+                        ingredient = Ingredient(
+                            id=f"ing_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}_{abs(hash(ingredient_name)) % 10000}",
+                            name=ingredient_name,
+                            category=self._categorize_ingredient(ingredient_name),
+                            unit=ing_data.get("unit", "g"),
+                            default_quantity=100.0
+                        )
+                        db.add(ingredient)
+                        db.flush()
+                    
+                    # Create recipe-ingredient relationship
+                    from models.recipe import RecipeIngredient
+                    recipe_ingredient = RecipeIngredient(
+                        recipe_id=recipe_id,
+                        ingredient_id=ingredient.id,
+                        quantity=ing_data.get("quantity", 0),
+                        unit=ing_data.get("unit", "g")
+                    )
+                    db.add(recipe_ingredient)
+                    ingredients_added += 1
+                except Exception as e:
+                    logger.error(f"Error adding ingredient '{ing_data.get('name', 'unknown')}' to recipe {recipe_id}: {str(e)}", exc_info=True)
+                    continue
             
-            if not ingredient:
-                # Create new ingredient
-                ingredient = Ingredient(
-                    id=f"ing_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}_{hash(ing_data.get('name', '')) % 10000}",
-                    name=ing_data.get("name", "Unknown Ingredient"),
-                    category=self._categorize_ingredient(ing_data.get("name", "")),
-                    unit=ing_data.get("unit", "g"),
-                    default_quantity=100.0
-                )
-                db.add(ingredient)
-                db.flush()
-            
-            # Create recipe-ingredient relationship
-            from models.recipe import RecipeIngredient
-            recipe_ingredient = RecipeIngredient(
-                recipe_id=recipe_id,
-                ingredient_id=ingredient.id,
-                quantity=ing_data.get("quantity", 0),
-                unit=ing_data.get("unit", "g")
-            )
-            db.add(recipe_ingredient)
+            logger.info(f"✅ Added {ingredients_added}/{len(ingredients_data)} ingredients to recipe {recipe_id}")
+            if ingredients_added == 0:
+                logger.error(f"⚠️ CRITICAL: No ingredients were added to recipe {recipe_id} despite {len(ingredients_data)} provided!")
+        except Exception as e:
+            logger.error(f"CRITICAL: Failed to add ingredients to recipe {recipe_id}: {str(e)}", exc_info=True)
+            raise  # Re-raise to prevent recipe creation without ingredients
     
     def _add_recipe_instructions(self, db: Session, recipe_id: str, instructions_data: List[Dict[str, Any]]):
-        """Add instructions to recipe"""
-        for i, inst_data in enumerate(instructions_data, 1):
-            from models.recipe import RecipeInstruction
-            instruction = RecipeInstruction(
-                recipe_id=recipe_id,
-                step_number=i,
-                step_title=inst_data.get("step_title", f"Step {i}"),
-                description=inst_data.get("description", ""),
-                ingredients_used=inst_data.get("ingredients_used", []),
-                time_required=inst_data.get("time_required")
-            )
-            db.add(instruction)
+        """Add instructions to recipe - CRITICAL: Always saves instructions"""
+        if not instructions_data:
+            logger.warning(f"No instructions data provided for recipe {recipe_id}")
+            return
+        
+        try:
+            instructions_added = 0
+            for i, inst_data in enumerate(instructions_data, 1):
+                try:
+                    # Handle both dict and string formats
+                    if isinstance(inst_data, str):
+                        description = inst_data.strip()
+                        step_title = f"Step {i}"
+                    elif isinstance(inst_data, dict):
+                        description = inst_data.get("description", inst_data.get("text", "")).strip()
+                        step_title = inst_data.get("step_title", f"Step {i}")
+                    else:
+                        logger.warning(f"Invalid instruction data format for recipe {recipe_id} step {i}: {inst_data}")
+                        continue
+                    
+                    if not description:
+                        logger.warning(f"Empty instruction description for recipe {recipe_id} step {i}, skipping")
+                        continue
+                    
+                    from models.recipe import RecipeInstruction
+                    instruction = RecipeInstruction(
+                        recipe_id=recipe_id,
+                        step_number=i,
+                        step_title=step_title,
+                        description=description,
+                        ingredients_used=inst_data.get("ingredients_used", []) if isinstance(inst_data, dict) else [],
+                        time_required=inst_data.get("time_required") if isinstance(inst_data, dict) else None
+                    )
+                    db.add(instruction)
+                    instructions_added += 1
+                except Exception as e:
+                    logger.error(f"Error adding instruction step {i} to recipe {recipe_id}: {str(e)}", exc_info=True)
+                    continue
+            
+            logger.info(f"✅ Added {instructions_added}/{len(instructions_data)} instructions to recipe {recipe_id}")
+            if instructions_added == 0:
+                logger.error(f"⚠️ CRITICAL: No instructions were added to recipe {recipe_id} despite {len(instructions_data)} provided!")
+        except Exception as e:
+            logger.error(f"CRITICAL: Failed to add instructions to recipe {recipe_id}: {str(e)}", exc_info=True)
+            raise  # Re-raise to prevent recipe creation without instructions
     
     def _categorize_ingredient(self, ingredient_name: str) -> str:
         """Categorize ingredient based on name"""
@@ -2314,6 +2403,11 @@ class NutritionService:
             is_postgresql = 'postgresql' in db_url.lower() or 'postgres' in db_url.lower()
             
             query = db.query(Recipe).filter(Recipe.is_active == True)
+            
+            # Handle recipe_id if provided (for direct recipe lookup)
+            recipe_id = getattr(search_request, 'recipe_id', None)
+            if recipe_id:
+                query = query.filter(Recipe.id == recipe_id)
             
             if search_request.query:
                 # Use database-level full-text search for better performance
@@ -2654,6 +2748,13 @@ class NutritionService:
                 # Default sorting: order by recipe ID ascending (recipe_001, recipe_002, etc.)
                 query = query.order_by(Recipe.id.asc())
             
+            # Eagerly load ingredients and instructions relationships
+            from sqlalchemy.orm import joinedload
+            query = query.options(
+                joinedload(Recipe.ingredients).joinedload(RecipeIngredient.ingredient),
+                joinedload(Recipe.instructions)
+            )
+            
             # Get ALL recipes first (no pagination yet)
             all_recipes = query.all()
             logger.info(f"Database search found {len(all_recipes)} recipes")
@@ -2667,25 +2768,39 @@ class NutritionService:
             for recipe in all_recipes:
                 # Serialize ingredients and instructions (ensure lists)
                 try:
+                    recipe_ingredients = getattr(recipe, 'ingredients', [])
+                    logger.debug(f"Recipe {recipe.id} has {len(recipe_ingredients)} ingredients")
                     serialized_ingredients = [
                         {
-                            "name": ri.ingredient.name,
+                            "name": ri.ingredient.name if ri.ingredient else "Unknown",
                             "quantity": ri.quantity,
                             "unit": ri.unit
                         }
-                        for ri in getattr(recipe, 'ingredients', [])
+                        for ri in recipe_ingredients
+                        if ri.ingredient  # Only include if ingredient relationship is loaded
                     ]
-                except Exception:
+                    if not serialized_ingredients and recipe_ingredients:
+                        logger.warning(f"Recipe {recipe.id} has {len(recipe_ingredients)} ingredient relationships but couldn't serialize them")
+                except Exception as e:
+                    logger.error(f"Error serializing ingredients for recipe {recipe.id}: {str(e)}", exc_info=True)
                     serialized_ingredients = []
+                
                 try:
+                    recipe_instructions = getattr(recipe, 'instructions', [])
+                    logger.debug(f"Recipe {recipe.id} has {len(recipe_instructions)} instructions")
+                    # Sort instructions by step_number
+                    sorted_instructions = sorted(recipe_instructions, key=lambda x: x.step_number) if recipe_instructions else []
                     serialized_instructions = [
                         {
                             "step": instr.step_number,
                             "description": instr.description
                         }
-                        for instr in getattr(recipe, 'instructions', [])
+                        for instr in sorted_instructions
                     ]
-                except Exception:
+                    if not serialized_instructions and recipe_instructions:
+                        logger.warning(f"Recipe {recipe.id} has {len(recipe_instructions)} instruction relationships but couldn't serialize them")
+                except Exception as e:
+                    logger.error(f"Error serializing instructions for recipe {recipe.id}: {str(e)}", exc_info=True)
                     serialized_instructions = []
 
                 # Get servings - this is the source of truth for how many servings the recipe makes
@@ -3356,38 +3471,73 @@ class NutritionService:
             }
     
     def get_nutritional_analysis(self, db: Session, user_id: int, start_date: date, end_date: date, analysis_type: str = "daily") -> Dict[str, Any]:
-        """Aggregate nutrition from MealPlanMeal between dates for a user."""
+        """Aggregate nutrition from NutritionalLog (consumed meals) between dates for a user.
+        Prioritizes NutritionalLog over MealPlanMeal since logs represent actual consumption."""
         try:
-            plans = db.query(MealPlan).filter(
-                and_(MealPlan.user_id == user_id, MealPlan.start_date >= start_date, MealPlan.start_date <= end_date)
+            # CRITICAL: Query NutritionalLog first (actual consumed meals)
+            # This is what users have actually logged/eaten, not just planned
+            logs = db.query(NutritionalLog).filter(
+                and_(
+                    NutritionalLog.user_id == user_id,
+                    NutritionalLog.log_date >= start_date,
+                    NutritionalLog.log_date <= end_date
+                )
             ).all()
-            plan_ids = [p.id for p in plans]
-            if not plan_ids:
-                return {"totals": {"calories": 0, "protein": 0, "carbs": 0, "fats": 0}, "days": []}
-            meals = db.query(MealPlanMeal).filter(MealPlanMeal.meal_plan_id.in_(plan_ids)).all()
+            
+            logger.info(f"Found {len(logs)} nutritional log entries for user {user_id} between {start_date} and {end_date}")
+            
             totals = {"calories": 0.0, "protein": 0.0, "carbs": 0.0, "fats": 0.0}
             by_day: Dict[date, Dict[str, float]] = {}
-            for m in meals:
-                d = m.meal_date
-                if d < start_date or d > end_date:
-                    continue
+            
+            # Aggregate from NutritionalLog (consumed meals)
+            for log in logs:
+                d = log.log_date
                 if d not in by_day:
                     by_day[d] = {"calories": 0.0, "protein": 0.0, "carbs": 0.0, "fats": 0.0}
-                by_day[d]["calories"] += float(m.calories or 0)
-                by_day[d]["protein"] += float(m.protein or 0)
-                by_day[d]["carbs"] += float(m.carbs or 0)
-                by_day[d]["fats"] += float(m.fats or 0)
-                totals["calories"] += float(m.calories or 0)
-                totals["protein"] += float(m.protein or 0)
-                totals["carbs"] += float(m.carbs or 0)
-                totals["fats"] += float(m.fats or 0)
+                by_day[d]["calories"] += float(log.calories or 0)
+                by_day[d]["protein"] += float(log.protein or 0)
+                by_day[d]["carbs"] += float(log.carbs or 0)
+                by_day[d]["fats"] += float(log.fats or 0)
+                totals["calories"] += float(log.calories or 0)
+                totals["protein"] += float(log.protein or 0)
+                totals["carbs"] += float(log.carbs or 0)
+                totals["fats"] += float(log.fats or 0)
+            
+            # If no logs found, fall back to meal plans (planned meals)
+            if not logs:
+                logger.info(f"No nutritional logs found, falling back to meal plans")
+                plans = db.query(MealPlan).filter(
+                    and_(MealPlan.user_id == user_id, MealPlan.start_date >= start_date, MealPlan.start_date <= end_date)
+                ).all()
+                plan_ids = [p.id for p in plans]
+                if plan_ids:
+                    meals = db.query(MealPlanMeal).filter(MealPlanMeal.meal_plan_id.in_(plan_ids)).all()
+                    logger.info(f"Found {len(meals)} meal plan meals to aggregate")
+                    for m in meals:
+                        d = m.meal_date
+                        if d < start_date or d > end_date:
+                            continue
+                        if d not in by_day:
+                            by_day[d] = {"calories": 0.0, "protein": 0.0, "carbs": 0.0, "fats": 0.0}
+                        by_day[d]["calories"] += float(m.calories or 0)
+                        by_day[d]["protein"] += float(m.protein or 0)
+                        by_day[d]["carbs"] += float(m.carbs or 0)
+                        by_day[d]["fats"] += float(m.fats or 0)
+                        totals["calories"] += float(m.calories or 0)
+                        totals["protein"] += float(m.protein or 0)
+                        totals["carbs"] += float(m.carbs or 0)
+                        totals["fats"] += float(m.fats or 0)
+            
             days_list = [
                 {"date": d, "calories": round(v["calories"], 1), "protein": round(v["protein"], 1), "carbs": round(v["carbs"], 1), "fats": round(v["fats"], 1)}
                 for d, v in sorted(by_day.items(), key=lambda x: x[0])
             ]
+            
+            logger.info(f"Nutritional analysis totals: calories={totals['calories']}, protein={totals['protein']}, carbs={totals['carbs']}, fats={totals['fats']}")
+            
             return {"totals": {k: round(v, 1) for k, v in totals.items()}, "days": days_list, "analysis_type": analysis_type}
         except Exception as e:
-            logger.error(f"Error computing nutritional analysis: {str(e)}")
+            logger.error(f"Error computing nutritional analysis: {str(e)}", exc_info=True)
             return {"totals": {"calories": 0, "protein": 0, "carbs": 0, "fats": 0}, "days": [], "error": str(e)}
 
     def _estimate_nutrition_from_ingredients(self, ingredients: Any) -> Dict[str, int]:

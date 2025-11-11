@@ -140,8 +140,27 @@ export const SupabaseAuthProvider: React.FC<SupabaseAuthProviderProps> = ({ chil
 
   const signOut = async () => {
     setError(null);
-    const { error } = await supabase.auth.signOut();
-    return { error };
+    try {
+      // Sign out from Supabase first
+      const { error } = await supabase.auth.signOut();
+      
+      // Clear only authentication-related storage
+      // Don't clear all localStorage as it may contain cached data
+      localStorage.removeItem('supabase.auth.token');
+      localStorage.removeItem('supabase.auth.refresh_token');
+      
+      // Clear session storage
+      sessionStorage.clear();
+      
+      // Clear state immediately
+      setUser(null);
+      setSession(null);
+      
+      return { error };
+    } catch (err: any) {
+      setError(err.message || 'Failed to sign out');
+      return { error: err };
+    }
   };
 
   const clearError = () => {

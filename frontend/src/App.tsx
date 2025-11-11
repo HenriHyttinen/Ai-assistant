@@ -17,6 +17,7 @@ import Settings from './pages/Settings';
 import ActivityHistory from './pages/ActivityHistory';
 import Nutrition from './pages/Nutrition';
 import DailyLogging from './pages/Nutrition/DailyLogging';
+import Assistant from './pages/Assistant';
 import DataExport from './pages/DataExport';
 import DataConsent from './pages/DataConsent';
 import Verify2FA from './pages/Verify2FA';
@@ -88,6 +89,7 @@ const App = () => {
                 <Route path="activities" element={<ActivityHistory />} />
                 <Route path="nutrition" element={<Nutrition />} />
                 <Route path="nutrition/daily-logging" element={<DailyLogging />} />
+                <Route path="assistant" element={<Assistant />} />
                 <Route path="goals" element={<Goals />} />
                 <Route path="achievements" element={<Achievements />} />
                 <Route path="settings" element={<Settings />} />

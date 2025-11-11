@@ -382,6 +382,7 @@ class UserPreferences(BaseModel):
 
 class RecipeSearchRequest(BaseModel):
     query: Optional[str] = None
+    recipe_id: Optional[str] = None  # For direct recipe lookup by ID
     cuisine: Optional[str] = None
     meal_type: Optional[MealType] = None
     dietary_tags: Optional[List[str]] = []
