@@ -142,7 +142,7 @@ export const SupabaseAuthProvider: React.FC<SupabaseAuthProviderProps> = ({ chil
     setError(null);
     try {
       // Sign out from Supabase first
-      const { error } = await supabase.auth.signOut();
+    const { error } = await supabase.auth.signOut();
       
       // Clear only authentication-related storage
       // Don't clear all localStorage as it may contain cached data
@@ -156,7 +156,7 @@ export const SupabaseAuthProvider: React.FC<SupabaseAuthProviderProps> = ({ chil
       setUser(null);
       setSession(null);
       
-      return { error };
+    return { error };
     } catch (err: any) {
       setError(err.message || 'Failed to sign out');
       return { error: err };

@@ -99,7 +99,7 @@ async def get_conversations(
     """
     try:
         user_id = str(current_user.id)
-
+        
         conversations = db.query(Conversation).filter(
             Conversation.user_id == user_id
         ).order_by(Conversation.updated_at.desc()).all()
@@ -148,7 +148,7 @@ async def get_conversation_messages(
     """
     try:
         user_id = str(current_user.id)
-
+        
         # Verify conversation belongs to user
         conversation = db.query(Conversation).filter(
             Conversation.id == conversation_id,
@@ -212,7 +212,7 @@ async def delete_conversation(
     """
     try:
         user_id = str(current_user.id)
-
+        
         conversation = db.query(Conversation).filter(
             Conversation.id == conversation_id,
             Conversation.user_id == user_id

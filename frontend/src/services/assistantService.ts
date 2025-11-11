@@ -57,9 +57,9 @@ class AssistantService {
       return headers;
     } catch (error) {
       console.error('Error getting auth headers:', error);
-      return {
-        'Content-Type': 'application/json',
-      };
+    return {
+      'Content-Type': 'application/json',
+    };
     }
   }
 

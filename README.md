@@ -4,7 +4,9 @@ A comprehensive health and nutrition tracking platform I built for meal planning
 
 ## What This Does
 
-This platform helps users track their health metrics, plan meals, and manage their nutrition goals. It's got meal planning with AI-generated recipes, a recipe database with search and filtering, nutritional tracking, and integration with health analytics.
+This platform helps users track their health metrics, plan meals, and manage their nutrition goals. It's got meal planning with AI-generated recipes, a recipe database with search and filtering, nutritional tracking, integration with health analytics, and an integrated AI Assistant for conversational health and nutrition queries.
+
+**Note:** The AI Assistant is fully integrated into this project. All backend and frontend code runs from the `numbers-dont-lie` directory. Do not attempt to run the backend from any separate `ai-assistant` folder.
 
 ## Features
 
@@ -35,6 +37,16 @@ This platform helps users track their health metrics, plan meals, and manage the
 - Achievement system for motivation
 - Milestone tracking and streak counting
 
+### AI Assistant
+- Conversational AI interface for health and nutrition queries
+- Natural language queries about BMI, weight, wellness score, and activity levels
+- Meal plan queries for specific dates and meal types
+- Nutritional analysis and progress tracking
+- Recipe information with complete ingredients and instructions
+- Data visualization through natural language (charts and graphs)
+- Conversation history with context management
+- Secure function calling to access user data
+
 ### Additional Features
 - Shopping list generation with ingredient categorization
 - Meal plan versioning and restore functionality
@@ -42,6 +54,8 @@ This platform helps users track their health metrics, plan meals, and manage the
 - Error handling with fallback mechanisms
 
 ## Quick Start
+
+**📌 Important:** This project includes the AI Assistant fully integrated. Everything runs from this single project - no separate setup needed.
 
 ### Prerequisites
 - **Python 3.11 or 3.12** (Python 3.14 NOT supported - many packages lack pre-built wheels)
@@ -242,11 +256,35 @@ All dietary preferences and allergies are validated through Pydantic schemas and
 
 ### Backend (FastAPI)
 - OpenAI GPT-3.5-turbo integration with sequential prompting
+- **AI Assistant** - Fully integrated conversational interface with function calling
 - PostgreSQL database with SQLAlchemy ORM
 - Redis caching for performance
 - Supabase JWT authentication
 - SentenceTransformers for vector search
-- Function calling for nutritional calculations
+- Function calling for nutritional calculations and data access
+
+### Project Structure
+```
+numbers-dont-lie/
+├── backend/
+│   ├── routes/
+│   │   └── assistant.py          # AI Assistant API endpoints
+│   ├── services/
+│   │   └── conversation_service.py  # AI Assistant conversation logic
+│   ├── ai/
+│   │   └── assistant_ai.py       # AI Assistant core logic
+│   └── models/
+│       └── conversation.py       # AI Assistant database models
+├── frontend/
+│   └── src/
+│       ├── pages/
+│       │   └── Assistant.tsx      # AI Assistant page
+│       └── components/
+│           └── assistant/         # AI Assistant components
+└── README.md
+```
+
+**Note:** The AI Assistant is fully integrated into this project. All code runs from `/backend` and `/frontend` - there is no separate `ai-assistant` folder needed for running the application.
 
 ### Frontend (React + Chakra UI)
 - Chakra UI for responsive design
@@ -280,6 +318,12 @@ All dietary preferences and allergies are validated through Pydantic schemas and
 - `POST /nutrition-goals` - Create nutrition goals
 - `GET /nutrition-analytics/trends` - Nutritional trends
 - `GET /achievements/check` - Check for new achievements
+
+### AI Assistant
+- `POST /api/assistant/chat` - Send message to AI assistant
+- `GET /api/assistant/conversations` - Get all conversations
+- `GET /api/assistant/conversations/{id}/messages` - Get conversation messages
+- `DELETE /api/assistant/conversations/{id}` - Delete conversation
 
 ## Project Requirements
 

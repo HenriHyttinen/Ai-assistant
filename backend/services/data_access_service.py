@@ -192,11 +192,11 @@ class DataAccessService:
                     meal_plan = meal_plans[0]
                 else:
                     logger.warning(f"No meal plans found at all for user")
-                    return {
-                        "date": date_str,
-                        "meals": [],
-                        "message": "No meal plan found for this date"
-                    }
+                return {
+                    "date": date_str,
+                    "meals": [],
+                    "message": "No meal plan found for this date"
+                }
             else:
                 meal_plan = meal_plans[0]
             
@@ -508,7 +508,7 @@ class DataAccessService:
                 recipe = recipes[0]
                 logger.info(f"Found recipe: {recipe.get('title')} (ID: {recipe.get('id')})")
             elif recipe_id:
-                recipe = await self.api_client.get_recipe(recipe_id)
+            recipe = await self.api_client.get_recipe(recipe_id)
             else:
                 return {
                     "error": "Either recipe_id, recipe_name, or meal_name must be provided",
@@ -533,7 +533,7 @@ class DataAccessService:
                                 ingredients_list.append(f"{quantity} {unit} {name}".strip())
                             else:
                                 ingredients_list.append(name)
-                        else:
+            else:
                             ingredients_list.append(str(ing))
             
             instructions = recipe.get("instructions", [])
@@ -627,12 +627,12 @@ class DataAccessService:
                                                         ingredients_list.append(f"{quantity} {unit} {name}")
                                                     else:
                                                         ingredients_list.append(name)
-                                            else:
+            else:
                                                 ingredients_list.append(str(ing))
                                         logger.info(f"  Extracted {len(ingredients_list)} ingredients from meal plan")
                                     
                                     if not instructions_list and instructions_from_meal:
-                                        instructions_list = []
+                instructions_list = []
                                         for inst in instructions_from_meal:
                                             if isinstance(inst, dict):
                                                 step = inst.get("step") or inst.get("step_number")

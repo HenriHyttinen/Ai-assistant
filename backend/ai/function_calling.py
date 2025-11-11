@@ -149,7 +149,7 @@ def get_recipe_details_schema() -> Dict[str, Any]:
             "recipe_name": {
                 "type": "string",
                 "description": "Recipe name to search for. Use this when the user asks about a recipe by name (e.g., 'Mediterranean Morning Bowl'). The function will search for the recipe and return details."
-            },
+        },
             "meal_name": {
                 "type": "string",
                 "description": "Meal name from meal plan (e.g., 'tonight's dinner', 'today's breakfast'). Use this when the user asks about a meal from their meal plan. The function will find the meal in the meal plan and return complete recipe details including ingredients and instructions."
