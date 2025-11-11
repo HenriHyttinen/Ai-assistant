@@ -19,9 +19,6 @@ import {
   Textarea,
   NumberInput,
   NumberInputField,
-  NumberInputStepper,
-  NumberIncrementStepper,
-  NumberDecrementStepper,
   Modal,
   ModalOverlay,
   ModalContent,
@@ -50,9 +47,7 @@ import MealPlanVersionComparison from '../../components/nutrition/MealPlanVersio
 import AddToMealPlanModal from '../../components/nutrition/AddToMealPlanModal';
 import { 
   FiPlus, 
-  FiRefreshCw,
   FiCoffee,
-  FiRotateCcw,
   FiShoppingCart,
   FiGitBranch,
   FiTrash2,
@@ -126,7 +121,7 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
   const [isGenerating, setIsGenerating] = useState(false); // CRITICAL: Track if meal plan generation is in progress
   const justGeneratedRef = useRef<number | null>(null); // CRITICAL: Track when meal plan was just generated (timestamp)
   const localStorageRestoredRef = useRef<boolean>(false); // CRITICAL: Track if we've already restored from localStorage in this session
-  const loadMealPlanTimeoutRef = useRef<NodeJS.Timeout | null>(null); // CRITICAL: Track debounce timeout
+  const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [mealPlan, setMealPlan] = useState<MealPlan | null>(null);
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [planType, setPlanType] = useState<'daily' | 'weekly'>(() => {
@@ -137,7 +132,6 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
       return 'weekly';
     }
   });
-  const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [mealsPerDay, setMealsPerDay] = useState<number>(() => {
     // CRITICAL FIX: Load mealsPerDay from localStorage on mount to persist user's choice
     // Cap at 5 (max supported by grid)
@@ -182,7 +176,6 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
   const { isOpen: isAltOpen, onOpen: onAltOpen, onClose: _onAltClose } = useDisclosure();
   const [altMealType, setAltMealType] = useState<string | null>(null);
   const [altSearch, setAltSearch] = useState<string>('');
-  const [altSearchDebounced, setAltSearchDebounced] = useState<string>('');
   const alternativesCacheRef = useRef<{[key:string]: { items: any[]; ts: number }} >({});
   const controllersRef = useRef<{[key:string]: AbortController | null}>({});
   const ALT_TTL_MS = 15 * 60 * 1000;
@@ -392,16 +385,14 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
         const result = await response.json();
         const dayName = new Date(date).toLocaleDateString(undefined, {weekday: 'long'});
         
-        // ROOT CAUSE FIX: Check what meal_type the backend actually preserved in recipe_details
+        // Check what meal_type the backend actually preserved in recipe_details
         const backendPreservedType = result.meal?.recipe?.meal_type || result.meal?.recipe_details?.meal_type;
-        console.log(`🔍 Backend preserved meal_type: ${backendPreservedType}, Frontend mealType: ${mealType}`);
         
-        // ROOT CAUSE FIX: Use backend's preserved meal_type if available, otherwise use frontend mealType
+        // Use backend's preserved meal_type if available, otherwise use frontend mealType
         // This ensures we use the exact meal_type that the backend stored (e.g., 'afternoon snack')
         const preservedMealType = backendPreservedType || mealType;
-        console.log(`✅ Using preserved meal_type: ${preservedMealType}`);
         
-        // CRITICAL FIX: Immediately update state for the specific slot to show the meal instantly
+        // Immediately update state for the specific slot to show the meal instantly
         // Immediately update the meal plan with the new meal, preserving the original mealType for frontend
         const updatedMeal = {
           ...result.meal,
@@ -624,20 +615,7 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
     });
     const all = (mealPlan?.meals || []) as any[];
     
-    // ROOT CAUSE DEBUG: Log exactly what meals we have before processing
-    console.log('🔍 GRID ASSIGNMENTS DEBUG:', {
-      mealPlanId: mealPlan?.id,
-      totalMeals: all.length,
-      meals: all.map(m => ({
-        id: m.id || m.meal_id || m.mealId,
-        name: m.meal_name || m.mealName,
-        date: m.meal_date || m.date,
-        type: m.meal_type || m.type,
-        preservedType: m.recipe?.meal_type || m.recipe_details?.meal_type
-      }))
-    });
-    
-    // CRITICAL FIX: Pre-process snacks - collect and assign in order per day
+    // Pre-process snacks - collect and assign in order per day
     // Group snacks by date for ordered assignment
     // Also check for preserved meal_type in recipe_details (from immediate state update)
     const snacksByDate: Record<string, any[]> = {};
@@ -673,7 +651,6 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
             // ROOT CAUSE FIX: Since we're in the isSnack block, we know t is already a snack type
             // Use the current meal_type directly (it's what the backend set after the swap)
             // The preservedType in recipe_details is only used later for specific slot assignment (morning vs afternoon)
-            console.log(`🔍 Adding snack to snacksByDate: id=${mealId}, name='${m.meal_name || m.mealName}', meal_type='${t}'`);
             
             // Store with current meal_type (backend's authoritative value after swap)
             snacksByDate[d].push({
@@ -742,18 +719,6 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
     // Sort to ensure correct order
     snackSlotIndices.sort((a, b) => a - b);
     
-    // ROOT CAUSE DEBUG: Log snacks by date to see what we're processing
-    console.log(`🔍 Snacks by date:`, Object.keys(snacksByDate).map(date => ({
-      date,
-      count: snacksByDate[date].length,
-      snacks: snacksByDate[date].map((s: any) => ({
-        id: s.id || s.meal_id || s.mealId,
-        name: s.meal_name || s.mealName,
-        meal_type: s.meal_type || s.type,
-        recipe_meal_type: s.recipe?.meal_type,
-        recipe_details_meal_type: s.recipe_details?.meal_type
-      }))
-    })));
     
     // ROOT CAUSE FIX: Simplified snack assignment - assign snacks to slots by order
     // Track assigned meals globally to prevent duplicates
@@ -911,11 +876,6 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
     return result;
   }, [mealPlan, weekDates, mealTypes]);
 
-  // Debounce alternatives search input
-  useEffect(() => {
-    const id = setTimeout(() => setAltSearchDebounced(altSearch.trim().toLowerCase()), 200);
-    return () => clearTimeout(id);
-  }, [altSearch]);
 
   // Persist planType selection
   useEffect(() => {
@@ -2355,9 +2315,7 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
         const customMealData = (foundRecentlyAddedMeal as any)?._customMealData;
         const recipeId = (foundRecentlyAddedMeal as any)?.recipe_id || (foundRecentlyAddedMeal as any)?.recipe?.id || customMealData?.recipe_id;
         
-        console.log(`🔍 Looking for meal: swapSourceMeal.id=${swapSourceMeal.id}, recentlyAddedMeal=${foundRecentlyAddedMeal ? JSON.stringify({ id: foundRecentlyAddedMeal.id, name: foundRecentlyAddedMeal.meal_name || foundRecentlyAddedMeal.name }) : 'null'}, mealNotInGrid=${mealNotInGrid}, recipeId=${recipeId}`);
-        
-        // CRITICAL FIX: If meal was removed from grid, skip ID lookup and go straight to recreation
+        // If meal was removed from grid, skip ID lookup and go straight to recreation
         // Don't try to find it by ID since it doesn't exist in the meal plan anymore
         let actualMealId = swapSourceMeal.id;
         
@@ -2373,11 +2331,9 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
         
         if (shouldRecreate) {
           // Meal was removed from grid or not in meal plan - skip ID lookup, will recreate it
-          console.log(`ℹ️ Meal was removed from grid or not in meal plan, will recreate it (skipping ID lookup). mealNotInGrid=${mealNotInGrid}, mealInPlanById=${!!mealInPlanById}, foundRecentlyAddedMeal=${!!foundRecentlyAddedMeal}`);
         } else if (freshMealPlan && freshMealPlan.meals) {
-          // CRITICAL FIX: Only try to find meal in meal plan if it wasn't removed from grid
+          // Only try to find meal in meal plan if it wasn't removed from grid
           // If it was removed, we'll recreate it later
-          console.log(`📋 Meal plan has ${freshMealPlan.meals.length} meals`);
           
           // Try to find by ID first
           const mealInPlan = freshMealPlan.meals.find((m: any) => {
@@ -2396,18 +2352,14 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
             console.log(`✅ Found meal in plan: ${actualMealId}`);
           } else {
             // Meal not found by ID - try to find by name (fallback)
-            console.log(`⚠️ Meal not found by ID, trying to find by name...`);
-            
             // Try with foundRecentlyAddedMeal if available
             if (foundRecentlyAddedMeal) {
               const targetName = foundRecentlyAddedMeal.meal_name || foundRecentlyAddedMeal.name;
-              console.log(`🔍 Looking for meal by name: "${targetName}"`);
               
               const mealByName = freshMealPlan.meals.find((m: any) => {
                 const mealName = m.meal_name || m.name || (m as any).mealName;
                 const match = mealName === targetName;
                 if (match) {
-                  console.log(`✅ Found meal by name: "${mealName}" === "${targetName}"`);
                 }
                 return match;
               });
@@ -2415,7 +2367,6 @@ const MealPlanning: React.FC<MealPlanningProps> = () => {
               if (mealByName) {
                 const mealByNameAny = mealByName as any;
                 actualMealId = String(mealByNameAny.id || mealByNameAny.meal_id || mealByNameAny.mealId);
-                console.log(`✅ Found meal by name: ${actualMealId}`);
               } else {
                 // Try case-insensitive match
                 const mealByCaseInsensitiveName = freshMealPlan.meals.find((m: any) => {

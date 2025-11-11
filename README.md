@@ -1,28 +1,28 @@
-# Numbers Don't Lie - Integrated Health & Nutrition Platform with AI Assistant
+# Numbers Don't Lie - Health & Nutrition Platform
 
-A comprehensive health and nutrition tracking platform with an integrated conversational AI assistant. This project is the evolution and integration of multiple components: the "Numbers Don't Lie" health analytics platform, the "Counting Calories" nutrition system, and the AI Assistant conversational interface - all unified into a single, cohesive platform. Built with FastAPI backend and React frontend.
+A health and nutrition tracking platform I built that combines meal planning, recipe management, nutritional analysis, and a conversational assistant. This project brings together three main components: health analytics, nutrition tracking, and an AI assistant - all working together in one platform. Built with FastAPI backend and React frontend.
 
 ## What This Does
 
-This integrated platform combines three major components that have been unified into one system:
+This platform combines three main parts:
 
-1. **Numbers Don't Lie (Health Analytics Platform)**: A comprehensive system for tracking health metrics, wellness scores, activity levels, goal management, achievement tracking, and integration with health analytics and dashboards.
+1. **Health Analytics**: Track your health metrics, wellness score, activity levels, set goals, and see your progress over time.
 
-2. **Counting Calories (Nutrition System)**: The nutrition tracking and meal planning system with AI-generated meal plans, a recipe database with 500+ entries, dietary preference management, and comprehensive nutritional analysis.
+2. **Nutrition System**: Plan meals, search recipes, track what you eat, and analyze your nutrition. Includes a recipe database with 500+ recipes and support for different dietary preferences.
 
-3. **AI Assistant**: A conversational AI interface that enables users to interact with their health and nutrition data using natural language. Users can ask questions about their BMI, weight, meal plans, nutritional intake, recipes, and progress - all through simple conversations.
+3. **Conversational Assistant**: Ask questions about your health data, meal plans, recipes, and nutrition in natural language. It can help you understand your progress and find recipes.
 
-**Project Evolution:** This repository represents the complete integration of all three components. The project evolved from "Numbers Don't Lie" → "Counting Calories" → "AI Assistant". All backend and frontend code runs from the `numbers-dont-lie` directory. There is no separate setup required - everything works together as a unified platform.
+Everything runs from this single project - no separate setup needed. Just follow the setup instructions below.
 
 ## Features
 
 ### Meal Planning
-- Daily and weekly meal plan generation using AI
+- Generate daily and weekly meal plans
 - Support for 17 dietary preferences (vegetarian, vegan, keto, paleo, etc.)
 - Handles 13 common allergies and intolerances
-- Cultural meal patterns (Mediterranean, Asian, Indian, Mexican, etc.)
-- Recipe database with 500+ entries (requires embedding generation for search)
-- Accurate nutritional calculations from ingredient database
+- Different cuisine options (Mediterranean, Asian, Indian, Mexican, etc.)
+- Recipe database with 500+ recipes
+- Nutritional calculations from ingredient database
 
 ### Recipe Management
 - Search and filter recipes by name, ingredients, cuisine, dietary restrictions
@@ -34,7 +34,7 @@ This integrated platform combines three major components that have been unified 
 ### Nutritional Analysis
 - Track calories, protein, carbs, fats, vitamins, and minerals
 - Visual progress tracking with charts
-- AI-powered insights and recommendations
+- Personalized insights and recommendations
 - Goal tracking with BMI and activity level integration
 - Wellness score updates based on nutrition data
 
@@ -43,15 +43,14 @@ This integrated platform combines three major components that have been unified 
 - Achievement system for motivation
 - Milestone tracking and streak counting
 
-### AI Assistant
-- Conversational AI interface for health and nutrition queries
-- Natural language queries about BMI, weight, wellness score, and activity levels
-- Meal plan queries for specific dates and meal types
-- Nutritional analysis and progress tracking
-- Recipe information with complete ingredients and instructions
-- Data visualization through natural language (charts and graphs)
-- Conversation history with context management
-- Secure function calling to access user data
+### Conversational Assistant
+- Ask questions about your health and nutrition in plain language
+- Get info about your BMI, weight, wellness score, and activity levels
+- Check your meal plans for specific dates
+- Analyze your nutrition and track progress
+- Get recipe details with ingredients and instructions
+- Generate charts and visualizations from your data
+- Conversation history so it remembers context
 
 ### Additional Features
 - Shopping list generation with ingredient categorization
@@ -61,16 +60,13 @@ This integrated platform combines three major components that have been unified 
 
 ## Quick Start
 
-**📌 Important:** This project includes the AI Assistant fully integrated. Everything runs from this single project - no separate setup needed.
-
 ### Prerequisites
-- **Python 3.11 or 3.12** (Python 3.14 NOT supported - many packages lack pre-built wheels)
-- **Node.js 16+** (for frontend)
-- **PostgreSQL 12+** (optional, SQLite works for development)
-- **pip** (Python package manager)
-- **npm** (Node package manager)
+- **Python 3.11 or 3.12** (Python 3.14 doesn't work well - some packages won't install)
+- **Node.js 16+** (for the frontend)
+- **PostgreSQL** (optional - SQLite works fine for development and testing)
+- **pip** and **npm** installed
 
-**For detailed setup instructions, see [SETUP_FOR_REVIEWERS.md](./SETUP_FOR_REVIEWERS.md)**
+**Note:** I recommend using SQLite for development - it's simpler and doesn't require setting up PostgreSQL. Just use `sqlite:///./numbers_dont_lie.db` in your `.env` file.
 
 ### Manual Setup (Required)
 
@@ -78,40 +74,40 @@ This integrated platform combines three major components that have been unified 
 
 ```bash
 # Clone the repository
-git clone https://gitea.kood.tech/henrijuhanihyttinen/counting-calories
-cd counting-calories
+git clone https://gitea.kood.tech/henrijuhanihyttinen/ai-assistant
+cd ai-assistant
 
-# Navigate to backend
+# Go to backend folder
 cd backend
 
 # Create virtual environment
 python3 -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 
-# Install dependencies
+# Install dependencies (this might take a few minutes)
 pip install -r requirements.txt
 
-# Copy environment file
+# Set up environment file
 cp .env.example .env
-# Edit .env with your settings (see Environment Variables below)
+# Edit .env - at minimum set DATABASE_URL (see below for SQLite setup)
 
-# Initialize database
+# Create database tables
 python database_setup/init_db.py
 
-# Seed basic recipes and ingredients
+# Seed recipes and ingredients (optional but recommended)
 python scripts/comprehensive_seeder.py
 
-# Import full ingredient database (IMPORTANT - adds 5,388 ingredients)
+# Import full ingredient database (adds 5,388 ingredients)
 python scripts/import_ingredients_from_json.py
 
-# Generate embeddings (REQUIRED for recipe search and RAG)
+# Generate embeddings for recipe search (takes 5-15 minutes)
 python scripts/generate_recipe_embeddings.py
 python scripts/generate_ingredient_embeddings.py
 
-# Recalculate recipe nutrition from ingredients (IMPORTANT - fixes 0 calorie issue)
+# Fix nutrition calculations (important!)
 python scripts/recalculate_recipe_nutrition.py
 
-# Start the backend server
+# Start the backend
 uvicorn main:app --reload
 ```
 
@@ -136,21 +132,19 @@ The frontend will be available at `http://localhost:5173` (or the port Vite assi
 
 ### Environment Variables
 
-Create a `backend/.env` file with the following variables:
+Create a `backend/.env` file. The easiest setup uses SQLite (no database server needed):
 
 ```env
-# Database
-DATABASE_URL=postgresql://postgres:postgres@localhost/numbers_dont_lie
-# OR for SQLite (development):
-# DATABASE_URL=sqlite:///./numbers_dont_lie.db
+# Database - SQLite is easiest for development
+DATABASE_URL=sqlite:///./numbers_dont_lie.db
 
-# JWT Authentication
-SECRET_KEY=your-secret-key-here
+# JWT Authentication - just use any random string
+SECRET_KEY=your-random-secret-key-here-make-it-long
 ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=30
 
-# OpenAI (optional - for AI meal generation)
-OPENAI_API_KEY=your-openai-api-key
+# OpenAI (optional - for meal generation features)
+OPENAI_API_KEY=your-openai-api-key-if-you-have-one
 USE_OPENAI=true
 
 # Supabase (optional - for authentication)
@@ -158,67 +152,41 @@ SUPABASE_URL=your-supabase-url
 SUPABASE_ANON_KEY=your-supabase-anon-key
 ```
 
-### Database Setup
+**For SQLite (recommended for testing):** Just use `DATABASE_URL=sqlite:///./numbers_dont_lie.db` - that's it! No database server needed.
 
-After initializing the database, seed it with recipes and ingredients:
+**For PostgreSQL:** Use `DATABASE_URL=postgresql://postgres:postgres@localhost/numbers_dont_lie` (make sure PostgreSQL is running).
 
-**Step 1: Seed Basic Recipes and Ingredients**
+### Database Setup - Step by Step
 
+After running `python database_setup/init_db.py`, you need to populate the database:
+
+**1. Seed recipes and ingredients:**
 ```bash
 cd backend
 python scripts/comprehensive_seeder.py
 ```
+This adds 500+ recipes and about 155 basic ingredients. Takes a couple minutes.
 
-This will seed:
-- 500+ recipes
-- ~155 basic ingredients
-
-**Step 2: Import Full Ingredient Database (IMPORTANT)**
-
-The comprehensive seeder only creates ~155 ingredients. To get the full ingredient database (5,388 ingredients), import from JSON:
-
+**2. Import full ingredient database:**
 ```bash
-cd backend
 python scripts/import_ingredients_from_json.py
 ```
+This adds 5,388 more ingredients from the JSON file. Takes a minute or two.
 
-This will:
-- Import 5,388 ingredients from `ingredients_list.json`
-- Add to existing ingredients (total: ~5,543 ingredients)
-
-**Step 3: Generate Embeddings (REQUIRED for Recipe Search)**
-
-Embeddings are required for recipe search and RAG functionality. Generate them after seeding:
-
+**3. Generate embeddings (for recipe search):**
 ```bash
-cd backend
-
-# Generate recipe embeddings (takes ~5-15 minutes)
 python scripts/generate_recipe_embeddings.py
-
-# Generate ingredient embeddings (takes ~2-5 minutes)
 python scripts/generate_ingredient_embeddings.py
 ```
+These take 5-15 minutes total but are needed for recipe search to work properly.
 
-**Step 4: Recalculate Recipe Nutrition (IMPORTANT - Fixes 0 Calorie Issue)**
-
-The seeder creates recipes with ingredients but doesn't calculate nutrition. Recalculate nutrition from ingredients:
-
+**4. Fix nutrition calculations:**
 ```bash
-cd backend
 python scripts/recalculate_recipe_nutrition.py
 ```
+This calculates nutrition from ingredients. Important - without this, recipes show 0 calories.
 
-This will:
-- Calculate calories, protein, carbs, fats from recipe ingredients
-- Update per-serving and total nutrition values
-- Fix recipes showing 0 calories/nutrition
-
-**Summary:**
-1. ✅ Seed basic data: `python scripts/comprehensive_seeder.py` (500 recipes, 155 ingredients)
-2. ✅ Import full ingredients: `python scripts/import_ingredients_from_json.py` (adds 5,388 ingredients)
-3. ✅ Generate embeddings: Run both embedding scripts (required for search/RAG)
-4. ✅ Recalculate nutrition: `python scripts/recalculate_recipe_nutrition.py` (fixes 0 calorie issue)
+**Quick summary:** Run all 4 steps in order. The embedding generation takes the longest but you can start the server before it finishes if you want to test other features.
 
 ## Dietary Preferences & Restrictions
 
@@ -261,17 +229,16 @@ All dietary preferences and allergies are validated through Pydantic schemas and
 ## Architecture
 
 ### Backend (FastAPI)
-- OpenAI GPT-3.5-turbo integration with sequential prompting
-- **AI Assistant** - Fully integrated conversational interface with function calling
-- PostgreSQL database with SQLAlchemy ORM
-- Redis caching for performance
-- Supabase JWT authentication
-- SentenceTransformers for vector search
-- Function calling for nutritional calculations and data access
+- FastAPI for the API
+- PostgreSQL or SQLite database with SQLAlchemy
+- Redis caching (optional)
+- Supabase for authentication
+- Vector search for recipe matching
+- Function calling for data access
 
 ### Project Structure
 ```
-numbers-dont-lie/
+ai-assistant/  (or whatever you name the folder when cloning)
 ├── backend/
 │   ├── routes/
 │   │   └── assistant.py          # AI Assistant API endpoints
@@ -290,7 +257,7 @@ numbers-dont-lie/
 └── README.md
 ```
 
-**Note:** The AI Assistant is fully integrated into this project. All code runs from `/backend` and `/frontend` - there is no separate `ai-assistant` folder needed for running the application.
+**Note:** The folder name doesn't matter - you can clone it to any folder name. All code runs from `/backend` and `/frontend` relative to the project root. The database name (`numbers_dont_lie`) is just a name - it's not tied to the folder name.
 
 ### Frontend (React + Chakra UI)
 - Chakra UI for responsive design
@@ -370,34 +337,32 @@ python -c "from database import engine; from models import Base; Base.metadata.c
 python scripts/comprehensive_seeder.py
 ```
 
-## AI Integration
+## How It Works
 
-### Sequential Prompting Strategy
-The system uses a 4-step sequential prompting process:
-1. **Strategy Generation**: Analyze user profile and define meal plan approach
-2. **Meal Structure**: Design specific meals and timing
-3. **Recipe Generation**: Create detailed recipes with RAG enhancement
-4. **Nutritional Analysis**: Evaluate and adjust nutritional balance
+**Meal Plan Generation:**
+The system uses a multi-step process to generate meal plans:
+1. Analyzes your profile and preferences
+2. Designs meals based on your goals
+3. Finds or creates recipes that match
+4. Calculates and balances nutrition
 
-### Function Calling Implementation
-- Nutritional Calculations: Accurate macro/micro nutrient analysis from ingredient database
-- Ingredient Substitution: AI-driven alternatives based on availability
-- Portion Scaling: Automatic quantity and nutrition recalculation
-- Dietary Compliance: Verification against user restrictions
+**Recipe Search:**
+- Uses vector embeddings to find similar recipes
+- Searches by ingredients, cuisine, dietary restrictions
+- Matches recipes based on similarity
 
-### RAG System
-- Vector Database: 500+ recipes with embeddings
-- Similarity Search: Cosine similarity for recipe retrieval
-- Context Augmentation: Enhanced prompts with retrieved examples
-- Ingredient Database: 5,388+ ingredients with nutritional data (requires import from JSON)
+**Nutrition Calculations:**
+- Calculates macros and micros from ingredient database
+- Supports ingredient substitutions
+- Automatically adjusts nutrition when you change portion sizes
 
 ## Error Handling
 
-The system includes comprehensive error handling:
-- Graceful degradation with fallback to cached data when AI fails
-- Retry logic with exponential backoff for transient failures
-- Circuit breaker to prevent cascade failures
-- User-friendly error messages
+The system handles errors gracefully:
+- Falls back to cached data if something fails
+- Retries failed requests automatically
+- Shows user-friendly error messages
+- Prevents cascading failures
 
 ## Security
 
@@ -427,31 +392,32 @@ Additional documentation is available:
 - System design documentation in `backend/docs/`
 - Production deployment instructions
 
-## Bonus Features
+## Extra Features
 
-I've implemented several bonus features beyond the core requirements:
+Some additional things I added:
 
-1. **Progressive Meal Generation** - Generate meals one slot at a time
-2. **Meal Plan Versioning** - Track and restore previous versions
-3. **Manual Portion Adjustment UI** - Live preview with automatic recalculation
-4. **Atomic Meal Swapping** - Swap meals between slots
-5. **Comprehensive Micronutrient Tracking** - 18+ vitamins and minerals
-6. **Enhanced Duplicate Prevention** - 30-day window with multi-signature detection
-7. **Automatic Portion Adjustment** - Smart scaling based on calorie targets
-8. **Dynamic Grid Sizing** - Support for 3-6 meals per day
-9. **Standardized Unit Conversion** - Automatic conversion to g/ml/piece
-10. **Database-Backed Nutrition Calculation** - Uses 5,388+ ingredient database (requires import from JSON)
-11. **Nutritionist-Recommended Calorie Distribution** - Optimal meal distribution
-12. **LocalStorage State Persistence** - Offline support
-13. **Enhanced Recipe Search & Filtering** - Comprehensive filters including macronutrients
-14. **Ingredient Substitution Service** - AI-powered suggestions
-15. **Shopping List Categorization** - Automatic ingredient grouping
-16. **Comprehensive Error Handling** - Multiple fallback strategies
+1. Progressive meal generation - build meals one at a time
+2. Meal plan versioning - save and restore previous versions
+3. Live portion adjustment - see nutrition update as you change servings
+4. Meal swapping - swap meals between different days
+5. Micronutrient tracking - tracks 18+ vitamins and minerals
+6. Duplicate prevention - avoids repeating meals too often
+7. Automatic portion scaling - adjusts based on calorie goals
+8. Flexible meal grid - supports 3-6 meals per day
+9. Unit conversion - automatically converts to standard units
+10. Database-backed nutrition - uses ingredient database for accurate calculations
+11. Smart calorie distribution - spreads calories across meals optimally
+12. Offline support - saves state locally
+13. Advanced recipe search - filter by macros, cuisine, dietary needs
+14. Ingredient substitution - suggests alternatives
+15. Shopping list organization - groups ingredients by category
+16. Error recovery - handles failures gracefully
 
 ## Acknowledgments
 
-- OpenAI for GPT-3.5-turbo API
-- Supabase for authentication and database
-- Chakra UI for component library
-- Recharts for data visualization
+Thanks to:
+- OpenAI for the API
+- Supabase for authentication
+- Chakra UI for the component library
+- Recharts for charts
 - SentenceTransformers for vector embeddings

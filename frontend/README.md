@@ -1,6 +1,6 @@
-# Numbers Don't Lie - Frontend
+# Frontend
 
-React + TypeScript frontend for the Numbers Don't Lie wellness platform. Built with Vite, Chakra UI, and React.
+React + TypeScript frontend for the health and nutrition platform. Built with Vite, Chakra UI, and React.
 
 ## Features
 

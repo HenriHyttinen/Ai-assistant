@@ -1,25 +1,21 @@
 # Setup Guide for Reviewers
 
-This guide will help you get the Numbers Don't Lie project up and running quickly for review.
+Quick guide to get the project running. I recommend using SQLite for the database - it's simpler and doesn't require setting up PostgreSQL.
 
 ## Prerequisites
 
-- **Python 3.11 or 3.12** (STRONGLY RECOMMENDED)
-  - ⚠️ **Python 3.14 is NOT recommended** - many packages don't have pre-built wheels yet
-  - Python 3.14 requires building from source, which often fails on macOS
-  - **Use Python 3.11 or 3.12 to avoid compilation issues**
+- **Python 3.11 or 3.12** (important - Python 3.14 causes issues with some packages)
 - **Node.js 16+** (for frontend)
-- **PostgreSQL 12+** (optional, SQLite works for development)
-- **pip** (Python package manager)
-- **npm** (Node package manager)
+- **SQLite** (comes with Python - no setup needed) or PostgreSQL (optional)
+- **pip** and **npm** installed
 
 ## Quick Start
 
 ### 1. Clone the Repository
 
 ```bash
-git clone https://gitea.kood.tech/henrijuhanihyttinen/counting-calories
-cd counting-calories
+git clone https://gitea.kood.tech/henrijuhanihyttinen/ai-assistant
+cd ai-assistant
 ```
 
 ### 2. Backend Setup
@@ -40,11 +36,18 @@ source venv/bin/activate
 # Install dependencies
 pip install -r requirements.txt
 
-# Copy environment file
+# Set up environment file
 cp .env.example .env
-# Edit .env with your settings (see Environment Variables below)
 
-# Initialize database
+# IMPORTANT: Edit .env and set DATABASE_URL
+# For SQLite (easiest - recommended):
+# DATABASE_URL=sqlite:///./numbers_dont_lie.db
+# 
+# For PostgreSQL:
+# DATABASE_URL=postgresql://postgres:postgres@localhost/numbers_dont_lie
+
+# Create database tables
+# Make sure you're in the backend/ directory when running this!
 python database_setup/init_db.py
 
 # Seed basic recipes and ingredients
@@ -85,39 +88,44 @@ The frontend will be available at `http://localhost:5173` (or the port Vite assi
 
 ## Environment Variables
 
-Copy `backend/.env.example` to `backend/.env` and configure:
+The `.env` file needs at minimum the `DATABASE_URL`. Here's the simplest setup:
 
-**Required:**
-- `DATABASE_URL` - PostgreSQL or SQLite connection string
-  - For SQLite: `sqlite:///./numbers_dont_lie.db`
-  - For PostgreSQL: `postgresql://postgres:postgres@localhost/numbers_dont_lie`
-- `SECRET_KEY` - Random secret key for JWT (generate a random string)
-
-**Optional (for full functionality):**
-- `OPENAI_API_KEY` - For AI meal generation features
-- `USE_OPENAI` - Set to `false` to disable AI features (default: `true`)
-- `SUPABASE_URL` and `SUPABASE_ANON_KEY` - For authentication
-
-Example `.env` file:
+**For SQLite (recommended - no database server needed):**
 ```env
 DATABASE_URL=sqlite:///./numbers_dont_lie.db
-SECRET_KEY=your-random-secret-key-here
+SECRET_KEY=any-random-string-here-make-it-long
 ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=30
-OPENAI_API_KEY=your-openai-api-key
-USE_OPENAI=true
 ```
+
+**For PostgreSQL:**
+```env
+DATABASE_URL=postgresql://postgres:postgres@localhost/numbers_dont_lie
+SECRET_KEY=any-random-string-here-make-it-long
+ALGORITHM=HS256
+ACCESS_TOKEN_EXPIRE_MINUTES=30
+```
+
+**Optional (for meal generation features):**
+- `OPENAI_API_KEY` - If you want to use meal generation features
+- `USE_OPENAI` - Set to `false` if you don't have an API key (project works without it)
+- `SUPABASE_URL` and `SUPABASE_ANON_KEY` - For authentication
+
+**Important:** Make sure `DATABASE_URL` is set correctly. If you get "no such table" errors, check that the database was initialized properly.
 
 ## Database Setup
 
-### Initialize Database
+### Step 1: Initialize Database
+
+**IMPORTANT:** Make sure you're in the `backend/` directory when running this!
 
 ```bash
 cd backend
+source venv/bin/activate  # Make sure venv is activated
 python database_setup/init_db.py
 ```
 
-This creates all necessary database tables.
+This creates all database tables. If you get "ModuleNotFoundError: No module named 'models'", it means you're not in the backend directory. Make sure you `cd backend` first!
 
 ### Seed Database (Required for Full Functionality)
 
@@ -227,23 +235,27 @@ Building wheel for pydantic-core (pyproject.toml) ... error
 - Python 3.14 requires building from source, which often fails on macOS
 
 **Error: `ModuleNotFoundError: No module named 'models'` when running `init_db.py`**
-```
-File "backend/database_setup/init_db.py", line 1, in <module>
-    from models import Base
-ModuleNotFoundError: No module named 'models'
-```
+
+This happens when you're not in the right directory. 
 
 **Solution:**
-1. **Make sure you're in the `backend/` directory** when running the script:
+1. Make absolutely sure you're in the `backend/` directory:
    ```bash
    cd backend
+   pwd  # Should show .../ai-assistant/backend
    python database_setup/init_db.py
    ```
 
-2. **Alternative**: Use the Python one-liner (works from any directory):
+2. If that doesn't work, try the alternative:
    ```bash
    cd backend
-   python -c "from database import engine; from models import Base; Base.metadata.create_all(bind=engine)"
+   python -c "from database import engine; from models import Base; Base.metadata.create_all(bind=engine); print('Done!')"
+   ```
+
+3. Check that your virtual environment is activated and dependencies are installed:
+   ```bash
+   source venv/bin/activate
+   pip install -r requirements.txt
    ```
 
 **Error: `scikit-learn` compilation fails on macOS**

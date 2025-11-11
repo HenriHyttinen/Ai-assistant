@@ -1,6 +1,6 @@
-# Numbers Don't Lie - Backend API
+# Backend API
 
-FastAPI backend service for the Numbers Don't Lie wellness platform. Handles health data management, user authentication, analytics, and nutrition planning.
+FastAPI backend for the health and nutrition platform. Handles health data, authentication, analytics, and nutrition planning.
 
 ## What's Included
 
@@ -17,9 +17,9 @@ FastAPI backend service for the Numbers Don't Lie wellness platform. Handles hea
 
 ## Prerequisites
 
-- Python 3.11 or 3.12 (Python 3.14 NOT supported)
-- PostgreSQL 12+
-- pip (Python package manager)
+- Python 3.11 or 3.12 (Python 3.14 doesn't work - some packages won't install)
+- SQLite (comes with Python) or PostgreSQL (optional)
+- pip installed
 
 ## Setup
 
@@ -35,19 +35,23 @@ pip install -r requirements.txt
 ```
 
 3. Set up environment variables:
-Create a `.env` file in the backend directory:
+Create a `.env` file in the backend directory. For SQLite (easiest):
 ```
-DATABASE_URL=postgresql://postgres:postgres@localhost/numbers_dont_lie
-SECRET_KEY=your-secret-key-here
+DATABASE_URL=sqlite:///./numbers_dont_lie.db
+SECRET_KEY=any-random-secret-key-here
 ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=30
-OPENAI_API_KEY=your-openai-api-key
+OPENAI_API_KEY=your-openai-api-key-if-you-have-one
 ```
 
 4. Initialize the database:
+**IMPORTANT:** Make sure you're in the `backend/` directory when running this!
 ```bash
+cd backend
 python database_setup/init_db.py
 ```
+
+If you get "ModuleNotFoundError: No module named 'models'", you're not in the right directory. Make sure you `cd backend` first!
 
 5. Seed the database:
 
