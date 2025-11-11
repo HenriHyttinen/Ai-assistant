@@ -46,11 +46,12 @@ Everything runs from this single project - no separate setup needed. Just follow
 ### Conversational Assistant
 - Ask questions about your health and nutrition in plain language
 - Get info about your BMI, weight, wellness score, and activity levels
-- Check your meal plans for specific dates
-- Analyze your nutrition and track progress
-- Get recipe details with ingredients and instructions
-- Generate charts and visualizations from your data
-- Conversation history so it remembers context
+- Check your meal plans for specific dates ("What's for lunch tomorrow?")
+- Analyze your nutrition and track progress ("How many calories today?")
+- Get recipe details with ingredients and instructions ("How do I prepare tonight's dinner?")
+- Generate charts and visualizations from your data ("Show me a chart of my calories this week")
+- Conversation history so it remembers context across multiple turns
+- Supports follow-up questions and understands references ("Can you tell me more about that?")
 
 ### Additional Features
 - Shopping list generation with ingredient categorization

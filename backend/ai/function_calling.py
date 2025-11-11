@@ -5,6 +5,7 @@ Defines functions that the AI can call to access user data.
 from typing import Dict, Any, List, Callable, Optional
 from datetime import date, datetime, timedelta
 import logging
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -121,16 +122,16 @@ def get_nutritional_analysis_schema() -> Dict[str, Any]:
         "properties": {
             "start_date": {
                 "type": "string",
-                "description": "Start date in YYYY-MM-DD format. Can use 'today', 'yesterday', or specific date."
+                "description": "Start date. Can use 'today', 'yesterday', '7 days ago', '30 days ago', or YYYY-MM-DD format. For 'this week', use '7 days ago'. For 'this month', use '30 days ago'. The system will automatically calculate the correct date."
             },
             "end_date": {
                 "type": "string",
-                "description": "End date in YYYY-MM-DD format. Can use 'today', 'yesterday', or specific date."
+                "description": "End date in YYYY-MM-DD format. Can use 'today', 'yesterday', or specific date. For weekly/monthly queries, typically use 'today'."
             },
             "analysis_type": {
                 "type": "string",
                 "enum": ["daily", "weekly", "monthly"],
-                "description": "Type of analysis: daily (single day), weekly (week summary), monthly (month summary)."
+                "description": "Type of analysis: 'daily' for single day, 'weekly' for week summary (7 days), 'monthly' for month summary (30 days). When user asks for 'this week' or 'weekly' data, use 'weekly'. When user asks for 'this month' or 'monthly' data, use 'monthly'."
             }
         },
         "required": ["start_date", "end_date"]
@@ -224,7 +225,8 @@ def get_generate_chart_schema() -> Dict[str, Any]:
 def normalize_date(date_str: str) -> date:
     """
     Normalize date string to date object.
-    Handles 'today', 'tomorrow', 'yesterday', and YYYY-MM-DD format.
+    Handles 'today', 'tomorrow', 'yesterday', relative dates like '7 days ago', '30 days ago',
+    and YYYY-MM-DD format.
     
     Args:
         date_str: Date string
@@ -233,13 +235,41 @@ def normalize_date(date_str: str) -> date:
         Date object
     """
     today = date.today()
+    date_str_lower = date_str.lower().strip()
     
-    if date_str.lower() == "today":
+    if date_str_lower == "today":
         return today
-    elif date_str.lower() == "tomorrow":
+    elif date_str_lower == "tomorrow":
         return today + timedelta(days=1)
-    elif date_str.lower() == "yesterday":
+    elif date_str_lower == "yesterday":
         return today - timedelta(days=1)
+    elif "days ago" in date_str_lower or "day ago" in date_str_lower:
+        # Handle relative dates like "7 days ago", "30 days ago", "1 day ago"
+        match = re.search(r'(\d+)\s*(?:day|days)\s*ago', date_str_lower)
+        if match:
+            days = int(match.group(1))
+            return today - timedelta(days=days)
+        else:
+            logger.warning(f"Could not parse relative date: {date_str}, defaulting to today")
+            return today
+    elif "weeks ago" in date_str_lower or "week ago" in date_str_lower:
+        # Handle relative dates like "1 week ago", "2 weeks ago"
+        match = re.search(r'(\d+)\s*(?:week|weeks)\s*ago', date_str_lower)
+        if match:
+            weeks = int(match.group(1))
+            return today - timedelta(days=weeks * 7)
+        else:
+            logger.warning(f"Could not parse relative date: {date_str}, defaulting to today")
+            return today
+    elif "months ago" in date_str_lower or "month ago" in date_str_lower:
+        # Handle relative dates like "1 month ago" (approximate as 30 days)
+        match = re.search(r'(\d+)\s*(?:month|months)\s*ago', date_str_lower)
+        if match:
+            months = int(match.group(1))
+            return today - timedelta(days=months * 30)
+        else:
+            logger.warning(f"Could not parse relative date: {date_str}, defaulting to today")
+            return today
     else:
         try:
             return datetime.strptime(date_str, "%Y-%m-%d").date()
@@ -280,7 +310,7 @@ def initialize_functions(data_access_service) -> FunctionRegistry:
     
     function_registry.register(
         name="get_nutritional_analysis",
-        description="Retrieves nutritional analysis including calories, protein, carbs, fats compared to targets. Can analyze daily, weekly, or monthly periods.",
+        description="Retrieves nutritional analysis including calories, protein, carbs, fats compared to targets. Can analyze daily, weekly, or monthly periods. For 'this week', use start_date '7 days ago', end_date 'today', and analysis_type 'weekly'. For 'this month', use start_date '30 days ago', end_date 'today', and analysis_type 'monthly'. The system automatically handles relative date strings like '7 days ago'.",
         parameters=get_nutritional_analysis_schema(),
         handler=handlers.get_nutritional_analysis
     )

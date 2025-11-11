@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Body
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
-from sqlalchemy import and_
+from sqlalchemy import and_, or_
 from typing import List, Optional, Any, Dict
 from datetime import datetime, date, timedelta
 
@@ -1019,22 +1019,25 @@ def get_meal_plans(
     
     if date:
         filter_date = datetime.strptime(date, "%Y-%m-%d").date()
-        # For weekly plans, match if start_date is Monday of the week containing the query date
-        if plan_type == 'weekly':
-            # Calculate Monday of the week for the query date
-            day_of_week = filter_date.weekday()  # 0 = Monday, 6 = Sunday
-            monday_offset = timedelta(days=day_of_week)
-            week_monday = filter_date - monday_offset
-            # Match plans whose start_date falls within the week (Monday to Sunday)
-            week_sunday = week_monday + timedelta(days=6)
-            query = query.filter(
-                MealPlan.start_date >= week_monday,
-                MealPlan.start_date <= week_sunday,
-                MealPlan.plan_type == 'weekly'
+        # Calculate Monday of the week for the query date
+        day_of_week = filter_date.weekday()  # 0 = Monday, 6 = Sunday
+        monday_offset = timedelta(days=day_of_week)
+        week_monday = filter_date - monday_offset
+        week_sunday = week_monday + timedelta(days=6)
+        
+        # Match both daily plans (exact date match) and weekly plans (date falls within week range)
+        query = query.filter(
+            or_(
+                # Daily plans: exact date match
+                and_(MealPlan.start_date == filter_date, MealPlan.plan_type == 'daily'),
+                # Weekly plans: date falls within the week (Monday to Sunday)
+                and_(
+                    MealPlan.start_date >= week_monday,
+                    MealPlan.start_date <= week_sunday,
+                    MealPlan.plan_type == 'weekly'
+                )
             )
-        else:
-            # For daily plans, exact match
-            query = query.filter(MealPlan.start_date == filter_date)
+        )
     
     if plan_type and not date:
         # If plan_type is provided but not date, filter by plan_type

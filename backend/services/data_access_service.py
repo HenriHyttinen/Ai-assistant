@@ -338,6 +338,9 @@ class DataAccessService:
             logger.info(f"Daily targets: {daily_targets}")
             logger.info(f"Period targets (for {period_days} days): {period_targets}")
             
+            # Get daily breakdown from API response (for charts)
+            days_list = analysis.get("days", [])
+            
             return {
                 "period": {
                     "start_date": start_date.isoformat(),
@@ -351,6 +354,8 @@ class DataAccessService:
                     "carbs": totals.get("carbs", 0),  # in grams
                     "fats": totals.get("fats", 0)  # in grams
                 },
+                "daily_breakdown": days_list,  # Daily data for charts (alias for days)
+                "days": days_list,  # Also include as days for compatibility
                 "daily_targets": daily_targets,  # Keep daily targets for reference
                 "period_targets": period_targets,  # Period targets for comparison
                 "comparison": {
@@ -498,8 +503,106 @@ class DataAccessService:
             # If recipe_name is provided, search for it first
             if recipe_name and not recipe_id:
                 logger.info(f"Searching for recipe by name: {recipe_name}")
-                recipes = await self.api_client.search_recipes(recipe_name, limit=5)
+                
+                # Try multiple search variations to handle typos
+                search_variations = [recipe_name]
+                # Common typo fixes
+                if "bow" in recipe_name.lower() and "bowl" not in recipe_name.lower():
+                    search_variations.append(recipe_name.replace("bow", "bowl").replace("Bow", "Bowl"))
+                if "bowl" in recipe_name.lower() and "bow" not in recipe_name.lower():
+                    search_variations.append(recipe_name.replace("bowl", "bow").replace("Bowl", "Bow"))
+                
+                # Also try searching with just key words (e.g., "Mediterranean Morning" if full name fails)
+                words = recipe_name.split()
+                if len(words) > 2:
+                    # Try without last word, then without first word
+                    search_variations.append(" ".join(words[:-1]))  # "Mediterranean Morning"
+                    search_variations.append(" ".join(words[1:]))  # "Morning Bowl"
+                
+                recipes = []
+                for search_term in search_variations:
+                    try:
+                        recipes = await self.api_client.search_recipes(search_term, limit=5)
+                        if recipes:
+                            logger.info(f"Found {len(recipes)} recipe(s) using search term: '{search_term}'")
+                            # Log first recipe title for debugging
+                            if recipes[0].get("title"):
+                                logger.info(f"First match: '{recipes[0].get('title')}'")
+                            break
+                    except Exception as e:
+                        logger.warning(f"Error searching with term '{search_term}': {str(e)}")
+                        continue
+                
                 if not recipes:
+                    # Fallback: Search meal plans for this recipe name
+                    logger.info(f"Recipe '{recipe_name}' not found in Recipe table, searching meal plans")
+                    try:
+                        meal_plans = await self.api_client.get_meal_plans(limit=20)
+                        
+                        logger.info(f"Searching {len(meal_plans)} meal plans for recipe '{recipe_name}'")
+                        
+                        # Search through all meal plans for meals with this recipe
+                        for plan in meal_plans:
+                            meals = plan.get("meals", [])
+                            for meal in meals:
+                                meal_name = meal.get("name") or meal.get("meal_name") or ""
+                                meal_recipe_title = None
+                                if meal.get("recipe"):
+                                    meal_recipe_title = meal.get("recipe", {}).get("title") or meal.get("recipe", {}).get("name")
+                                if meal.get("recipe_details"):
+                                    meal_recipe_title = meal.get("recipe_details", {}).get("title") or meal.get("recipe_details", {}).get("name") or meal_recipe_title
+                                
+                                # Get recipe details (check multiple possible locations)
+                                recipe_details = meal.get("recipe_details") or meal.get("recipe") or {}
+                                
+                                # Normalize strings for comparison (remove extra spaces, lowercase)
+                                def normalize(s):
+                                    return " ".join(s.lower().split()) if s else ""
+                                
+                                meal_name_norm = normalize(meal_name)
+                                recipe_title_norm = normalize(meal_recipe_title) if meal_recipe_title else ""
+                                recipe_name_norm = normalize(recipe_name)
+                                
+                                # Check if recipe name matches (case-insensitive, partial match, try variations)
+                                search_terms = [recipe_name_norm] + [normalize(v) for v in search_variations[1:]]
+                                
+                                # Extract key words from recipe name (e.g., "Mediterranean Morning Bowl" -> ["mediterranean", "morning", "bowl"])
+                                recipe_keywords = set([w for w in recipe_name_norm.split() if len(w) > 3])
+                                
+                                # Check if recipe name matches meal name or recipe title
+                                matched = False
+                                for search_term in search_terms:
+                                    # Full match or significant partial match
+                                    if (search_term in meal_name_norm or meal_name_norm in search_term or
+                                        search_term in recipe_title_norm or recipe_title_norm in search_term):
+                                        matched = True
+                                        break
+                                    
+                                    # Keyword-based matching (at least 2 keywords match)
+                                    if recipe_keywords:
+                                        meal_keywords = set([w for w in meal_name_norm.split() if len(w) > 3])
+                                        title_keywords = set([w for w in recipe_title_norm.split() if len(w) > 3]) if recipe_title_norm else set()
+                                        matching_keywords = recipe_keywords & (meal_keywords | title_keywords)
+                                        if len(matching_keywords) >= min(2, len(recipe_keywords)):
+                                            matched = True
+                                            break
+                                
+                                if matched and recipe_details:
+                                    # Verify recipe_details has actual data (not just empty dict)
+                                    has_data = (
+                                        recipe_details.get("title") or 
+                                        recipe_details.get("ingredients") or 
+                                        recipe_details.get("instructions") or
+                                        meal_name
+                                    )
+                                    if has_data:
+                                        logger.info(f"Found recipe '{recipe_name}' in meal plan as '{meal_name}' (title: '{meal_recipe_title}')")
+                                        return self._format_recipe_from_meal_plan(recipe_details, meal)
+                        
+                        logger.warning(f"⚠️ Could not find recipe '{recipe_name}' in any meal plans")
+                    except Exception as e:
+                        logger.warning(f"Could not search meal plans for recipe '{recipe_name}': {str(e)}")
+                    
                     return {
                         "error": f"Recipe '{recipe_name}' not found",
                         "id": None
@@ -508,7 +611,7 @@ class DataAccessService:
                 recipe = recipes[0]
                 logger.info(f"Found recipe: {recipe.get('title')} (ID: {recipe.get('id')})")
             elif recipe_id:
-            recipe = await self.api_client.get_recipe(recipe_id)
+                recipe = await self.api_client.get_recipe(recipe_id)
             else:
                 return {
                     "error": "Either recipe_id, recipe_name, or meal_name must be provided",
@@ -533,8 +636,10 @@ class DataAccessService:
                                 ingredients_list.append(f"{quantity} {unit} {name}".strip())
                             else:
                                 ingredients_list.append(name)
-            else:
+                        else:
+                            # Handle non-dict ingredients (strings, etc.)
                             ingredients_list.append(str(ing))
+            # If ingredients is empty or not a list, ingredients_list remains empty
             
             instructions = recipe.get("instructions", [])
             instructions_list = []
@@ -627,12 +732,12 @@ class DataAccessService:
                                                         ingredients_list.append(f"{quantity} {unit} {name}")
                                                     else:
                                                         ingredients_list.append(name)
-            else:
+                                            else:
                                                 ingredients_list.append(str(ing))
                                         logger.info(f"  Extracted {len(ingredients_list)} ingredients from meal plan")
                                     
                                     if not instructions_list and instructions_from_meal:
-                instructions_list = []
+                                        instructions_list = []
                                         for inst in instructions_from_meal:
                                             if isinstance(inst, dict):
                                                 step = inst.get("step") or inst.get("step_number")
@@ -729,6 +834,75 @@ class DataAccessService:
                 "error": f"Unable to retrieve recipe: {str(e)}",
                 "id": recipe_id
             }
+    
+    def _format_recipe_from_meal_plan(self, recipe_details: Dict[str, Any], meal: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Format recipe details from meal plan for AI consumption.
+        
+        Args:
+            recipe_details: Recipe details from meal plan
+            meal: Meal data from meal plan
+        
+        Returns:
+            Formatted recipe data
+        """
+        # Extract ingredients
+        ingredients_list = []
+        ingredients_from_meal = recipe_details.get("ingredients", [])
+        for ing in ingredients_from_meal:
+            if isinstance(ing, dict):
+                name = ing.get("name", "")
+                quantity = ing.get("quantity", 0)
+                unit = ing.get("unit", "")
+                if name:
+                    if quantity and unit:
+                        ingredients_list.append(f"{quantity} {unit} {name}")
+                    else:
+                        ingredients_list.append(name)
+            else:
+                ingredients_list.append(str(ing))
+        
+        # Extract instructions
+        instructions_list = []
+        instructions_from_meal = recipe_details.get("instructions", [])
+        for inst in instructions_from_meal:
+            if isinstance(inst, dict):
+                step = inst.get("step") or inst.get("step_number")
+                # Try multiple possible keys for instruction text
+                description = (inst.get("description") or inst.get("instruction") or 
+                             inst.get("text") or inst.get("step_title") or "")
+                if description:
+                    if step:
+                        instructions_list.append(f"{step}. {description}")
+                    else:
+                        instructions_list.append(description)
+            else:
+                instructions_list.append(str(inst))
+        
+        # Extract nutrition
+        nutrition = recipe_details.get("nutrition", {})
+        if meal.get("calories"):
+            nutrition["calories"] = meal.get("calories")
+        if meal.get("protein"):
+            nutrition["protein"] = meal.get("protein")
+        if meal.get("carbs"):
+            nutrition["carbs"] = meal.get("carbs")
+        if meal.get("fats"):
+            nutrition["fats"] = meal.get("fats")
+        
+        return {
+            "id": recipe_details.get("id") or meal.get("recipe_id"),
+            "title": recipe_details.get("title") or meal.get("name"),
+            "description": recipe_details.get("summary") or recipe_details.get("description") or meal.get("description"),
+            "ingredients": ingredients_list,
+            "instructions": instructions_list,
+            "nutrition": nutrition,
+            "servings": recipe_details.get("servings", meal.get("servings", 1)),
+            "prep_time": recipe_details.get("prep_time"),
+            "cook_time": recipe_details.get("cook_time"),
+            "cuisine": recipe_details.get("cuisine"),
+            "dietary_tags": recipe_details.get("dietary_tags", [])
+        }
     
     def _get_bmi_category(self, bmi: Optional[float]) -> str:
         """Get BMI category from BMI value."""

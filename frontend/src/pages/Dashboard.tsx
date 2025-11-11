@@ -118,15 +118,23 @@ const Dashboard = () => {
       let profileResponse;
       try {
         console.log('Fetching health profile...');
-        profileResponse = await Promise.race([
-          healthProfile.getProfile(),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('Health profile fetch timed out')), 12000))
-        ]);
+        // API service already has 15s timeout and caching built-in
+        profileResponse = await healthProfile.getProfile();
         setProfileData(profileResponse.data);
         console.log('Health profile fetched successfully');
       } catch (profileError: any) {
         console.error('Health profile fetch error:', profileError);
-        if (profileError?.response?.status === 404) {
+        // Handle timeout gracefully - API service will use cached data if available
+        if (profileError?.message?.includes('timeout') || 
+            profileError?.code === 'ECONNABORTED' || 
+            profileError?.message?.includes('timed out')) {
+          console.warn('Health profile fetch timed out - API service should use cached data if available');
+          // If we get a timeout, the API service interceptor should have already tried cached data
+          // If still no data, user doesn't have a profile yet
+          setNeedsHealthProfile(true);
+          setLoading(false);
+          return;
+        } else if (profileError?.response?.status === 404) {
           // User doesn't have a health profile yet
           setNeedsHealthProfile(true);
           setLoading(false);

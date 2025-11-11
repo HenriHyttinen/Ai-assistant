@@ -125,10 +125,10 @@ class ChartService:
         else:
             start_date = end_date - timedelta(days=7)
         
-        # Get nutrition data
+        # Get nutrition data (pass date objects, not strings)
         nutrition_data = await self.data_access.get_nutritional_analysis(
-            start_date=start_date.isoformat(),
-            end_date=end_date.isoformat(),
+            start_date=start_date,
+            end_date=end_date,
             analysis_type="daily"
         )
         
@@ -194,9 +194,29 @@ class ChartService:
         """Create line chart configuration."""
         chart_data = []
         for item in data:
+            x_value = item.get(x_key, "")
+            # Format date if it's a date string
+            if x_key == "date" and x_value:
+                # If date is in YYYY-MM-DD format, format it nicely
+                if isinstance(x_value, str) and len(x_value) >= 10:
+                    try:
+                        from datetime import datetime
+                        date_obj = datetime.strptime(x_value[:10], "%Y-%m-%d")
+                        # Format as "MMM DD" (e.g., "Nov 04")
+                        x_value = date_obj.strftime("%b %d")
+                    except (ValueError, TypeError):
+                        pass  # Keep original value if parsing fails
+            
+            y_value = item.get(y_key, 0)
+            # Ensure y_value is a number
+            try:
+                y_value = float(y_value) if y_value else 0
+            except (ValueError, TypeError):
+                y_value = 0
+            
             chart_data.append({
-                "x": item.get(x_key, ""),
-                "y": item.get(y_key, 0)
+                "x": x_value,
+                "y": y_value
             })
         
         return {
