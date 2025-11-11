@@ -316,17 +316,37 @@ ai-assistant/  (or whatever you name the folder when cloning)
 
 ### Backend Development
 ```bash
+# Navigate to backend directory
 cd backend
+
+# Create virtual environment (if not already created)
+python3 -m venv venv
+
+# Activate virtual environment
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Install dependencies (if not already installed)
 pip install -r requirements.txt
+
+# Start the development server
 uvicorn main:app --reload
 ```
 
+The backend will be available at `http://localhost:8000`
+
 ### Frontend Development
 ```bash
+# Navigate to frontend directory
 cd frontend
+
+# Install dependencies (if not already installed)
 npm install
+
+# Start the development server
 npm run dev
 ```
+
+The frontend will be available at `http://localhost:5173` (or the port Vite assigns)
 
 ### Database Setup
 ```bash
