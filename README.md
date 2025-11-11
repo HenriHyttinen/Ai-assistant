@@ -1,12 +1,18 @@
-# Numbers Don't Lie - Health & Nutrition Platform
+# Numbers Don't Lie - Integrated Health & Nutrition Platform with AI Assistant
 
-A comprehensive health and nutrition tracking platform I built for meal planning, recipe management, and nutritional analysis. Built with FastAPI backend and React frontend.
+A comprehensive health and nutrition tracking platform with an integrated conversational AI assistant. This project is the evolution and integration of multiple components: the "Numbers Don't Lie" health analytics platform, the "Counting Calories" nutrition system, and the AI Assistant conversational interface - all unified into a single, cohesive platform. Built with FastAPI backend and React frontend.
 
 ## What This Does
 
-This platform helps users track their health metrics, plan meals, and manage their nutrition goals. It's got meal planning with AI-generated recipes, a recipe database with search and filtering, nutritional tracking, integration with health analytics, and an integrated AI Assistant for conversational health and nutrition queries.
+This integrated platform combines three major components that have been unified into one system:
 
-**Note:** The AI Assistant is fully integrated into this project. All backend and frontend code runs from the `numbers-dont-lie` directory. Do not attempt to run the backend from any separate `ai-assistant` folder.
+1. **Numbers Don't Lie (Health Analytics Platform)**: A comprehensive system for tracking health metrics, wellness scores, activity levels, goal management, achievement tracking, and integration with health analytics and dashboards.
+
+2. **Counting Calories (Nutrition System)**: The nutrition tracking and meal planning system with AI-generated meal plans, a recipe database with 500+ entries, dietary preference management, and comprehensive nutritional analysis.
+
+3. **AI Assistant**: A conversational AI interface that enables users to interact with their health and nutrition data using natural language. Users can ask questions about their BMI, weight, meal plans, nutritional intake, recipes, and progress - all through simple conversations.
+
+**Project Evolution:** This repository represents the complete integration of all three components. The project evolved from "Numbers Don't Lie" → "Counting Calories" → "AI Assistant". All backend and frontend code runs from the `numbers-dont-lie` directory. There is no separate setup required - everything works together as a unified platform.
 
 ## Features
 
